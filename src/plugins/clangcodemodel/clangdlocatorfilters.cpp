@@ -6,23 +6,25 @@
 #include "clangdclient.h"
 #include "clangmodelmanagersupport.h"
 
+#include <coreplugin/editormanager/editormanager.h>
 #include <cppeditor/cppeditorconstants.h>
 #include <cppeditor/cppeditortr.h>
 #include <cppeditor/cpplocatorfilter.h>
 #include <cppeditor/cppmodelmanager.h>
 #include <cppeditor/indexitem.h>
+#include <languageclient/languageclientmanager.h>
 #include <languageclient/languageclientutils.h>
 #include <languageclient/locatorfilter.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <utils/link.h>
 #include <utils/algorithm.h>
 
 #include <QHash>
-#include <set>
-#include <tuple>
 
+using namespace Core;
 using namespace LanguageClient;
 using namespace LanguageServerProtocol;
+using namespace ProjectExplorer;
 using namespace Utils;
 
 namespace ClangCodeModel {
@@ -34,10 +36,10 @@ class CppLocatorFilter : public CppEditor::CppLocatorFilter
 {
 public:
     CppLocatorFilter()
-        : CppEditor::CppLocatorFilter(CppEditor::CppModelManager::instance()->locatorData())
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
@@ -51,10 +53,15 @@ public:
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
         setMaxResultCount(MaxResultCount);
+    }
+    void prepareSearch(const QString &entry) override
+    {
+        prepareSearchForClients(entry, ClangModelManagerSupport::clientsForOpenProjects());
     }
 };
 
@@ -63,10 +70,10 @@ class CppClassesFilter : public CppEditor::CppClassesFilter
 {
 public:
     CppClassesFilter()
-        : CppEditor::CppClassesFilter(CppEditor::CppModelManager::instance()->locatorData())
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
@@ -79,10 +86,15 @@ public:
     LspClassesFilter() {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
         setMaxResultCount(MaxResultCount);
+    }
+    void prepareSearch(const QString &entry) override
+    {
+        prepareSearchForClients(entry, ClangModelManagerSupport::clientsForOpenProjects());
     }
 };
 
@@ -90,10 +102,10 @@ class CppFunctionsFilter : public CppEditor::CppFunctionsFilter
 {
 public:
     CppFunctionsFilter()
-        : CppEditor::CppFunctionsFilter(CppEditor::CppModelManager::instance()->locatorData())
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
@@ -107,10 +119,15 @@ public:
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
         setMaxResultCount(MaxResultCount);
+    }
+    void prepareSearch(const QString &entry) override
+    {
+        prepareSearchForClients(entry, ClangModelManagerSupport::clientsForOpenProjects());
     }
 };
 
@@ -121,11 +138,12 @@ ClangGlobalSymbolFilter::ClangGlobalSymbolFilter()
 }
 
 ClangGlobalSymbolFilter::ClangGlobalSymbolFilter(ILocatorFilter *cppFilter,
-                                                 WorkspaceLocatorFilter *lspFilter)
+                                                 ILocatorFilter *lspFilter)
     : m_cppFilter(cppFilter), m_lspFilter(lspFilter)
 {
     setId(CppEditor::Constants::LOCATOR_FILTER_ID);
     setDisplayName(::CppEditor::Tr::tr(CppEditor::Constants::LOCATOR_FILTER_DISPLAY_NAME));
+    setDescription(::CppEditor::Tr::tr(CppEditor::Constants::LOCATOR_FILTER_DESCRIPTION));
     setDefaultShortcutString(":");
     setDefaultIncludedByDefault(false);
 }
@@ -139,56 +157,21 @@ ClangGlobalSymbolFilter::~ClangGlobalSymbolFilter()
 void ClangGlobalSymbolFilter::prepareSearch(const QString &entry)
 {
     m_cppFilter->prepareSearch(entry);
-    QList<Client *> clients;
-    for (ProjectExplorer::Project * const project : ProjectExplorer::SessionManager::projects()) {
-        if (Client * const client = ClangModelManagerSupport::clientForProject(project))
-            clients << client;
-    }
-    if (!clients.isEmpty())
-        m_lspFilter->prepareSearch(entry, clients);
+    m_lspFilter->prepareSearch(entry);
 }
 
-QList<Core::LocatorFilterEntry> ClangGlobalSymbolFilter::matchesFor(
-        QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry)
+QList<LocatorFilterEntry> ClangGlobalSymbolFilter::matchesFor(
+        QFutureInterface<LocatorFilterEntry> &future, const QString &entry)
 {
-    QList<Core::LocatorFilterEntry> matches = m_cppFilter->matchesFor(future, entry);
-    const QList<Core::LocatorFilterEntry> lspMatches = m_lspFilter->matchesFor(future, entry);
-    if (!lspMatches.isEmpty()) {
-        std::set<std::tuple<FilePath, int, int>> locations;
-        for (const auto &entry : std::as_const(matches)) {
-            const CppEditor::IndexItem::Ptr item
-                    = qvariant_cast<CppEditor::IndexItem::Ptr>(entry.internalData);
-            locations.insert(std::make_tuple(item->filePath(), item->line(), item->column()));
-        }
-        for (const auto &entry : lspMatches) {
-            if (!entry.internalData.canConvert<Link>())
-                continue;
-            const auto link = qvariant_cast<Link>(entry.internalData);
-            if (locations.find(std::make_tuple(link.targetFilePath, link.targetLine,
-                                               link.targetColumn)) == locations.cend()) {
-                matches << entry; // TODO: Insert sorted?
-            }
-        }
-    }
-
-    return matches;
+    return m_cppFilter->matchesFor(future, entry) + m_lspFilter->matchesFor(future, entry);
 }
-
-void ClangGlobalSymbolFilter::accept(const Core::LocatorFilterEntry &selection, QString *newText,
-                                     int *selectionStart, int *selectionLength) const
-{
-    if (qvariant_cast<CppEditor::IndexItem::Ptr>(selection.internalData))
-        m_cppFilter->accept(selection, newText, selectionStart, selectionLength);
-    else
-        m_lspFilter->accept(selection, newText, selectionStart, selectionLength);
-}
-
 
 ClangClassesFilter::ClangClassesFilter()
     : ClangGlobalSymbolFilter(new CppClassesFilter, new LspClassesFilter)
 {
     setId(CppEditor::Constants::CLASSES_FILTER_ID);
     setDisplayName(::CppEditor::Tr::tr(CppEditor::Constants::CLASSES_FILTER_DISPLAY_NAME));
+    setDescription(::CppEditor::Tr::tr(CppEditor::Constants::CLASSES_FILTER_DESCRIPTION));
     setDefaultShortcutString("c");
     setDefaultIncludedByDefault(false);
 }
@@ -198,6 +181,7 @@ ClangFunctionsFilter::ClangFunctionsFilter()
 {
     setId(CppEditor::Constants::FUNCTIONS_FILTER_ID);
     setDisplayName(::CppEditor::Tr::tr(CppEditor::Constants::FUNCTIONS_FILTER_DISPLAY_NAME));
+    setDescription(::CppEditor::Tr::tr(CppEditor::Constants::FUNCTIONS_FILTER_DESCRIPTION));
     setDefaultShortcutString("m");
     setDefaultIncludedByDefault(false);
 }
@@ -209,6 +193,7 @@ public:
     {
         setId({});
         setDisplayName({});
+        setDescription({});
         setDefaultShortcutString({});
         setEnabled(false);
         setHidden(true);
@@ -216,49 +201,60 @@ public:
     }
 
 private:
-    void prepareSearch(const QString &) override
+    void prepareSearch(const QString &entry) override
     {
+        DocumentLocatorFilter::prepareSearch(entry);
         m_content = TextEditor::TextDocument::currentTextDocument()->plainText();
     }
 
-    Core::LocatorFilterEntry generateLocatorEntry(const DocumentSymbol &info,
-                                                  const Core::LocatorFilterEntry &parent) override
-    {
-        Core::LocatorFilterEntry entry;
-        entry.filter = this;
-        entry.displayName = ClangdClient::displayNameFromDocumentSymbol(
-                    static_cast<SymbolKind>(info.kind()), info.name(),
-                    info.detail().value_or(QString()));
-        entry.internalData = QVariant::fromValue(info);
-        entry.extraInfo = parent.extraInfo;
-        if (!entry.extraInfo.isEmpty())
-            entry.extraInfo.append("::");
-        entry.extraInfo.append(parent.displayName);
-
-        // TODO: Can we extend clangd to send visibility information?
-        entry.displayIcon = LanguageClient::symbolIcon(info.kind());
-
-        return entry;
-    }
-
     // Filter out declarations for which a definition is also present.
-    QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
-                                               const QString &entry) override
+    QList<LocatorFilterEntry> matchesFor(QFutureInterface<LocatorFilterEntry> &future,
+                                         const QString &entry) override
     {
-        QList<Core::LocatorFilterEntry> allMatches
-            = DocumentLocatorFilter::matchesFor(future, entry);
-        QHash<QString, QList<Core::LocatorFilterEntry>> possibleDuplicates;
-        for (const Core::LocatorFilterEntry &e : std::as_const(allMatches))
-            possibleDuplicates[e.displayName + e.extraInfo] << e;
+        struct Entry
+        {
+            LocatorFilterEntry entry;
+            DocumentSymbol symbol;
+        };
+        QList<Entry> docEntries;
+
+        const auto docSymbolGenerator = [&](const DocumentSymbol &info,
+                                            const LocatorFilterEntry &parent) {
+            LocatorFilterEntry entry;
+            entry.filter = this;
+            entry.displayName = ClangdClient::displayNameFromDocumentSymbol(
+                static_cast<SymbolKind>(info.kind()), info.name(),
+                info.detail().value_or(QString()));
+            entry.internalData = QVariant::fromValue(info);
+            entry.linkForEditor = linkForDocSymbol(info);
+            entry.extraInfo = parent.extraInfo;
+            if (!entry.extraInfo.isEmpty())
+                entry.extraInfo.append("::");
+            entry.extraInfo.append(parent.displayName);
+
+            // TODO: Can we extend clangd to send visibility information?
+            entry.displayIcon = LanguageClient::symbolIcon(info.kind());
+            docEntries.append({entry, info});
+            return entry;
+        };
+
+        QList<LocatorFilterEntry> allMatches = matchesForImpl(future, entry, docSymbolGenerator);
+        if (docEntries.isEmpty())
+            return allMatches; // SymbolInformation case
+
+        QTC_CHECK(docEntries.size() == allMatches.size());
+        QHash<QString, QList<Entry>> possibleDuplicates;
+        for (const Entry &e : std::as_const(docEntries))
+            possibleDuplicates[e.entry.displayName + e.entry.extraInfo] << e;
         const QTextDocument doc(m_content);
         for (auto it = possibleDuplicates.cbegin(); it != possibleDuplicates.cend(); ++it) {
-            const QList<Core::LocatorFilterEntry> &duplicates = it.value();
+            const QList<Entry> &duplicates = it.value();
             if (duplicates.size() == 1)
                 continue;
-            QList<Core::LocatorFilterEntry> declarations;
-            QList<Core::LocatorFilterEntry> definitions;
-            for (const Core::LocatorFilterEntry &candidate : duplicates) {
-                const auto symbol = qvariant_cast<DocumentSymbol>(candidate.internalData);
+            QList<Entry> declarations;
+            QList<Entry> definitions;
+            for (const Entry &candidate : duplicates) {
+                const DocumentSymbol symbol = candidate.symbol;
                 const SymbolKind kind = static_cast<SymbolKind>(symbol.kind());
                 if (kind != SymbolKind::Class && kind != SymbolKind::Function)
                     break;
@@ -283,20 +279,14 @@ private:
             }
             if (definitions.size() == 1
                 && declarations.size() + definitions.size() == duplicates.size()) {
-                for (const Core::LocatorFilterEntry &decl : std::as_const(declarations))
-                    Utils::erase(allMatches, [&decl](const Core::LocatorFilterEntry &e) {
-                        return e.internalData == decl.internalData;
+                for (const Entry &decl : std::as_const(declarations)) {
+                    Utils::erase(docEntries, [&decl](const Entry &e) {
+                        return e.symbol == decl.symbol;
                     });
+                }
             }
         }
-
-        // The base implementation expects the position in the internal data.
-        for (Core::LocatorFilterEntry &e : allMatches) {
-            const Position pos = qvariant_cast<DocumentSymbol>(e.internalData).range().start();
-            e.internalData = QVariant::fromValue(Utils::LineColumn(pos.line(), pos.character()));
-        }
-
-        return allMatches;
+        return Utils::transform(docEntries, [](const Entry &entry) { return entry.entry; });
     }
 
     QString m_content;
@@ -307,10 +297,10 @@ class ClangdCurrentDocumentFilter::Private
 public:
     ~Private() { delete cppFilter; }
 
-    Core::ILocatorFilter * const cppFilter
+    ILocatorFilter * const cppFilter
             = CppEditor::CppModelManager::createAuxiliaryCurrentDocumentFilter();
     LspCurrentDocumentFilter lspFilter;
-    Core::ILocatorFilter *activeFilter = nullptr;
+    ILocatorFilter *activeFilter = nullptr;
 };
 
 
@@ -318,20 +308,16 @@ ClangdCurrentDocumentFilter::ClangdCurrentDocumentFilter() : d(new Private)
 {
     setId(CppEditor::Constants::CURRENT_DOCUMENT_FILTER_ID);
     setDisplayName(::CppEditor::Tr::tr(CppEditor::Constants::CURRENT_DOCUMENT_FILTER_DISPLAY_NAME));
+    setDescription(::CppEditor::Tr::tr(CppEditor::Constants::CURRENT_DOCUMENT_FILTER_DESCRIPTION));
     setDefaultShortcutString(".");
     setPriority(High);
     setDefaultIncludedByDefault(false);
     setEnabled(false);
-    connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
-            this, [this](const Core::IEditor *editor) { setEnabled(editor); });
+    connect(EditorManager::instance(), &EditorManager::currentEditorChanged,
+            this, [this](const IEditor *editor) { setEnabled(editor); });
 }
 
 ClangdCurrentDocumentFilter::~ClangdCurrentDocumentFilter() { delete d; }
-
-void ClangdCurrentDocumentFilter::updateCurrentClient()
-{
-    d->lspFilter.updateCurrentClient();
-}
 
 void ClangdCurrentDocumentFilter::prepareSearch(const QString &entry)
 {
@@ -346,18 +332,11 @@ void ClangdCurrentDocumentFilter::prepareSearch(const QString &entry)
     d->activeFilter->prepareSearch(entry);
 }
 
-QList<Core::LocatorFilterEntry> ClangdCurrentDocumentFilter::matchesFor(
-        QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry)
+QList<LocatorFilterEntry> ClangdCurrentDocumentFilter::matchesFor(
+        QFutureInterface<LocatorFilterEntry> &future, const QString &entry)
 {
     QTC_ASSERT(d->activeFilter, return {});
     return d->activeFilter->matchesFor(future, entry);
-}
-
-void ClangdCurrentDocumentFilter::accept(const Core::LocatorFilterEntry &selection, QString *newText,
-                                         int *selectionStart, int *selectionLength) const
-{
-    QTC_ASSERT(d->activeFilter, return);
-    d->activeFilter->accept(selection, newText, selectionStart, selectionLength);
 }
 
 } // namespace Internal

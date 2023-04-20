@@ -48,7 +48,7 @@ const char C_PROBLEM_PANE[]        = "Core.ProblemPane";
 const char C_GENERAL_OUTPUT_PANE[] = "Core.GeneralOutputPane";
 
 // Default editor kind
-const char K_DEFAULT_TEXT_EDITOR_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("OpenWith::Editors", "Plain Text Editor");
+const char K_DEFAULT_TEXT_EDITOR_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("QtC::Core", "Plain Text Editor");
 const char K_DEFAULT_TEXT_EDITOR_ID[] = "Core.PlainTextEditor";
 const char K_DEFAULT_BINARY_EDITOR_ID[] = "Core.BinaryEditor";
 
@@ -214,6 +214,8 @@ const char TR_CLEAR_MENU[]         = QT_TRANSLATE_NOOP("QtC::Core", "Clear Menu"
 const int MODEBAR_ICON_SIZE = 34;
 const int MODEBAR_ICONSONLY_BUTTON_SIZE = MODEBAR_ICON_SIZE + 4;
 const int DEFAULT_MAX_CHAR_COUNT = 10000000;
+
+const char SETTINGS_MENU_HIDE_TOOLS[] = "Menu/HideTools";
 
 } // namespace Constants
 } // namespace Core

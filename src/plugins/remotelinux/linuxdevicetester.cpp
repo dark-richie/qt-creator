@@ -13,6 +13,7 @@
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/stringutils.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -23,7 +24,7 @@ namespace Internal {
 
 struct TransferStorage
 {
-    bool sftpWorks = false;
+    bool useGenericCopy = false;
 };
 
 class GenericLinuxDeviceTesterPrivate
@@ -33,7 +34,7 @@ public:
 
     QStringList commandsToTest() const;
 
-    TaskItem echoTask() const;
+    TaskItem echoTask(const QString &contents) const;
     TaskItem unameTask() const;
     TaskItem gathererTask() const;
     TaskItem transferTask(FileTransferMethod method,
@@ -48,8 +49,6 @@ public:
     QStringList m_extraCommands;
     QList<TaskItem> m_extraTests;
 };
-
-static const char s_echoContents[] = "Hello Remote World!";
 
 QStringList GenericLinuxDeviceTesterPrivate::commandsToTest() const
 {
@@ -91,16 +90,17 @@ QStringList GenericLinuxDeviceTesterPrivate::commandsToTest() const
     return commands;
 }
 
-TaskItem GenericLinuxDeviceTesterPrivate::echoTask() const
+TaskItem GenericLinuxDeviceTesterPrivate::echoTask(const QString &contents) const
 {
-    const auto setup = [this](QtcProcess &process) {
+    const auto setup = [this, contents](QtcProcess &process) {
         emit q->progressMessage(Tr::tr("Sending echo to device..."));
-        process.setCommand({m_device->filePath("echo"), {s_echoContents}});
+        process.setCommand({m_device->filePath("echo"), {contents}});
     };
-    const auto done = [this](const QtcProcess &process) {
-        const QString reply = process.cleanedStdOut().chopped(1); // Remove trailing '\n'
-        if (reply != s_echoContents)
-            emit q->errorMessage(Tr::tr("Device replied to echo with unexpected contents.") + '\n');
+    const auto done = [this, contents](const QtcProcess &process) {
+        const QString reply = Utils::chopIfEndsWith(process.cleanedStdOut(), '\n');
+        if (reply != contents)
+            emit q->errorMessage(Tr::tr("Device replied to echo with unexpected contents: \"%1\"")
+                    .arg(reply) + '\n');
         else
             emit q->progressMessage(Tr::tr("Device replied to echo with expected contents.") + '\n');
     };
@@ -154,9 +154,14 @@ TaskItem GenericLinuxDeviceTesterPrivate::gathererTask() const
         }
     };
     const auto error = [this](const DeviceUsedPortsGatherer &gatherer) {
-        emit q->errorMessage(Tr::tr("Error gathering ports: %1").arg(gatherer.errorString()) + '\n');
+        emit q->errorMessage(Tr::tr("Error gathering ports: %1").arg(gatherer.errorString()) + '\n'
+                           + Tr::tr("Some tools will not work out of the box.\n"));
     };
-    return PortGatherer(setup, done, error);
+
+    return Group {
+        optional,
+        PortGatherer(setup, done, error)
+    };
 }
 
 TaskItem GenericLinuxDeviceTesterPrivate::transferTask(FileTransferMethod method,
@@ -173,8 +178,10 @@ TaskItem GenericLinuxDeviceTesterPrivate::transferTask(FileTransferMethod method
         emit q->progressMessage(Tr::tr("\"%1\" is functional.\n").arg(methodName));
         if (method == FileTransferMethod::Rsync)
             m_device->setExtraData(Constants::SupportsRSync, true);
+        else if (method == FileTransferMethod::Sftp)
+            m_device->setExtraData(Constants::SupportsSftp, true);
         else
-            storage->sftpWorks = true;
+            storage->useGenericCopy = true;
     };
     const auto error = [this, method, storage](const FileTransfer &transfer) {
         const QString methodName = FileTransfer::transferMethodName(method);
@@ -189,14 +196,21 @@ TaskItem GenericLinuxDeviceTesterPrivate::transferTask(FileTransferMethod method
                     .arg(methodName).arg(resultData.m_exitCode).arg(resultData.m_errorString);
         }
         emit q->errorMessage(error);
-        if (method == FileTransferMethod::Rsync) {
+        if (method == FileTransferMethod::Rsync)
             m_device->setExtraData(Constants::SupportsRSync, false);
-            if (!storage->sftpWorks)
-                return;
+        else if (method == FileTransferMethod::Sftp)
+            m_device->setExtraData(Constants::SupportsSftp, false);
+
+        const QVariant supportsRSync = m_device->extraData(Constants::SupportsRSync);
+        const QVariant supportsSftp = m_device->extraData(Constants::SupportsSftp);
+        if (supportsRSync.isValid() && !supportsRSync.toBool()
+            && supportsSftp.isValid() && !supportsSftp.toBool()) {
+            const QString generic = FileTransfer::transferMethodName(FileTransferMethod::GenericCopy);
             const QString sftp = FileTransfer::transferMethodName(FileTransferMethod::Sftp);
-            const QString rsync = methodName;
+            const QString rsync = FileTransfer::transferMethodName(FileTransferMethod::Rsync);
             emit q->progressMessage(Tr::tr("\"%1\" will be used for deployment, because \"%2\" "
-                                           "is not available.\n").arg(sftp, rsync));
+                                           "and \"%3\" are not available.\n")
+                                           .arg(generic, sftp, rsync));
         }
     };
     return TransferTest(setup, done, error);
@@ -208,6 +222,7 @@ TaskItem GenericLinuxDeviceTesterPrivate::transferTasks() const
     return Tasking::Group {
         continueOnDone,
         Storage(storage),
+        transferTask(FileTransferMethod::GenericCopy, storage),
         transferTask(FileTransferMethod::Sftp, storage),
         transferTask(FileTransferMethod::Rsync, storage),
         OnGroupError([this] { emit q->errorMessage(Tr::tr("Deployment to this device will not "
@@ -281,7 +296,8 @@ void GenericLinuxDeviceTester::testDevice(const IDevice::Ptr &deviceConfiguratio
     };
 
     QList<TaskItem> taskItems = {
-        d->echoTask(),
+        d->echoTask("Hello"), // No quoting necessary
+        d->echoTask("Hello Remote World!"), // Checks quoting, too.
         d->unameTask(),
         d->gathererTask(),
         d->transferTasks()

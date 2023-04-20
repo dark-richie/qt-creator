@@ -14,11 +14,12 @@
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/commandbutton.h>
+#include <coreplugin/coreplugintr.h>
 #include <coreplugin/icore.h>
 
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
 #include <texteditor/textdocument.h>
@@ -151,7 +152,7 @@ void PythonEditorWidget::setUserDefinedPython(const Interpreter &interpreter)
     QTC_ASSERT(pythonDocument, return);
     FilePath documentPath = pythonDocument->filePath();
     QTC_ASSERT(!documentPath.isEmpty(), return);
-    if (Project *project = SessionManager::projectForFile(documentPath)) {
+    if (Project *project = ProjectManager::projectForFile(documentPath)) {
         if (Target *target = project->activeTarget()) {
             if (RunConfiguration *rc = target->activeRunConfiguration()) {
                 if (auto interpretersAspect= rc->aspect<InterpreterAspect>()) {
@@ -162,6 +163,7 @@ void PythonEditorWidget::setUserDefinedPython(const Interpreter &interpreter)
         }
     }
     definePythonForDocument(textDocument()->filePath(), interpreter.command);
+    updateInterpretersSelector();
     pythonDocument->checkForPyls();
 }
 
@@ -183,7 +185,7 @@ void PythonEditorWidget::updateInterpretersSelector()
         disconnect(connection);
     m_projectConnections.clear();
     const FilePath documentPath = textDocument()->filePath();
-    if (Project *project = SessionManager::projectForFile(documentPath)) {
+    if (Project *project = ProjectManager::projectForFile(documentPath)) {
         m_projectConnections << connect(project,
                                         &Project::activeTargetChanged,
                                         this,
@@ -211,33 +213,51 @@ void PythonEditorWidget::updateInterpretersSelector()
         m_interpreters->setText(text);
     };
 
-    const FilePath currentInterpreter = detectPython(textDocument()->filePath());
+    const FilePath currentInterpreterPath = detectPython(textDocument()->filePath());
     const QList<Interpreter> configuredInterpreters = PythonSettings::interpreters();
-    bool foundCurrentInterpreter = false;
     auto interpretersGroup = new QActionGroup(menu);
     interpretersGroup->setExclusive(true);
+    std::optional<Interpreter> currentInterpreter;
     for (const Interpreter &interpreter : configuredInterpreters) {
         QAction *action = interpretersGroup->addAction(interpreter.name);
         connect(action, &QAction::triggered, this, [this, interpreter]() {
             setUserDefinedPython(interpreter);
         });
         action->setCheckable(true);
-        if (!foundCurrentInterpreter && interpreter.command == currentInterpreter) {
-            foundCurrentInterpreter = true;
+        if (!currentInterpreter && interpreter.command == currentInterpreterPath) {
+            currentInterpreter = interpreter;
             action->setChecked(true);
             setButtonText(interpreter.name);
             m_interpreters->setToolTip(interpreter.command.toUserOutput());
         }
     }
     menu->addActions(interpretersGroup->actions());
-    if (!foundCurrentInterpreter) {
-        if (currentInterpreter.exists())
-            setButtonText(currentInterpreter.toUserOutput());
+    if (!currentInterpreter) {
+        if (currentInterpreterPath.exists())
+            setButtonText(currentInterpreterPath.toUserOutput());
         else
             setButtonText(Tr::tr("No Python Selected"));
     }
-    if (!interpretersGroup->actions().isEmpty())
-       menu->addSeparator();
+    if (!interpretersGroup->actions().isEmpty()) {
+        menu->addSeparator();
+        auto venvAction = menu->addAction(Tr::tr("Create Virtual Environment"));
+        connect(venvAction,
+                &QAction::triggered,
+                this,
+                [self = QPointer<PythonEditorWidget>(this), currentInterpreter]() {
+                    if (!currentInterpreter)
+                        return;
+                    auto callback = [self](const std::optional<Interpreter> &venvInterpreter) {
+                        if (self && venvInterpreter)
+                            self->setUserDefinedPython(*venvInterpreter);
+                    };
+                    PythonSettings::createVirtualEnvironmentInteractive(self->textDocument()
+                                                                            ->filePath()
+                                                                            .parentDir(),
+                                                                        *currentInterpreter,
+                                                                        callback);
+                });
+    }
     auto settingsAction = menu->addAction(Tr::tr("Manage Python Interpreters"));
     connect(settingsAction, &QAction::triggered, this, []() {
         Core::ICore::showOptionsDialog(Constants::C_PYTHONOPTIONS_PAGE_ID);
@@ -249,8 +269,7 @@ PythonEditorFactory::PythonEditorFactory()
     registerReplAction(this);
 
     setId(Constants::C_PYTHONEDITOR_ID);
-    setDisplayName(
-        QCoreApplication::translate("OpenWith::Editors", Constants::C_EDITOR_DISPLAY_NAME));
+    setDisplayName(::Core::Tr::tr(Constants::C_EDITOR_DISPLAY_NAME));
     addMimeType(Constants::C_PY_MIMETYPE);
 
     setEditorActionHandlers(TextEditorActionHandler::Format

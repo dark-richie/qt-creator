@@ -7,11 +7,16 @@
 #include "cppeditortr.h"
 #include "cppmodelmanager.h"
 
-#include <cplusplus/CppDocument.h>
 #include <coreplugin/editormanager/documentmodel.h>
+
+#include <cplusplus/CppDocument.h>
+
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/session.h>
+
+#include <utils/tasktree.h>
 
 using namespace Core;
 using namespace ProjectExplorer;
@@ -44,8 +49,6 @@ private:
     FilePaths m_resultQueue;
     FilePath m_currentPath;
 };
-
-
 
 void CppIncludesIterator::toFront()
 {
@@ -99,27 +102,28 @@ CppIncludesFilter::CppIncludesFilter()
     setId(Constants::INCLUDES_FILTER_ID);
     setDisplayName(Tr::tr(Constants::INCLUDES_FILTER_DISPLAY_NAME));
     setDescription(
-        Tr::tr("Matches all files that are included by all C++ files in all projects. Append "
+        Tr::tr("Locates files that are included by C++ files of any open project. Append "
                "\"+<number>\" or \":<number>\" to jump to the given line number. Append another "
                "\"+<number>\" or \":<number>\" to jump to the column number as well."));
     setDefaultShortcutString("ai");
     setDefaultIncludedByDefault(true);
+    setRefreshRecipe(Tasking::Sync([this] { invalidateCache(); return true; }));
     setPriority(ILocatorFilter::Low);
 
     connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::fileListChanged,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(CppModelManager::instance(), &CppModelManager::documentUpdated,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(CppModelManager::instance(), &CppModelManager::aboutToRemoveFiles,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(DocumentModel::model(), &QAbstractItemModel::rowsInserted,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(DocumentModel::model(), &QAbstractItemModel::rowsRemoved,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(DocumentModel::model(), &QAbstractItemModel::dataChanged,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
     connect(DocumentModel::model(), &QAbstractItemModel::modelReset,
-            this, &CppIncludesFilter::markOutdated);
+            this, &CppIncludesFilter::invalidateCache);
 }
 
 void CppIncludesFilter::prepareSearch(const QString &entry)
@@ -128,7 +132,7 @@ void CppIncludesFilter::prepareSearch(const QString &entry)
     if (m_needsUpdate) {
         m_needsUpdate = false;
         QSet<FilePath> seedPaths;
-        for (Project *project : SessionManager::projects()) {
+        for (Project *project : ProjectManager::projects()) {
             const FilePaths allFiles = project->files(Project::SourceFiles);
             for (const FilePath &filePath : allFiles )
                 seedPaths.insert(filePath);
@@ -144,13 +148,7 @@ void CppIncludesFilter::prepareSearch(const QString &entry)
     BaseFileFilter::prepareSearch(entry);
 }
 
-void CppIncludesFilter::refresh(QFutureInterface<void> &future)
-{
-    Q_UNUSED(future)
-    QMetaObject::invokeMethod(this, &CppIncludesFilter::markOutdated, Qt::QueuedConnection);
-}
-
-void CppIncludesFilter::markOutdated()
+void CppIncludesFilter::invalidateCache()
 {
     m_needsUpdate = true;
     setFileIterator(nullptr); // clean up

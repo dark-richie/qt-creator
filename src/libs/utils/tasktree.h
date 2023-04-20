@@ -11,8 +11,9 @@
 
 namespace Utils {
 
-class StorageActivator;
+class ExecutionContextActivator;
 class TaskContainer;
+class TaskNode;
 class TaskTreePrivate;
 
 namespace Tasking {
@@ -66,7 +67,7 @@ private:
     QSharedPointer<StorageData> m_storageData;
     friend TaskContainer;
     friend TaskTreePrivate;
-    friend StorageActivator;
+    friend ExecutionContextActivator;
 };
 
 template <typename StorageStruct>
@@ -74,6 +75,7 @@ class TreeStorage : public TreeStorageBase
 {
 public:
     TreeStorage() : TreeStorageBase(TreeStorage::ctor(), TreeStorage::dtor()) {}
+    StorageStruct &operator*() const noexcept { return *activeStorage(); }
     StorageStruct *operator->() const noexcept { return activeStorage(); }
     StorageStruct *activeStorage() const {
         return static_cast<StorageStruct *>(activeStorageVoid());
@@ -86,20 +88,65 @@ private:
     }
 };
 
-// 4 policies:
+class QTCREATOR_UTILS_EXPORT ConditionActivator
+{
+public:
+    void activate();
+
+private:
+    ConditionActivator(TaskNode *container) : m_node(container) {}
+    TaskNode *m_node = nullptr;
+    friend class Condition;
+};
+
+class QTCREATOR_UTILS_EXPORT Condition
+{
+public:
+    Condition();
+    ConditionActivator &operator*() const noexcept { return *activator(); }
+    ConditionActivator *operator->() const noexcept { return activator(); }
+    ConditionActivator *activator() const;
+
+private:
+    int createActivator(TaskNode *node) const;
+    void deleteActivator(int id) const;
+    void activateActivator(int id) const;
+
+    friend bool operator==(const Condition &first, const Condition &second)
+    { return first.m_conditionData == second.m_conditionData; }
+
+    friend bool operator!=(const Condition &first, const Condition &second)
+    { return first.m_conditionData != second.m_conditionData; }
+
+    friend size_t qHash(const Condition &storage, uint seed = 0)
+    { return size_t(storage.m_conditionData.get()) ^ seed; }
+
+    struct ConditionData {
+        ~ConditionData();
+        QHash<int, ConditionActivator *> m_activatorHash = {};
+        int m_activeActivator = 0; // 0 means no active activator
+        int m_activatorCounter = 0;
+    };
+    QSharedPointer<ConditionData> m_conditionData;
+    friend TaskTreePrivate;
+    friend ExecutionContextActivator;
+};
+
+// WorkflowPolicy:
 // 1. When all children finished with done -> report done, otherwise:
 //    a) Report error on first error and stop executing other children (including their subtree)
-//    b) On first error - wait for all children to be finished and report error afterwards
+//    b) On first error - continue executing all children and report error afterwards
 // 2. When all children finished with error -> report error, otherwise:
 //    a) Report done on first done and stop executing other children (including their subtree)
-//    b) On first done - wait for all children to be finished and report done afterwards
+//    b) On first done - continue executing all children and report done afterwards
+// 3. Always run all children, ignore their result and report done afterwards
 
 enum class WorkflowPolicy {
-    StopOnError,     // 1a - Will report error on any child error, otherwise done (if all children were done)
-    ContinueOnError, // 1b - the same. When no children it reports done.
-    StopOnDone,      // 2a - Will report done on any child done, otherwise error (if all children were error)
-    ContinueOnDone,  // 2b - the same. When no children it reports done. (?)
-    Optional         // Returns always done after all children finished
+    StopOnError,     // 1a - Reports error on first child error, otherwise done (if all children were done)
+    ContinueOnError, // 1b - The same, but children execution continues. When no children it reports done.
+    StopOnDone,      // 2a - Reports done on first child done, otherwise error (if all children were error)
+    ContinueOnDone,  // 2b - The same, but children execution continues. When no children it reports done. (?)
+    Optional         // 3 - Always reports done after all children finished
 };
 
 enum class TaskAction
@@ -141,11 +188,13 @@ public:
     TaskHandler taskHandler() const { return m_taskHandler; }
     GroupHandler groupHandler() const { return m_groupHandler; }
     QList<TaskItem> children() const { return m_children; }
+    std::optional<Condition> condition() const { return m_condition; }
     QList<TreeStorageBase> storageList() const { return m_storageList; }
 
 protected:
     enum class Type {
         Group,
+        Condition,
         Storage,
         Limit,
         Policy,
@@ -166,6 +215,9 @@ protected:
     TaskItem(const GroupHandler &handler)
         : m_type(Type::GroupHandler)
         , m_groupHandler(handler) {}
+    TaskItem(const Condition &condition)
+        : m_type(Type::Condition)
+        , m_condition{condition} {}
     TaskItem(const TreeStorageBase &storage)
         : m_type(Type::Storage)
         , m_storageList{storage} {}
@@ -177,6 +229,7 @@ private:
     WorkflowPolicy m_workflowPolicy = WorkflowPolicy::StopOnError;
     TaskHandler m_taskHandler;
     GroupHandler m_groupHandler;
+    std::optional<Condition> m_condition;
     QList<TreeStorageBase> m_storageList;
     QList<TaskItem> m_children;
 };
@@ -192,6 +245,12 @@ class QTCREATOR_UTILS_EXPORT Storage : public TaskItem
 {
 public:
     Storage(const TreeStorageBase &storage) : TaskItem(storage) { }
+};
+
+class QTCREATOR_UTILS_EXPORT WaitFor : public TaskItem
+{
+public:
+    WaitFor(const Condition &condition) : TaskItem(condition) { }
 };
 
 class QTCREATOR_UTILS_EXPORT ParallelLimit : public TaskItem
@@ -319,7 +378,7 @@ private:
 
 class TaskTreePrivate;
 
-class QTCREATOR_UTILS_EXPORT TaskTree : public QObject
+class QTCREATOR_UTILS_EXPORT TaskTree final : public QObject
 {
     Q_OBJECT
 

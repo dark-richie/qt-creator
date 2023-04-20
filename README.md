@@ -56,6 +56,32 @@ Prerequisites:
 
 The used toolchain has to be compatible with the one Qt was compiled with.
 
+### Getting Qt Creator from Git
+
+The official mirror of the Qt Creator repository is located at
+https://code.qt.io/cgit/qt-creator/qt-creator.git/. Run
+
+    git clone https://code.qt.io/qt-creator/qt-creator.git
+
+to clone the Qt Creator sources from there. This creates a checkout of the
+Qt Creator sources in the `qt-creator/` directory of your current working
+directory.
+
+Qt Creator relies on some submodules, like
+[litehtml](https://github.com/litehtml) for displaying documentation. Get these
+submodules with
+
+    cd qt-creator  # switch to the sources, if you just ran git clone
+    git submodule update --init --recursive
+
+Note the `--recursive` in this command, which fetches also submodules within
+submodules, and is necessary to get all the sources.
+
+The git history contains some coding style cleanup commits, which you might
+want to exclude for example when running `git blame`. Do this by running
+
+    git config blame.ignoreRevsFile .gitignore-blame
+
 ### Linux and macOS
 
 These instructions assume that Ninja is installed and in the `PATH`, Qt Creator
@@ -721,3 +747,123 @@ SQLite (https://www.sqlite.org) is in the Public Domain.
   public domain worldwide. This software is distributed without any warranty.
 
   http://creativecommons.org/publicdomain/zero/1.0/
+
+### WinPty
+
+  Implementation of a pseudo terminal for Windows.
+
+  https://github.com/rprichard/winpty
+
+  The MIT License (MIT)
+
+  Copyright (c) 2011-2016 Ryan Prichard
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to
+  deal in the Software without restriction, including without limitation the
+  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+  sell copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+  IN THE SOFTWARE.
+
+
+### ptyqt
+
+  Pty-Qt is small library for access to console applications by pseudo-terminal interface on Mac,
+  Linux and Windows. On Mac and Linux it uses standard PseudoTerminal API and on Windows it uses
+  WinPty(prefer) or ConPty.
+
+  https://github.com/kafeg/ptyqt
+
+  MIT License
+
+  Copyright (c) 2019 Vitaly Petrov, v31337@gmail.com
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+### libvterm
+
+  An abstract C99 library which implements a VT220 or xterm-like terminal emulator.
+  It doesn't use any particular graphics toolkit or output system, instead it invokes callback
+  function pointers that its embedding program should provide it to draw on its behalf.
+  It avoids calling malloc() during normal running state, allowing it to be used in embedded kernel
+  situations.
+
+  https://www.leonerd.org.uk/code/libvterm/
+
+  The MIT License
+
+  Copyright (c) 2008 Paul Evans <leonerd@leonerd.org.uk>
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+
+### terminal/shellintegrations
+
+  The Terminal plugin uses scripts to integrate with the shell. The scripts are
+  located in the Qt Creator source tree in src/plugins/terminal/shellintegrations.
+
+  https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib/terminal/browser/media
+
+  MIT License
+
+  Copyright (c) 2015 - present Microsoft Corporation
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.

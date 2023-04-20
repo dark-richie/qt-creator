@@ -196,7 +196,7 @@ HeaderPaths GccToolChain::gccHeaderPaths(const FilePath &gcc,
                 }
 
                 const FilePath headerPath
-                    = FilePath::fromString(QString::fromUtf8(line)).onDevice(gcc).canonicalPath();
+                    = gcc.withNewPath(QString::fromUtf8(line)).canonicalPath();
 
                 if (!headerPath.isEmpty())
                     builtInHeaderPaths.append({headerPath, thisHeaderKind});
@@ -569,7 +569,7 @@ WarningFlags GccToolChain::warningFlags(const QStringList &cflags) const
     return flags;
 }
 
-QStringList GccToolChain::includedFiles(const QStringList &flags, const QString &directoryPath) const
+FilePaths GccToolChain::includedFiles(const QStringList &flags, const FilePath &directoryPath) const
 {
     return ToolChain::includedFiles("-include", flags, directoryPath, PossiblyConcatenatedFlag::No);
 }
@@ -1040,10 +1040,9 @@ GccToolChainFactory::GccToolChainFactory()
 Toolchains GccToolChainFactory::autoDetect(const ToolchainDetector &detector) const
 {
     // GCC is almost never what you want on macOS, but it is by default found in /usr/bin
-    if (HostOsInfo::isMacHost()
-            && (!detector.device || detector.device->type() == Constants::DESKTOP_DEVICE_TYPE)) {
+    if (HostOsInfo::isMacHost() && detector.device->type() == Constants::DESKTOP_DEVICE_TYPE)
         return {};
-    }
+
     Toolchains tcs;
     static const auto tcChecker = [](const ToolChain *tc) {
         return tc->targetAbi().osFlavor() != Abi::WindowsMSysFlavor
@@ -1086,7 +1085,7 @@ static FilePaths findCompilerCandidates(const ToolchainDetector &detector,
 {
     const IDevice::ConstPtr device = detector.device;
     const QFileInfo fi(compilerName);
-    if (device.isNull() && fi.isAbsolute() && fi.isFile())
+    if (device->type() == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE && fi.isAbsolute() && fi.isFile())
         return {FilePath::fromString(compilerName)};
 
     QStringList nameFilters(compilerName);
@@ -1385,8 +1384,10 @@ void GccToolChainConfigWidget::setFromToolchain()
     QSignalBlocker blocker(this);
     auto tc = static_cast<GccToolChain *>(toolChain());
     m_compilerCommand->setFilePath(tc->compilerCommand());
-    m_platformCodeGenFlagsLineEdit->setText(ProcessArgs::joinArgs(tc->platformCodeGenFlags()));
-    m_platformLinkerFlagsLineEdit->setText(ProcessArgs::joinArgs(tc->platformLinkerFlags()));
+    m_platformCodeGenFlagsLineEdit->setText(ProcessArgs::joinArgs(tc->platformCodeGenFlags(),
+                                                                  HostOsInfo::hostOs()));
+    m_platformLinkerFlagsLineEdit->setText(ProcessArgs::joinArgs(tc->platformLinkerFlags(),
+                                                                 HostOsInfo::hostOs()));
     if (m_abiWidget) {
         m_abiWidget->setAbis(tc->supportedAbis(), tc->targetAbi());
         if (!m_isReadOnly && !m_compilerCommand->filePath().toString().isEmpty())

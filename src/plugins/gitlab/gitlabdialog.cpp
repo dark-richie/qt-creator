@@ -9,7 +9,7 @@
 #include "gitlabprojectsettings.h"
 #include "gitlabtr.h"
 
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <texteditor/fontsettings.h>
 #include <texteditor/texteditorsettings.h>
@@ -188,7 +188,7 @@ void GitLabDialog::requestMainViewUpdate()
 
     bool linked = false;
     m_currentServerId = Id();
-    if (auto project = ProjectExplorer::SessionManager::startupProject()) {
+    if (auto project = ProjectExplorer::ProjectManager::startupProject()) {
         GitLabProjectSettings *projSettings = GitLabPlugin::projectSettings(project);
         if (projSettings->isLinked()) {
             m_currentServerId = projSettings->currentServer();
@@ -338,7 +338,7 @@ void GitLabDialog::handleProjects(const Projects &projects)
     // TODO use a real model / delegate..?
     listModel->setDataAccessor([](Project *data, int /*column*/, int role) -> QVariant {
         if (role == Qt::DisplayRole)
-            return QString(data->displayName + " (" + data->visibility + ')');
+            return data->displayName;
         if (role == Qt::UserRole)
             return QVariant::fromValue(*data);
         return QVariant();

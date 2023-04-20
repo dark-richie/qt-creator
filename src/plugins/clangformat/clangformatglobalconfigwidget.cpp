@@ -9,6 +9,7 @@
 #include "clangformatutils.h"
 
 #include <projectexplorer/project.h>
+#include <texteditor/icodestylepreferences.h>
 
 #include <utils/layoutbuilder.h>
 
@@ -24,10 +25,11 @@ using namespace Utils;
 
 namespace ClangFormat {
 
-ClangFormatGlobalConfigWidget::ClangFormatGlobalConfigWidget(ProjectExplorer::Project *project,
-                                                             QWidget *parent)
+ClangFormatGlobalConfigWidget::ClangFormatGlobalConfigWidget(
+    TextEditor::ICodeStylePreferences *codeStyle, ProjectExplorer::Project *project, QWidget *parent)
     : CppCodeStyleWidget(parent)
     , m_project(project)
+    , m_codeStyle(codeStyle)
 {
     resize(489, 305);
 
@@ -36,7 +38,7 @@ ClangFormatGlobalConfigWidget::ClangFormatGlobalConfigWidget(ProjectExplorer::Pr
     m_indentingOrFormatting = new QComboBox(this);
     m_formatWhileTyping = new QCheckBox(Tr::tr("Format while typing"));
     m_formatOnSave = new QCheckBox(Tr::tr("Format edited code on file save"));
-    m_overrideDefault = new QCheckBox(Tr::tr("Override Clang Format configuration file"));
+    m_overrideDefault = new QCheckBox(Tr::tr("Override .clang-format file"));
     m_useGlobalSettings = new QCheckBox(Tr::tr("Use global settings"));
     m_useGlobalSettings->hide();
 
@@ -160,14 +162,30 @@ void ClangFormatGlobalConfigWidget::initOverrideCheckBox()
     connect(m_indentingOrFormatting, &QComboBox::currentIndexChanged,
             this, setEnableOverrideCheckBox);
 
-    m_overrideDefault->setToolTip(
-        Tr::tr("Override Clang Format configuration file with the chosen configuration."));
+    m_overrideDefault->setToolTip(Tr::tr(
+        "When this option is enabled, ClangFormat will use a\n"
+        "user-specified configuration from the widget below,\n"
+        "instead of the project .clang-format file. You can\n"
+        "customize the formatting options for your code by\n"
+        "adjusting the settings in the widget. Note that any\n"
+        "changes made there will only affect the current\n"
+        "configuration, and will not modify the project\n"
+        ".clang-format file."));
 
     m_overrideDefault->setChecked(getProjectOverriddenSettings(m_project));
+    m_codeStyle->currentPreferences()->setTemporarilyReadOnly(!m_overrideDefault->isChecked());
 
     connect(m_overrideDefault, &QCheckBox::toggled, this, [this](bool checked) {
         if (m_project)
             m_project->setNamedSettings(Constants::OVERRIDE_FILE_ID, checked);
+        else {
+            m_codeStyle->currentPreferences()->setTemporarilyReadOnly(!checked);
+            emit m_codeStyle->currentPreferencesChanged(m_codeStyle->currentPreferences());
+        }
+    });
+
+    connect(m_codeStyle, &TextEditor::ICodeStylePreferences::currentPreferencesChanged, this, [this] {
+        m_codeStyle->currentPreferences()->setTemporarilyReadOnly(!m_overrideDefault->isChecked());
     });
 }
 

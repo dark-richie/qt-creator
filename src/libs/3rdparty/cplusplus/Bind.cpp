@@ -933,6 +933,11 @@ bool Bind::visit(ParameterDeclarationClauseAST *ast)
     return false;
 }
 
+bool Bind::visit(RequiresExpressionAST *)
+{
+    return false;
+}
+
 void Bind::parameterDeclarationClause(ParameterDeclarationClauseAST *ast, int lparen_token, Function *fun)
 {
     if (! ast)
@@ -2524,6 +2529,11 @@ bool Bind::visit(TemplateTypeParameterAST *ast)
     ast->symbol = arg;
     _scope->addMember(arg);
 
+    return false;
+}
+
+bool Bind::visit(TypeConstraintAST *)
+{
     return false;
 }
 

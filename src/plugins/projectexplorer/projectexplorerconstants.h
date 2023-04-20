@@ -132,6 +132,10 @@ const char BUILDSTEPS_CLEAN[] = "ProjectExplorer.BuildSteps.Clean";
 const char BUILDSTEPS_BUILD[] = "ProjectExplorer.BuildSteps.Build";
 const char BUILDSTEPS_DEPLOY[] = "ProjectExplorer.BuildSteps.Deploy";
 
+const char COPY_FILE_STEP[] = "ProjectExplorer.CopyFileStep";
+const char COPY_DIRECTORY_STEP[] = "ProjectExplorer.CopyDirectoryStep";
+const char DEVICE_CHECK_STEP[] =  "ProjectExplorer.DeviceCheckBuildStep";
+
 // Language
 
 // Keep these short: These constants are exposed to the MacroExplorer!

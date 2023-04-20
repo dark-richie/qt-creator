@@ -65,9 +65,9 @@ public:
     void changeMemory(MemoryAgent *, quint64 addr, const QByteArray &data) override;
 
     void reloadModules() override;
-    void loadSymbols(const QString &moduleName) override;
+    void loadSymbols(const Utils::FilePath &moduleName) override;
     void loadAllSymbols() override;
-    void requestModuleSymbols(const QString &moduleName) override;
+    void requestModuleSymbols(const Utils::FilePath &moduleName) override;
 
     void reloadRegisters() override;
     void reloadSourceFiles() override;
@@ -137,6 +137,7 @@ private:
     void postResolveSymbol(const QString &module, const QString &function,
                            DisassemblerAgent *agent);
     void showScriptMessages(const QString &message) const;
+    void showScriptMessages(const GdbMi &message) const;
     void handleInitialSessionIdle();
     // Builtin commands
     void handleStackTrace(const DebuggerResponse &);

@@ -9,12 +9,10 @@
 #include "clangdcompletion.h"
 #include "clangdfindreferences.h"
 #include "clangdfollowsymbol.h"
-#include "clangdlocatorfilters.h"
 #include "clangdmemoryusagewidget.h"
 #include "clangdquickfixes.h"
 #include "clangdsemantichighlighting.h"
 #include "clangdswitchdecldef.h"
-#include "clangmodelmanagersupport.h"
 #include "clangtextmark.h"
 #include "clangutils.h"
 #include "tasktimers.h"
@@ -49,7 +47,7 @@
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projecttree.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/taskhub.h>
 #include <texteditor/codeassist/assistinterface.h>
@@ -58,10 +56,10 @@
 #include <texteditor/codeassist/textdocumentmanipulatorinterface.h>
 #include <texteditor/texteditor.h>
 #include <utils/algorithm.h>
+#include <utils/asynctask.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/itemviews.h>
-#include <utils/runextensions.h>
 #include <utils/theme/theme.h>
 #include <utils/utilsicons.h>
 
@@ -215,7 +213,7 @@ static BaseClientInterface *clientInterface(Project *project, const Utils::FileP
     if (settings.clangdVersion() >= QVersionNumber(16))
         cmd.addArg("--rename-file-limit=0");
     if (!jsonDbDir.isEmpty())
-        cmd.addArg("--compile-commands-dir=" + jsonDbDir.onDevice(clangdExePath).path());
+        cmd.addArg("--compile-commands-dir=" + clangdExePath.withNewMappedPath(jsonDbDir).path());
     if (clangdLogServer().isDebugEnabled())
         cmd.addArgs({"--log=verbose", "--pretty"});
     cmd.addArg("--use-dirty-headers");
@@ -387,14 +385,14 @@ ClangdClient::ClangdClient(Project *project, const Utils::FilePath &jsonDbDir, c
 {
     setName(Tr::tr("clangd"));
     LanguageFilter langFilter;
-    langFilter.mimeTypes = QStringList{"text/x-chdr", "text/x-csrc",
-            "text/x-c++hdr", "text/x-c++src", "text/x-objc++src", "text/x-objcsrc"};
+    using namespace CppEditor::Constants;
+    langFilter.mimeTypes = QStringList{C_HEADER_MIMETYPE, C_SOURCE_MIMETYPE,
+            CPP_HEADER_MIMETYPE, CPP_SOURCE_MIMETYPE, OBJECTIVE_CPP_SOURCE_MIMETYPE,
+            OBJECTIVE_C_SOURCE_MIMETYPE, CUDA_SOURCE_MIMETYPE};
     setSupportedLanguage(langFilter);
     setActivateDocumentAutomatically(true);
     setCompletionAssistProvider(new ClangdCompletionAssistProvider(this));
     setQuickFixAssistProvider(new ClangdQuickFixProvider(this));
-    symbolSupport().setDefaultRenamingSymbolMapper(
-                [](const QString &oldSymbol) { return oldSymbol + "_new"; });
     symbolSupport().setLimitRenamingToProjects(true);
     if (!project) {
         QJsonObject initOptions;
@@ -472,12 +470,7 @@ ClangdClient::ClangdClient(Project *project, const Utils::FilePath &jsonDbDir, c
         }
     });
 
-    connect(this, &Client::initialized, this, [this] {
-        auto currentDocumentFilter = static_cast<ClangdCurrentDocumentFilter *>(
-            CppEditor::CppModelManager::instance()->currentDocumentFilter());
-        currentDocumentFilter->updateCurrentClient();
-        d->openedExtraFiles.clear();
-    });
+    connect(this, &Client::initialized, this, [this] { d->openedExtraFiles.clear(); });
 
     start();
 }
@@ -530,21 +523,56 @@ void ClangdClient::closeExtraFile(const Utils::FilePath &filePath)
                 SendDocUpdates::Ignore);
 }
 
-void ClangdClient::findUsages(TextDocument *document, const QTextCursor &cursor,
+void ClangdClient::findUsages(const CppEditor::CursorInEditor &cursor,
                               const std::optional<QString> &replacement,
                               const std::function<void()> &renameCallback)
 {
     // Quick check: Are we even on anything searchable?
-    const QTextCursor adjustedCursor = d->adjustedCursor(cursor, document);
+    const QTextCursor adjustedCursor = d->adjustedCursor(cursor.cursor(), cursor.textDocument());
     const QString searchTerm = d->searchTermFromCursor(adjustedCursor);
     if (searchTerm.isEmpty())
         return;
 
     if (replacement && versionNumber() >= QVersionNumber(16)
-            && Utils::qtcEnvironmentVariable("QTC_CLANGD_RENAMING") != "0") {
-        symbolSupport().renameSymbol(document, adjustedCursor, *replacement, renameCallback,
-                                     CppEditor::preferLowerCaseFileNames());
-        return;
+        && Utils::qtcEnvironmentVariable("QTC_CLANGD_RENAMING") != "0") {
+
+        // If we have up-to-date highlighting data, we can prevent giving clangd
+        // macros or namespaces to rename, which it can't cope with.
+        // TODO: Fix this upstream for macros; see https://github.com/clangd/clangd/issues/729.
+        bool useClangdForRenaming = true;
+        const auto highlightingData = d->highlightingData.constFind(cursor.textDocument());
+        if (highlightingData != d->highlightingData.end()
+            && highlightingData->previousTokens.second == documentVersion(cursor.filePath())) {
+            const auto candidate = std::lower_bound(
+                highlightingData->previousTokens.first.cbegin(),
+                highlightingData->previousTokens.first.cend(),
+                cursor.cursor().position(),
+                [&cursor](const ExpandedSemanticToken &token, int pos) {
+                    const int startPos = Utils::Text::positionInText(
+                        cursor.textDocument()->document(), token.line, token.column);
+                    return startPos + token.length < pos;
+                });
+            if (candidate != highlightingData->previousTokens.first.cend()) {
+                const int startPos = Utils::Text::positionInText(
+                    cursor.textDocument()->document(), candidate->line, candidate->column);
+                if (startPos <= cursor.cursor().position()) {
+                    if (candidate->type == "namespace") {
+                        CppEditor::CppModelManager::globalRename(
+                            cursor, *replacement, renameCallback,
+                            CppEditor::CppModelManager::Backend::Builtin);
+                        return;
+                    }
+                    if (candidate->type == "macro")
+                        useClangdForRenaming = false;
+                }
+            }
+        }
+
+        if (useClangdForRenaming) {
+            symbolSupport().renameSymbol(cursor.textDocument(), adjustedCursor, *replacement,
+                                         renameCallback, CppEditor::preferLowerCaseFileNames());
+            return;
+        }
     }
 
     const bool categorize = CppEditor::codeModelSettings()->categorizeFindReferences();
@@ -553,14 +581,15 @@ void ClangdClient::findUsages(TextDocument *document, const QTextCursor &cursor,
     if (searchTerm != "operator" && Utils::allOf(searchTerm, [](const QChar &c) {
             return c.isLetterOrNumber() || c == '_';
     })) {
-        d->findUsages(document, adjustedCursor, searchTerm, replacement, renameCallback, categorize);
+        d->findUsages(cursor.textDocument(), adjustedCursor, searchTerm, replacement,
+                      renameCallback, categorize);
         return;
     }
 
     // Otherwise get the proper spelling of the search term from clang, so we can put it into the
     // search widget.
-    const auto symbolInfoHandler = [this, doc = QPointer(document), adjustedCursor, replacement,
-                                    renameCallback, categorize]
+    const auto symbolInfoHandler = [this, doc = QPointer(cursor.textDocument()), adjustedCursor,
+                                    replacement, renameCallback, categorize]
             (const QString &name, const QString &, const MessageId &) {
         if (!doc)
             return;
@@ -568,7 +597,8 @@ void ClangdClient::findUsages(TextDocument *document, const QTextCursor &cursor,
             return;
         d->findUsages(doc.data(), adjustedCursor, name, replacement, renameCallback, categorize);
     };
-    requestSymbolInfo(document->filePath(), Range(adjustedCursor).start(), symbolInfoHandler);
+    requestSymbolInfo(cursor.textDocument()->filePath(), Range(adjustedCursor).start(),
+                      symbolInfoHandler);
 }
 
 void ClangdClient::checkUnused(const Utils::Link &link, Core::SearchResult *search,
@@ -701,7 +731,7 @@ bool ClangdClient::fileBelongsToProject(const Utils::FilePath &filePath) const
 {
     if (CppEditor::ClangdSettings::instance().granularity()
             == CppEditor::ClangdSettings::Granularity::Session) {
-        return SessionManager::projectForFile(filePath);
+        return ProjectManager::projectForFile(filePath);
     }
     return Client::fileBelongsToProject(filePath);
 }
@@ -1060,9 +1090,8 @@ void ClangdClient::gatherHelpItemForTooltip(const HoverRequest::Response &hoverR
                 QString cleanString = markupString;
                 cleanString.remove('`');
                 const QStringList lines = cleanString.trimmed().split('\n');
-                if (!lines.isEmpty()) {
-                    const auto markupFilePath = Utils::FilePath::fromUserInput(
-                        lines.last().simplified());
+                for (const QString &line : lines) {
+                    const auto markupFilePath = Utils::FilePath::fromUserInput(line.simplified());
                     if (markupFilePath.exists()) {
                         d->setHelpItemForTooltip(hoverResponse.id(),
                                                  filePath,
@@ -1469,7 +1498,7 @@ void ClangdClient::Private::handleSemanticTokens(TextDocument *doc,
                              clangdVersion = q->versionNumber(),
                              this] {
             try {
-                return Utils::runAsync(doSemanticHighlighting, filePath, tokens, text, ast, doc,
+                return Utils::asyncRun(doSemanticHighlighting, filePath, tokens, text, ast, doc,
                                        rev, clangdVersion, highlightingTimer);
             } catch (const std::exception &e) {
                 qWarning() << "caught" << e.what() << "in main highlighting thread";

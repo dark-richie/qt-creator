@@ -1,4 +1,4 @@
-find_package(Qt5 COMPONENTS SvgWidgets QUIET)
+find_package(Qt6 COMPONENTS SvgWidgets QUIET)
 if (TARGET Qt::SvgWidgets)
   set(SVG_WIDGETS Qt::SvgWidgets)
 endif()
@@ -13,6 +13,7 @@ add_qtc_plugin(ImageViewer
     imageviewerconstants.h
     imageviewerfile.cpp imageviewerfile.h
     imageviewerplugin.cpp imageviewerplugin.h
+    imageviewertr.h
     multiexportdialog.cpp multiexportdialog.h
   EXPLICIT_MOC imageviewer.h
 )

@@ -19,7 +19,7 @@
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/toolchainmanager.h>
 
 #include <debugger/debuggeritemmanager.h>
@@ -306,7 +306,7 @@ void AndroidConfig::parseDependenciesJson()
 
     auto fillQtVersionsRange = [](const QString &shortVersion) {
         QList<QVersionNumber> versions;
-        const QRegularExpression re(R"(([0-9]\.[0-9]+\.)\[([0-9]+)\-([0-9]+)\])");
+        static const QRegularExpression re(R"(([0-9]\.[0-9]+\.)\[([0-9]+)\-([0-9]+)\])");
         QRegularExpressionMatch match = re.match(shortVersion);
         if (match.hasMatch() && match.lastCapturedIndex() == 3)
             for (int i = match.captured(2).toInt(); i <= match.captured(3).toInt(); ++i)
@@ -432,8 +432,12 @@ QStringList AndroidConfig::apiLevelNamesFor(const SdkPlatformList &platforms)
 
 QString AndroidConfig::apiLevelNameFor(const SdkPlatform *platform)
 {
-    return platform && platform->apiLevel() > 0 ?
-                QString("android-%1").arg(platform->apiLevel()) : "";
+    if (platform && platform->apiLevel() > 0) {
+        QString sdkStylePath = platform->sdkStylePath();
+        return sdkStylePath.remove("platforms;");
+    }
+
+    return {};
 }
 
 FilePath AndroidConfig::adbToolPath() const
@@ -892,7 +896,7 @@ QVersionNumber AndroidConfig::ndkVersion(const FilePath &ndkPath)
             // r6a
             // r10e (64 bit)
             QString content = QString::fromUtf8(reader.data());
-            QRegularExpression re("(r)(?<major>[0-9]{1,2})(?<minor>[a-z]{1,1})");
+            static const QRegularExpression re("(r)(?<major>[0-9]{1,2})(?<minor>[a-z]{1,1})");
             QRegularExpressionMatch match = re.match(content);
             if (match.hasMatch()) {
                 QString major = match.captured("major");
@@ -1169,7 +1173,7 @@ void AndroidConfigurations::removeUnusedDebuggers()
             uniqueNdks.append(ndkLocation);
     }
 
-    uniqueNdks.append(FileUtils::toFilePathList(currentConfig().getCustomNdkList()).toVector());
+    uniqueNdks.append(FileUtils::toFilePathList(currentConfig().getCustomNdkList()));
 
     const QList<Debugger::DebuggerItem> allDebuggers = Debugger::DebuggerItemManager::debuggers();
     for (const Debugger::DebuggerItem &debugger : allDebuggers) {

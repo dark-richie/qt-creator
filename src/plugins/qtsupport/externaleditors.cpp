@@ -3,11 +3,13 @@
 
 #include "externaleditors.h"
 
+#include <coreplugin/coreplugintr.h>
+
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
-#include <projectexplorer/session.h>
 
 #include <qtsupport/qtkitinformation.h>
 
@@ -179,7 +181,7 @@ static bool getEditorLaunchData(const CommandForQtVersion &commandForQtVersion,
     // As fallback check PATH
     data->workingDirectory.clear();
     QVector<QtSupport::QtVersion *> qtVersionsToCheck; // deduplicated after being filled
-    if (const Project *project = SessionManager::projectForFile(filePath)) {
+    if (const Project *project = ProjectManager::projectForFile(filePath)) {
         data->workingDirectory = project->projectDirectory();
         // active kit
         if (const Target *target = project->activeTarget()) {
@@ -254,7 +256,7 @@ static void processTerminated(const QString &binary)
 DesignerExternalEditor::DesignerExternalEditor()
 {
     setId("Qt.Designer");
-    setDisplayName(QCoreApplication::translate("OpenWith::Editors", "Qt Designer"));
+    setDisplayName(::Core::Tr::tr("Qt Designer"));
     setMimeTypes({ProjectExplorer::Constants::FORM_MIMETYPE});
 }
 
@@ -327,7 +329,7 @@ static QString linguistBinary(const QtSupport::QtVersion *qtVersion)
 LinguistEditor::LinguistEditor()
 {
     setId("Qt.Linguist");
-    setDisplayName(QCoreApplication::translate("OpenWith::Editors", "Qt Linguist"));
+    setDisplayName(::Core::Tr::tr("Qt Linguist"));
     setMimeTypes({ProjectExplorer::Constants::LINGUIST_MIMETYPE});
 }
 

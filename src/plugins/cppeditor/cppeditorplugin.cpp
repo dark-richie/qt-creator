@@ -58,6 +58,7 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/coreconstants.h>
+#include <coreplugin/coreplugintr.h>
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditorfactory.h>
@@ -84,6 +85,7 @@
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 #include <utils/fsengine/fileiconprovider.h>
+#include <utils/futuresynchronizer.h>
 #include <utils/hostosinfo.h>
 #include <utils/macroexpander.h>
 #include <utils/mimeutils.h>
@@ -126,7 +128,7 @@ public:
     CppEditorFactory()
     {
         setId(Constants::CPPEDITOR_ID);
-        setDisplayName(QCoreApplication::translate("OpenWith::Editors","C++ Editor"));
+        setDisplayName(::Core::Tr::tr("C++ Editor"));
         addMimeType(Constants::C_SOURCE_MIMETYPE);
         addMimeType(Constants::C_HEADER_MIMETYPE);
         addMimeType(Constants::CPP_SOURCE_MIMETYPE);
@@ -197,6 +199,7 @@ public:
     ClangdSettingsPage *m_clangdSettingsPage = nullptr;
     CppCodeStyleSettingsPage m_cppCodeStyleSettingsPage;
     CppProjectUpdaterFactory m_cppProjectUpdaterFactory;
+    FutureSynchronizer m_futureSynchronizer;
 };
 
 static CppEditorPlugin *m_instance = nullptr;
@@ -430,6 +433,10 @@ void CppEditorPlugin::initialize()
     contextMenu->addAction(cmd, Constants::G_CONTEXT_FIRST);
     cppToolsMenu->addAction(cmd);
 
+    cmd = ActionManager::command(TextEditor::Constants::OPEN_CALL_HIERARCHY);
+    contextMenu->addAction(cmd, Constants::G_CONTEXT_FIRST);
+    cppToolsMenu->addAction(cmd);
+
     // Refactoring sub-menu
     Command *sep = contextMenu->addSeparator();
     sep->action()->setObjectName(QLatin1String(Constants::M_REFACTORING_MENU_INSERTION_POINT));
@@ -624,6 +631,12 @@ QString CppEditorPlugin::licenseTemplate()
 bool CppEditorPlugin::usePragmaOnce()
 {
     return m_instance->d->m_fileSettings.headerPragmaOnce;
+}
+
+FutureSynchronizer *CppEditorPlugin::futureSynchronizer()
+{
+    QTC_ASSERT(m_instance, return nullptr);
+    return &m_instance->d->m_futureSynchronizer;
 }
 
 const QStringList &CppEditorPlugin::headerSearchPaths()

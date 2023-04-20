@@ -6,6 +6,8 @@
 #include "qtcassert.h"
 #include "stringutils.h"
 
+#include <QRegularExpression>
+
 #include <limits>
 
 /*! \class Utils::Port
@@ -31,27 +33,7 @@ quint16 Port::number() const
     QTC_ASSERT(isValid(), return -1); return quint16(m_port);
 }
 
-QList<Port> Port::parseFromSedOutput(const QByteArray &output)
-{
-    QList<Port> ports;
-    const QList<QByteArray> portStrings = output.split('\n');
-    for (const QByteArray &portString : portStrings) {
-        if (portString.size() != 4)
-            continue;
-        bool ok;
-        const Port port(portString.toInt(&ok, 16));
-        if (ok) {
-            if (!ports.contains(port))
-                ports << port;
-        } else {
-            qWarning("%s: Unexpected string '%s' is not a port.",
-                     Q_FUNC_INFO, portString.data());
-        }
-    }
-    return ports;
-}
-
-QList<Port> Port::parseFromNetstatOutput(const QByteArray &output)
+QList<Port> Port::parseFromCommandOutput(const QByteArray &output)
 {
     QList<Port> ports;
     const QList<QByteArray> lines = output.split('\n');

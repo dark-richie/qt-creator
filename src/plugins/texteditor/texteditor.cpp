@@ -820,7 +820,8 @@ public:
     QList<int> m_visualIndentCache;
     int m_visualIndentOffset = 0;
 
-    void insertSuggestion(const QString &suggestion, const QTextBlock &block);
+    void insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion);
+    void updateSuggestion();
     void clearCurrentSuggestion();
     QTextBlock m_suggestionBlock;
 };
@@ -1650,21 +1651,34 @@ void TextEditorWidgetPrivate::handleMoveBlockSelection(QTextCursor::MoveOperatio
     q->setMultiTextCursor(MultiTextCursor(cursors));
 }
 
-void TextEditorWidgetPrivate::insertSuggestion(const QString &suggestion, const QTextBlock &block)
+void TextEditorWidgetPrivate::insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion)
 {
     clearCurrentSuggestion();
-    m_suggestionBlock = block;
-    m_document->insertSuggestion(suggestion, block);
     auto cursor = q->textCursor();
-    cursor.setPosition(block.position());
-    cursor.movePosition(QTextCursor::EndOfBlock);
-    q->setTextCursor(cursor);
+    cursor.setPosition(suggestion->position());
+    m_suggestionBlock = cursor.block();
+    m_document->insertSuggestion(std::move(suggestion));
+}
+
+void TextEditorWidgetPrivate::updateSuggestion()
+{
+    if (!m_suggestionBlock.isValid())
+        return;
+    if (m_cursors.mainCursor().block() != m_suggestionBlock) {
+        clearCurrentSuggestion();
+    } else {
+        if (!TextDocumentLayout::updateSuggestion(m_suggestionBlock,
+                                                  m_cursors.mainCursor().position(),
+                                                  m_document->fontSettings())) {
+            clearCurrentSuggestion();
+        }
+    }
 }
 
 void TextEditorWidgetPrivate::clearCurrentSuggestion()
 {
     if (TextBlockUserData *userData = TextDocumentLayout::textUserData(m_suggestionBlock)) {
-        userData->clearReplacement();
+        userData->clearSuggestion();
         m_document->updateLayout();
     }
     m_suggestionBlock = QTextBlock();
@@ -1852,16 +1866,7 @@ TextEditorWidget *TextEditorWidget::fromEditor(const IEditor *editor)
 
 void TextEditorWidgetPrivate::editorContentsChange(int position, int charsRemoved, int charsAdded)
 {
-    if (m_suggestionBlock.isValid()) {
-        if (QTextDocument *replacementDocument = TextDocumentLayout::replacementDocument(
-                m_suggestionBlock)) {
-            if (replacementDocument->firstBlock().text().startsWith(m_suggestionBlock.text()))
-                TextDocumentLayout::updateReplacmentFormats(m_suggestionBlock,
-                                                            m_document->fontSettings());
-            else
-                clearCurrentSuggestion();
-        }
-    }
+    updateSuggestion();
 
     if (m_bracketsAnimator)
         m_bracketsAnimator->finish();
@@ -2343,6 +2348,11 @@ void TextEditorWidget::renameSymbolUnderCursor()
     emit requestRename(textCursor());
 }
 
+void TextEditorWidget::openCallHierarchy()
+{
+    emit requestCallHierarchy(textCursor());
+}
+
 void TextEditorWidget::abortAssist()
 {
     d->m_codeAssistant.destroyContext();
@@ -2523,7 +2533,7 @@ void TextEditorWidget::keyPressEvent(QKeyEvent *e)
 {
     ICore::restartTrimmer();
 
-    ExecuteOnDestruction eod([&]() { d->clearBlockSelection(); });
+    auto clearBlockSelectionGuard = qScopeGuard([&]() { d->clearBlockSelection(); });
 
     if (!isModifier(e) && mouseHidingEnabled())
         viewport()->setCursor(Qt::BlankCursor);
@@ -2566,6 +2576,21 @@ void TextEditorWidget::keyPressEvent(QKeyEvent *e)
     const bool ro = isReadOnly();
     const bool inOverwriteMode = overwriteMode();
     const bool hasMultipleCursors = cursor.hasMultipleCursors();
+
+    if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(d->m_suggestionBlock)) {
+        if (e->matches(QKeySequence::MoveToNextWord)) {
+            e->accept();
+            if (suggestion->applyWord(this))
+                d->clearCurrentSuggestion();
+            return;
+        } else if (e->modifiers() == Qt::NoModifier
+                   && (e->key() == Qt::Key_Tab || e->key() == Qt::Key_Backtab)) {
+            e->accept();
+            if (suggestion->apply())
+                d->clearCurrentSuggestion();
+            return;
+        }
+    }
 
     if (!ro
         && (e == QKeySequence::InsertParagraphSeparator
@@ -2679,14 +2704,6 @@ void TextEditorWidget::keyPressEvent(QKeyEvent *e)
     case Qt::Key_Tab:
     case Qt::Key_Backtab: {
         if (ro) break;
-        if (d->m_suggestionBlock.isValid()) {
-            QTextCursor cursor(d->m_suggestionBlock);
-            cursor.movePosition(QTextCursor::EndOfBlock);
-            cursor.insertText(TextDocumentLayout::replacement(d->m_suggestionBlock));
-            setTextCursor(cursor);
-            e->accept();
-            return;
-        }
         if (d->m_snippetOverlay->isVisible() && !d->m_snippetOverlay->isEmpty()) {
             d->snippetTabOrBacktab(e->key() == Qt::Key_Tab);
             e->accept();
@@ -2795,8 +2812,7 @@ void TextEditorWidget::keyPressEvent(QKeyEvent *e)
         }
 
         if (blockSelectionOperation != QTextCursor::NoMove) {
-            auto doNothing = [](){};
-            eod.reset(doNothing);
+            clearBlockSelectionGuard.dismiss();
             d->handleMoveBlockSelection(blockSelectionOperation);
         } else if (!d->cursorMoveKeyEvent(e)) {
             QTextCursor cursor = textCursor();
@@ -2884,13 +2900,13 @@ void TextEditorWidget::keyPressEvent(QKeyEvent *e)
         if (!autoText.isEmpty())
             cursor.setPosition(autoText.length() == 1 ? cursor.position() : cursor.anchor());
 
+        setTextCursor(cursor);
+
         if (doEditBlock) {
             cursor.endEditBlock();
             if (cursorWithinSnippet)
                 d->m_snippetOverlay->updateEquivalentSelections(textCursor());
         }
-
-        setTextCursor(cursor);
     }
 
     if (!ro && e->key() == Qt::Key_Delete && d->m_parenthesesMatchingEnabled)
@@ -3728,7 +3744,10 @@ bool TextEditorWidget::viewportEvent(QEvent *event)
         // Only handle tool tip for text cursor if mouse is within the block for the text cursor,
         // and not if the mouse is e.g. in the empty space behind a short line.
         if (line.isValid()) {
-            if (pos.x() <= blockBoundingGeometry(block).left() + line.naturalTextRect().right()) {
+            const QRectF blockGeometry = blockBoundingGeometry(block);
+            const int width = block == d->m_suggestionBlock ? blockGeometry.width()
+                                                            : line.naturalTextRect().right();
+            if (pos.x() <= blockGeometry.left() + width) {
                 d->processTooltipRequest(tc);
                 return true;
             } else if (d->processAnnotaionTooltipRequest(block, pos)) {
@@ -4051,7 +4070,13 @@ static TextMarks availableMarks(const TextMarks &marks,
 
 QRectF TextEditorWidgetPrivate::getLastLineLineRect(const QTextBlock &block)
 {
-    const QTextLayout *layout = block.layout();
+    QTextLayout *layout = nullptr;
+    if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(block))
+        layout = suggestion->document()->firstBlock().layout();
+    else
+        layout = block.layout();
+
+    QTC_ASSERT(layout, layout = block.layout());
     const int lineCount = layout->lineCount();
     if (lineCount < 1)
         return {};
@@ -4446,18 +4471,18 @@ void TextEditorWidgetPrivate::paintAdditionalVisualWhitespaces(PaintEventData &d
                              visualArrow);
         }
         if (!nextBlockIsValid) { // paint EOF symbol
-            if (m_suggestionBlock.isValid() && data.block == m_suggestionBlock) {
-                if (QTextDocument *replacement = TextDocumentLayout::replacementDocument(
-                        m_suggestionBlock)) {
-                    const QTextBlock lastReplacementBlock = replacement->lastBlock();
-                    for (QTextBlock block = replacement->firstBlock();
-                         block != lastReplacementBlock && block.isValid();
-                         block = block.next()) {
-                        top += replacement->documentLayout()->blockBoundingRect(block).height();
-                    }
-                    layout = lastReplacementBlock.layout();
-                    lineCount = layout->lineCount();
+            if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(data.block)) {
+                const QTextBlock lastReplacementBlock = suggestion->document()->lastBlock();
+                for (QTextBlock block = suggestion->document()->firstBlock();
+                     block != lastReplacementBlock && block.isValid();
+                     block = block.next()) {
+                    top += suggestion->document()
+                               ->documentLayout()
+                               ->blockBoundingRect(block)
+                               .height();
                 }
+                layout = lastReplacementBlock.layout();
+                lineCount = layout->lineCount();
             }
             QTextLine line = layout->lineAt(lineCount - 1);
             QRectF lineRect = line.naturalTextRect().translated(data.offset.x(), top);
@@ -4714,6 +4739,21 @@ void TextEditorWidgetPrivate::setupSelections(const PaintEventData &data,
                                               PaintEventBlockData &blockData) const
 {
     QVector<QTextLayout::FormatRange> prioritySelections;
+
+    int deltaPos = -1;
+    int delta = 0;
+
+    if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(data.block)) {
+        deltaPos = suggestion->currentPosition() - data.block.position();
+        const QString trailingText = data.block.text().mid(deltaPos);
+        if (!trailingText.isEmpty()) {
+            const int trailingIndex
+                = suggestion->document()->firstBlock().text().indexOf(trailingText, deltaPos);
+            if (trailingIndex >= 0)
+                delta = std::max(trailingIndex - deltaPos, 0);
+        }
+    }
+
     for (int i = 0; i < data.context.selections.size(); ++i) {
         const QAbstractTextDocumentLayout::Selection &range = data.context.selections.at(i);
         const int selStart = range.cursor.selectionStart() - blockData.position;
@@ -4723,6 +4763,22 @@ void TextEditorWidgetPrivate::setupSelections(const PaintEventData &data,
             QTextLayout::FormatRange o;
             o.start = selStart;
             o.length = selEnd - selStart;
+            o.format = range.format;
+            QTextLayout::FormatRange rest;
+            rest.start = -1;
+            if (deltaPos >= 0 && delta != 0) {
+                if (o.start >= deltaPos) {
+                    o.start += delta;
+                } else if (o.start + o.length > deltaPos) {
+                    // the format range starts before and ends after the position so we need to
+                    // split the format into before and after the suggestion format ranges
+                    rest.start = deltaPos + delta;
+                    rest.length = o.length - (deltaPos - o.start);
+                    rest.format = o.format;
+                    o.length = deltaPos - o.start;
+                }
+            }
+
             o.format = range.format;
             if (data.textCursor.hasSelection() && data.textCursor == range.cursor
                 && data.textCursor.anchor() == range.cursor.anchor()) {
@@ -4735,10 +4791,15 @@ void TextEditorWidgetPrivate::setupSelections(const PaintEventData &data,
                 || (o.format.foreground().style() == Qt::NoBrush
                 && o.format.underlineStyle() != QTextCharFormat::NoUnderline
                 && o.format.background() == Qt::NoBrush)) {
-                if (q->selectionVisible(data.block.blockNumber()))
+                if (q->selectionVisible(data.block.blockNumber())) {
                     prioritySelections.append(o);
+                    if (rest.start >= 0)
+                        prioritySelections.append(rest);
+                }
             } else {
                 blockData.selections.append(o);
+                if (rest.start >= 0)
+                    blockData.selections.append(rest);
             }
         }
     }
@@ -4849,6 +4910,7 @@ void TextEditorWidget::paintEvent(QPaintEvent *e)
         if (blockData.boundingRect.bottom() >= data.eventRect.top()
                 && blockData.boundingRect.top() <= data.eventRect.bottom()) {
 
+            data.documentLayout->ensureBlockLayout(data.block);
             d->setupBlockLayout(data, painter, blockData);
             blockData.position = data.block.position();
             blockData.length = data.block.length();
@@ -4933,15 +4995,23 @@ void TextEditorWidget::paintBlock(QPainter *painter,
                                   const QVector<QTextLayout::FormatRange> &selections,
                                   const QRect &clipRect) const
 {
-    if (QTextDocument *replacement = TextDocumentLayout::replacementDocument(block)) {
-        QTextBlock replacementBlock = replacement->firstBlock();
-        QPointF replacementOffset = offset;
-        replacementOffset.rx() += document()->documentMargin();
-        while (replacementBlock.isValid()) {
-            replacementBlock.layout()->draw(painter, replacementOffset, selections, clipRect);
-            replacementOffset.ry()
-                += replacement->documentLayout()->blockBoundingRect(replacementBlock).height();
-            replacementBlock = replacementBlock.next();
+    if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(block)) {
+        QTextBlock suggestionBlock = suggestion->document()->firstBlock();
+        QPointF suggestionOffset = offset;
+        suggestionOffset.rx() += document()->documentMargin();
+        while (suggestionBlock.isValid()) {
+            const QVector<QTextLayout::FormatRange> blockSelections
+                = suggestionBlock.blockNumber() == 0 ? selections
+                                                      : QVector<QTextLayout::FormatRange>{};
+            suggestionBlock.layout()->draw(painter,
+                                            suggestionOffset,
+                                            blockSelections,
+                                            clipRect);
+            suggestionOffset.ry() += suggestion->document()
+                                         ->documentLayout()
+                                         ->blockBoundingRect(suggestionBlock)
+                                         .height();
+            suggestionBlock = suggestionBlock.next();
         }
         return;
     }
@@ -5480,17 +5550,12 @@ void TextEditorWidget::slotCursorPositionChanged()
         if (EditorManager::currentEditor() && EditorManager::currentEditor()->widget() == this)
             EditorManager::setLastEditLocation(EditorManager::currentEditor());
     }
-    if (d->m_suggestionBlock.isValid()) {
-        if (textCursor().position()
-            != d->m_suggestionBlock.position() + d->m_suggestionBlock.length() - 1) {
-            d->clearCurrentSuggestion();
-        }
-    }
     MultiTextCursor cursor = multiTextCursor();
     cursor.replaceMainCursor(textCursor());
     setMultiTextCursor(cursor);
     d->updateCursorSelections();
     d->updateHighlights();
+    d->updateSuggestion();
 }
 
 void TextEditorWidgetPrivate::updateHighlights()
@@ -5926,18 +5991,30 @@ void TextEditorWidget::addHoverHandler(BaseHoverHandler *handler)
 
 void TextEditorWidget::removeHoverHandler(BaseHoverHandler *handler)
 {
-    d->m_hoverHandlers.removeAll(handler);
-    d->m_hoverHandlerRunner.handlerRemoved(handler);
+    if (d->m_hoverHandlers.removeAll(handler) > 0)
+        d->m_hoverHandlerRunner.handlerRemoved(handler);
 }
 
-void TextEditorWidget::insertSuggestion(const QString &suggestion)
+void TextEditorWidget::insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion)
 {
-    d->insertSuggestion(suggestion, textCursor().block());
+    d->insertSuggestion(std::move(suggestion));
 }
 
 void TextEditorWidget::clearSuggestion()
 {
     d->clearCurrentSuggestion();
+}
+
+TextSuggestion *TextEditorWidget::currentSuggestion() const
+{
+    if (d->m_suggestionBlock.isValid())
+        return TextDocumentLayout::suggestion(d->m_suggestionBlock);
+    return nullptr;
+}
+
+bool TextEditorWidget::suggestionVisible() const
+{
+    return currentSuggestion();
 }
 
 #ifdef WITH_TESTS
@@ -8163,6 +8240,11 @@ void TextEditorWidget::appendStandardContextMenuActions(QMenu *menu)
         if (!menu->actions().contains(findUsage))
             menu->addAction(findUsage);
     }
+    if (optionalActions() & TextEditorActionHandler::CallHierarchy) {
+        const auto callHierarchy = ActionManager::command(Constants::OPEN_CALL_HIERARCHY)->action();
+        if (!menu->actions().contains(callHierarchy))
+            menu->addAction(callHierarchy);
+    }
 
     menu->addSeparator();
     appendMenuActionsFromContext(menu, Constants::M_STANDARDCONTEXTMENU);
@@ -8239,11 +8321,14 @@ QAction * TextEditorWidget::insertExtraToolBarWidget(TextEditorWidget::Side side
         d->m_stretchAction->setVisible(false);
 
     if (side == Left) {
+        auto findLeftMostAction = [this](QAction *action) {
+            if (d->m_toolbarOutlineAction && action == d->m_toolbarOutlineAction)
+                return false;
+            return d->m_toolBar->widgetForAction(action) != nullptr;
+        };
         QAction *before = Utils::findOr(d->m_toolBar->actions(),
                                         d->m_fileEncodingLabelAction,
-                                        [this](QAction *action) {
-                                            return d->m_toolBar->widgetForAction(action) != nullptr;
-                                        });
+                                        findLeftMostAction);
         return d->m_toolBar->insertWidget(before, widget);
     } else {
         return d->m_toolBar->insertWidget(d->m_fileEncodingLabelAction, widget);
@@ -8266,7 +8351,7 @@ void TextEditorWidget::setToolbarOutline(QWidget *widget)
         if (widget->sizePolicy().horizontalPolicy() & QSizePolicy::ExpandFlag)
             d->m_stretchAction->setVisible(false);
 
-        d->m_toolbarOutlineAction = d->m_toolBar->insertWidget(d->m_stretchAction, widget);
+        d->m_toolbarOutlineAction = insertExtraToolBarWidget(Left, widget);
     } else {
         // check for a widget with an expanding size policy otherwise re-enable the stretcher
         for (auto action : d->m_toolBar->actions()) {

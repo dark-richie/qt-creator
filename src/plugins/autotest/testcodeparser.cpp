@@ -13,7 +13,7 @@
 #include <cppeditor/cppmodelmanager.h>
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <utils/algorithm.h>
 #include <utils/asynctask.h>
@@ -33,7 +33,7 @@ using namespace ProjectExplorer;
 
 static bool isProjectParsing()
 {
-    const BuildSystem *bs = SessionManager::startupBuildSystem();
+    const BuildSystem *bs = ProjectManager::startupBuildSystem();
     return bs && bs->isParsing();
 }
 
@@ -50,6 +50,7 @@ TestCodeParser::TestCodeParser()
     m_reparseTimer.setSingleShot(true);
     connect(&m_reparseTimer, &QTimer::timeout, this, &TestCodeParser::parsePostponedFiles);
     m_threadPool->setMaxThreadCount(std::max(QThread::idealThreadCount()/4, 1));
+    m_threadPool->setThreadPriority(QThread::LowestPriority);
     m_futureSynchronizer.setCancelOnWait(true);
 }
 
@@ -73,7 +74,7 @@ void TestCodeParser::setState(State state)
     }
     m_parserState = state;
 
-    if (m_parserState == Idle && SessionManager::startupProject()) {
+    if (m_parserState == Idle && ProjectManager::startupProject()) {
         if (m_postponedUpdateType == UpdateType::FullUpdate || m_dirty) {
             emitUpdateTestTree();
         } else if (m_postponedUpdateType == UpdateType::PartialUpdate) {
@@ -130,7 +131,7 @@ void TestCodeParser::updateTestTree(const QSet<ITestParser *> &parsers)
         return;
     }
 
-    if (!SessionManager::startupProject())
+    if (!ProjectManager::startupProject())
         return;
 
     m_postponedUpdateType = UpdateType::NoUpdate;
@@ -149,7 +150,7 @@ void TestCodeParser::onDocumentUpdated(const FilePath &fileName, bool isQmlFile)
     if (isProjectParsing() || m_codeModelParsing || m_postponedUpdateType == UpdateType::FullUpdate)
         return;
 
-    Project *project = SessionManager::startupProject();
+    Project *project = ProjectManager::startupProject();
     if (!project)
         return;
     // Quick tests: qml files aren't necessarily listed inside project files
@@ -185,7 +186,7 @@ void TestCodeParser::onStartupProjectChanged(Project *project)
 
 void TestCodeParser::onProjectPartsUpdated(Project *project)
 {
-    if (project != SessionManager::startupProject())
+    if (project != ProjectManager::startupProject())
         return;
     if (isProjectParsing() || m_codeModelParsing)
         m_postponedUpdateType = UpdateType::FullUpdate;
@@ -254,13 +255,13 @@ bool TestCodeParser::postponed(const FilePaths &fileList)
     QTC_ASSERT(false, return false); // should not happen at all
 }
 
-static void parseFileForTests(QFutureInterface<TestParseResultPtr> &futureInterface,
+static void parseFileForTests(QPromise<TestParseResultPtr> &promise,
                               const QList<ITestParser *> &parsers, const FilePath &fileName)
 {
     for (ITestParser *parser : parsers) {
-        if (futureInterface.isCanceled())
+        if (promise.isCanceled())
             return;
-        if (parser->processDocument(futureInterface, fileName))
+        if (parser->processDocument(promise, fileName))
             break;
     }
 }
@@ -277,7 +278,7 @@ void TestCodeParser::scanForTests(const FilePaths &fileList, const QList<ITestPa
     m_reparseTimerTimedOut = false;
     m_postponedFiles.clear();
     bool isFullParse = fileList.isEmpty();
-    Project *project = SessionManager::startupProject();
+    Project *project = ProjectManager::startupProject();
     if (!project)
         return;
     FilePaths list;
@@ -359,9 +360,8 @@ void TestCodeParser::scanForTests(const FilePaths &fileList, const QList<ITestPa
     QList<TaskItem> tasks{parallel}; // TODO: use ParallelLimit(N) and add to settings?
     for (const FilePath &file : filteredList) {
         const auto setup = [this, codeParsers, file](AsyncTask<TestParseResultPtr> &async) {
-            async.setAsyncCallData(parseFileForTests, codeParsers, file);
+            async.setConcurrentCallData(parseFileForTests, codeParsers, file);
             async.setThreadPool(m_threadPool);
-            async.setPriority(QThread::LowestPriority);
             async.setFutureSynchronizer(&m_futureSynchronizer);
         };
         const auto onDone = [this](const AsyncTask<TestParseResultPtr> &async) {

@@ -20,7 +20,7 @@
 
 #ifndef QMLDESIGNER_TEST
 #include <projectexplorer/kit.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtkitinformation.h>
@@ -30,7 +30,7 @@ namespace QmlDesigner {
 
 ContentLibraryView::ContentLibraryView(ExternalDependenciesInterface &externalDependencies)
     : AbstractView(externalDependencies)
-    , m_createTexture(this, true)
+    , m_createTexture(this)
 {}
 
 ContentLibraryView::~ContentLibraryView()
@@ -132,6 +132,8 @@ void ContentLibraryView::modelAttached(Model *model)
     m_widget->setHasQuick3DImport(m_hasQuick3DImport);
 
     m_sceneId = model->active3DSceneId();
+
+    m_widget->clearSearchFilter();
 }
 
 void ContentLibraryView::modelAboutToBeDetached(Model *model)
@@ -323,6 +325,8 @@ ModelNode ContentLibraryView::createMaterial(const NodeMetaInfo &metaInfo)
     VariantProperty objNameProp = newMatNode.variantProperty("objectName");
     objNameProp.setValue(newName);
 
+    emitCustomNotification("focus_material_section", {});
+
     return newMatNode;
 }
 
@@ -367,7 +371,7 @@ void ContentLibraryView::updateBundleMaterialsQuick3DVersion()
 #ifndef QMLDESIGNER_TEST
     if (hasImport && major == -1) {
         // Import without specifying version, so we take the kit version
-        auto target = ProjectExplorer::SessionManager::startupTarget();
+        auto target = ProjectExplorer::ProjectManager::startupTarget();
         if (target) {
             QtSupport::QtVersion *qtVersion = QtSupport::QtKitAspect::qtVersion(target->kit());
             if (qtVersion) {

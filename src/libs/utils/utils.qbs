@@ -36,6 +36,7 @@ Project {
         Depends { name: "Qt"; submodules: ["concurrent", "core-private", "network", "qml", "widgets", "xml"] }
         Depends { name: "Qt.macextras"; condition: Qt.core.versionMajor < 6 && qbs.targetOS.contains("macos") }
         Depends { name: "app_version_header" }
+        Depends { name: "ptyqt" }
 
         files: [
             "QtConcurrentTools",
@@ -126,6 +127,10 @@ Project {
             "filepath.h",
             "filesearch.cpp",
             "filesearch.h",
+            "filestreamer.cpp",
+            "filestreamer.h",
+            "filestreamermanager.cpp",
+            "filestreamermanager.h",
             "filesystemmodel.cpp",
             "filesystemmodel.h",
             "filesystemwatcher.cpp",
@@ -293,6 +298,8 @@ Project {
             "stringtable.h",
             "stringutils.cpp",
             "stringutils.h",
+            "styleanimator.cpp",
+            "styleanimator.h",
             "styledbar.cpp",
             "styledbar.h",
             "stylehelper.cpp",
@@ -307,8 +314,10 @@ Project {
             "temporaryfile.h",
             "terminalcommand.cpp",
             "terminalcommand.h",
-            "terminalprocess.cpp",
-            "terminalprocess_p.h",
+            "terminalhooks.cpp",
+            "terminalhooks.h",
+            "terminalinterface.cpp",
+            "terminalinterface.h",
             "textfieldcheckbox.cpp",
             "textfieldcheckbox.h",
             "textfieldcombobox.cpp",

@@ -8,38 +8,34 @@
 #include "projecttree.h"
 
 #include <utils/algorithm.h>
+#include <utils/tasktree.h>
 
 using namespace Core;
 using namespace ProjectExplorer;
 using namespace ProjectExplorer::Internal;
+using namespace Utils;
 
 CurrentProjectFilter::CurrentProjectFilter()
     : BaseFileFilter()
 {
     setId("Files in current project");
     setDisplayName(Tr::tr("Files in Current Project"));
-    setDescription(Tr::tr("Matches all files from the current document's project. Append \"+<number>\" "
-                      "or \":<number>\" to jump to the given line number. Append another "
-                      "\"+<number>\" or \":<number>\" to jump to the column number as well."));
+    setDescription(Tr::tr("Locates files from the current document's project. Append \"+<number>\" "
+                          "or \":<number>\" to jump to the given line number. Append another "
+                          "\"+<number>\" or \":<number>\" to jump to the column number as well."));
     setDefaultShortcutString("p");
     setDefaultIncludedByDefault(false);
+    setRefreshRecipe(Tasking::Sync([this] { invalidateCache(); return true; }));
 
     connect(ProjectTree::instance(), &ProjectTree::currentProjectChanged,
             this, &CurrentProjectFilter::currentProjectChanged);
-}
-
-void CurrentProjectFilter::markFilesAsOutOfDate()
-{
-    setFileIterator(nullptr);
 }
 
 void CurrentProjectFilter::prepareSearch(const QString &entry)
 {
     Q_UNUSED(entry)
     if (!fileIterator()) {
-        Utils::FilePaths paths;
-        if (m_project)
-            paths = m_project->files(Project::SourceFiles);
+        const FilePaths paths = m_project ? m_project->files(Project::SourceFiles) : FilePaths();
         setFileIterator(new BaseFileFilter::ListIterator(paths));
     }
     BaseFileFilter::prepareSearch(entry);
@@ -52,19 +48,17 @@ void CurrentProjectFilter::currentProjectChanged()
         return;
     if (m_project)
         disconnect(m_project, &Project::fileListChanged,
-                   this, &CurrentProjectFilter::markFilesAsOutOfDate);
+                   this, &CurrentProjectFilter::invalidateCache);
 
     if (project)
         connect(project, &Project::fileListChanged,
-                this, &CurrentProjectFilter::markFilesAsOutOfDate);
+                this, &CurrentProjectFilter::invalidateCache);
 
     m_project = project;
-    markFilesAsOutOfDate();
+    invalidateCache();
 }
 
-void CurrentProjectFilter::refresh(QFutureInterface<void> &future)
+void CurrentProjectFilter::invalidateCache()
 {
-    Q_UNUSED(future)
-    QMetaObject::invokeMethod(this, &CurrentProjectFilter::markFilesAsOutOfDate,
-                              Qt::QueuedConnection);
+    setFileIterator(nullptr);
 }

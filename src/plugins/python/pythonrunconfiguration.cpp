@@ -9,6 +9,7 @@
 #include "pysideuicextracompiler.h"
 #include "pythonconstants.h"
 #include "pythonlanguageclient.h"
+#include "pythonplugin.h"
 #include "pythonproject.h"
 #include "pythonsettings.h"
 #include "pythontr.h"
@@ -31,6 +32,7 @@
 
 #include <utils/aspects.h>
 #include <utils/fileutils.h>
+#include <utils/futuresynchronizer.h>
 #include <utils/layoutbuilder.h>
 #include <utils/outputformatter.h>
 #include <utils/theme/theme.h>
@@ -216,7 +218,7 @@ PythonRunConfiguration::PythonRunConfiguration(Target *target, Id id)
     currentInterpreterChanged();
 
     setRunnableModifier([](Runnable &r) {
-        r.workingDirectory = r.workingDirectory.onDevice(r.command.executable());
+        r.workingDirectory = r.command.executable().withNewMappedPath(r.workingDirectory); // FIXME: Needed?
     });
 
     connect(PySideInstaller::instance(), &PySideInstaller::pySideInstalled, this,
@@ -241,15 +243,12 @@ void PythonRunConfigurationPrivate::checkForPySide(const FilePath &python,
 {
     const PipPackage package(pySidePackageName);
     QObject::disconnect(m_watcherConnection);
-    m_watcherConnection = QObject::connect(&m_watcher,
-                                           &QFutureWatcher<PipPackageInfo>::finished,
-                                           q,
-                                           [=]() {
-                                               handlePySidePackageInfo(m_watcher.result(),
-                                                                       python,
-                                                                       pySidePackageName);
-                                           });
-    m_watcher.setFuture(Pip::instance(python)->info(package));
+    m_watcherConnection = QObject::connect(&m_watcher, &QFutureWatcherBase::finished, q, [=] {
+        handlePySidePackageInfo(m_watcher.result(), python, pySidePackageName);
+    });
+    const auto future = Pip::instance(python)->info(package);
+    m_watcher.setFuture(future);
+    PythonPlugin::futureSynchronizer()->addFuture(future);
 }
 
 void PythonRunConfigurationPrivate::handlePySidePackageInfo(const PipPackageInfo &pySideInfo,
@@ -280,12 +279,12 @@ void PythonRunConfigurationPrivate::handlePySidePackageInfo(const PipPackageInfo
             = OsSpecificAspects::withExecutableSuffix(python.osType(), "pyside6-uic");
         for (const FilePath &file : files) {
             if (file.fileName() == pySide6ProjectName) {
-                result.pySideProjectPath = location.resolvePath(file).onDevice(python);
+                result.pySideProjectPath = python.withNewMappedPath(location.resolvePath(file));
                 result.pySideProjectPath = result.pySideProjectPath.cleanPath();
                 if (!result.pySideUicPath.isEmpty())
                     return result;
             } else if (file.fileName() == pySide6UicName) {
-                result.pySideUicPath = location.resolvePath(file).onDevice(python);
+                result.pySideUicPath = python.withNewMappedPath(location.resolvePath(file));
                 result.pySideUicPath = result.pySideUicPath.cleanPath();
                 if (!result.pySideProjectPath.isEmpty())
                     return result;

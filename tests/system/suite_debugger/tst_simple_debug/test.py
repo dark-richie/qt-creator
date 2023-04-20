@@ -22,8 +22,8 @@ def main():
                            'onTriggered: console.log("Break here")'])
         invokeMenuItem("File", "Save All")
         filesAndLines = [
-                        { "%s.%s.Source Files.main\\.cpp" % (projectName, projectName) : "QQmlApplicationEngine engine;" },
-                        { "%s.%s.qml\.qrc./.main\\.qml" % (projectName, projectName) : 'onTriggered.*' }
+                        { "%s.app%s.Source Files.main\\.cpp" % (projectName, projectName) : "QQmlApplicationEngine engine;" },
+                        { "%s.app%s.Main\\.qml" % (projectName, projectName) : 'onTriggered.*' }
                         ]
         test.log("Setting breakpoints")
         expectedBreakpointsOrder = setBreakpointsForCurrentProject(filesAndLines)
@@ -45,6 +45,10 @@ def main():
                 if platform.system() in ('Microsoft' 'Windows'):
                     switchViewTo(ViewConstants.PROJECTS)
                     switchToBuildOrRunSettingsFor(kit, ProjectSettings.BUILD)
+                    detailsWidget = waitForObject("{type='Utils::DetailsWidget' unnamed='1' visible='1' "
+                                                  "summaryText~='^<b>Configure:</b>.+'}")
+                    detailsButton = getChildByClass(detailsWidget, "QToolButton")
+                    ensureChecked(detailsButton)
                     buildDir = os.path.join(str(waitForObject(":Qt Creator_Utils::BuildDirectoryLineEdit").text),
                                             "debug")
                     switchViewTo(ViewConstants.EDIT)

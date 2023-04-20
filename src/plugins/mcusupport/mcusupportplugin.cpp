@@ -27,8 +27,8 @@
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projecttree.h>
-#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
 #include <cmakeprojectmanager/cmakeprojectconstants.h>
@@ -76,8 +76,6 @@ void updateMCUProjectTree(ProjectExplorer::Project *p)
         const FilePath inputsJsonFile = projectBuildFolder / "CMakeFiles" / (targetName + ".dir")
                                         / "config/input.json";
 
-        printMessage("found Input json file " + inputsJsonFile.absoluteFilePath().toString(), true);
-
         if (!inputsJsonFile.exists())
             return;
 
@@ -115,8 +113,8 @@ void McuSupportPlugin::initialize()
     setObjectName("McuSupportPlugin");
     dd = new McuSupportPluginPrivate;
 
-    connect(SessionManager::instance(),
-            &SessionManager::projectFinishedParsing,
+    connect(ProjectManager::instance(),
+            &ProjectManager::projectFinishedParsing,
             updateMCUProjectTree);
 
     dd->m_options.registerQchFiles();
@@ -137,6 +135,7 @@ void McuSupportPlugin::extensionsInitialized()
         McuKitManager::createAutomaticKits(dd->m_settingsHandler);
         McuKitManager::fixExistingKits(dd->m_settingsHandler);
         askUserAboutMcuSupportKitsSetup();
+        askUserAboutRemovingUninstalledTargetsKits();
     });
 }
 
@@ -190,4 +189,34 @@ void McuSupportPlugin::askUserAboutMcuSupportKitsUpgrade(const SettingsHandler::
     ICore::infoBar()->addInfo(info);
 }
 
-} // McuSupport::Internal
+void McuSupportPlugin::askUserAboutRemovingUninstalledTargetsKits()
+{
+    const char removeUninstalledKits[] = "RemoveUninstalledKits";
+    QList<Kit *> uninstalledTargetsKits;
+
+    if (!ICore::infoBar()->canInfoBeAdded(removeUninstalledKits)
+        || (uninstalledTargetsKits = McuKitManager::findUninstalledTargetsKits()).isEmpty())
+        return;
+
+    Utils::InfoBarEntry
+        info(removeUninstalledKits,
+             Tr::tr("Detected %n uninstalled MCU target(s). Remove corresponding kits?",
+                    nullptr,
+                    uninstalledTargetsKits.size()),
+             Utils::InfoBarEntry::GlobalSuppression::Enabled);
+
+    info.addCustomButton(Tr::tr("Keep"), [removeUninstalledKits] {
+        ICore::infoBar()->removeInfo(removeUninstalledKits);
+    });
+
+    info.addCustomButton(Tr::tr("Remove"), [removeUninstalledKits, uninstalledTargetsKits] {
+        ICore::infoBar()->removeInfo(removeUninstalledKits);
+        QTimer::singleShot(0, [uninstalledTargetsKits]() {
+            McuKitManager::removeUninstalledTargetsKits(uninstalledTargetsKits);
+        });
+    });
+
+    ICore::infoBar()->addInfo(info);
+}
+
+} // namespace McuSupport::Internal

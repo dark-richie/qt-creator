@@ -6,7 +6,6 @@
 #include "client.h"
 #include "languageclient_global.h"
 #include "languageclientsettings.h"
-#include "locatorfilter.h"
 #include "lspinspector.h"
 
 #include <utils/algorithm.h>
@@ -25,6 +24,7 @@ namespace ProjectExplorer { class Project; }
 
 namespace LanguageClient {
 
+class LanguageClientManagerPrivate;
 class LanguageClientMark;
 
 class LANGUAGECLIENT_EXPORT LanguageClientManager : public QObject
@@ -80,8 +80,10 @@ public:
 
 signals:
     void clientAdded(Client *client);
+    void clientInitialized(Client *client);
     void clientRemoved(Client *client);
     void shutdownFinished();
+    void openCallHierarchy();
 
 private:
     LanguageClientManager(QObject *parent);
@@ -102,10 +104,7 @@ private:
     QList<BaseSettings *>  m_currentSettings; // owned
     QMap<QString, QList<Client *>> m_clientsForSetting;
     QHash<TextEditor::TextDocument *, QPointer<Client>> m_clientForDocument;
-    DocumentLocatorFilter m_currentDocumentLocatorFilter;
-    WorkspaceLocatorFilter m_workspaceLocatorFilter;
-    WorkspaceClassLocatorFilter m_workspaceClassLocatorFilter;
-    WorkspaceMethodLocatorFilter m_workspaceMethodLocatorFilter;
+    std::unique_ptr<LanguageClientManagerPrivate> d;
     LspInspector m_inspector;
 };
 

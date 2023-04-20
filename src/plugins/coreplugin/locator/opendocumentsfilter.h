@@ -7,10 +7,7 @@
 
 #include <coreplugin/editormanager/documentmodel.h>
 
-#include <QFutureInterface>
-#include <QList>
 #include <QMutex>
-#include <QString>
 
 namespace Core {
 namespace Internal {
@@ -23,12 +20,11 @@ public:
     OpenDocumentsFilter();
     QList<LocatorFilterEntry> matchesFor(QFutureInterface<LocatorFilterEntry> &future,
                                          const QString &entry) override;
-    void accept(const LocatorFilterEntry &selection,
-                QString *newText, int *selectionStart, int *selectionLength) const override;
-    void refresh(QFutureInterface<void> &future) override;
-
 public slots:
-    void refreshInternally();
+    void slotDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
+                         const QVector<int> &roles);
+    void slotRowsInserted(const QModelIndex &, int first, int last);
+    void slotRowsRemoved(const QModelIndex &, int first, int last);
 
 private:
     class Entry
@@ -39,6 +35,7 @@ private:
     };
 
     QList<Entry> editors() const;
+    void refreshInternally();
 
     mutable QMutex m_mutex;
     QList<Entry> m_editors;

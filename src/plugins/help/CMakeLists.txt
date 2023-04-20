@@ -13,6 +13,7 @@ add_qtc_plugin(Help
     helpindexfilter.cpp helpindexfilter.h
     helpmanager.cpp helpmanager.h
     helpplugin.cpp helpplugin.h
+    helptr.h
     helpviewer.cpp helpviewer.h
     helpwidget.cpp helpwidget.h
     localhelpmanager.cpp localhelpmanager.h
@@ -45,7 +46,7 @@ extend_qtc_plugin(Help
 )
 
 option(BUILD_HELPVIEWERBACKEND_QTWEBENGINE "Build QtWebEngine based help viewer backend." YES)
-find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
+find_package(Qt6 COMPONENTS WebEngineWidgets QUIET)
 extend_qtc_plugin(Help
   CONDITION BUILD_HELPVIEWERBACKEND_QTWEBENGINE AND TARGET Qt::WebEngineWidgets
   FEATURE_INFO "QtWebEngine help viewer"

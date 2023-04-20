@@ -116,6 +116,9 @@ void DebuggerItem::createId()
 
 void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *customEnv)
 {
+    if (isGeneric())
+        return;
+
     // CDB only understands the single-dash -version, whereas GDB and LLDB are
     // happy with both -version and --version. So use the "working" -version
     // except for the experimental LLDB-MI which insists on --version.
@@ -171,8 +174,12 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         return;
     }
     m_abis.clear();
+
     if (output.contains("gdb")) {
         m_engineType = GdbEngineType;
+        // FIXME: HACK while introducing DAP support
+        if (m_command.fileName().endsWith("-dap"))
+            m_engineType = DapEngineType;
 
         // Version
         bool isMacGdb, isQnxGdb;
@@ -208,6 +215,7 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         //! \note If unable to determine the GDB ABI, no ABI is appended to m_abis here.
         return;
     }
+
     if (output.contains("lldb") || output.startsWith("LLDB")) {
         m_engineType = LldbEngineType;
         m_abis = Abi::abisOfBinary(m_command);
@@ -275,11 +283,23 @@ QString DebuggerItem::engineTypeName() const
         return QLatin1String("CDB");
     case LldbEngineType:
         return QLatin1String("LLDB");
+    case DapEngineType:
+        return QLatin1String("DAP");
     case UvscEngineType:
         return QLatin1String("UVSC");
     default:
         return QString();
     }
+}
+
+void DebuggerItem::setGeneric(bool on)
+{
+    m_detectionSource = on ? QLatin1String("Generic") : QLatin1String();
+}
+
+bool DebuggerItem::isGeneric() const
+{
+    return m_detectionSource == "Generic";
 }
 
 QStringList DebuggerItem::abiNames() const
@@ -297,13 +317,15 @@ QDateTime DebuggerItem::lastModified() const
 
 QIcon DebuggerItem::decoration() const
 {
+    if (isGeneric())
+        return {};
     if (m_engineType == NoEngineType)
         return Icons::CRITICAL.icon();
     if (!m_command.isExecutableFile())
         return Icons::WARNING.icon();
     if (!m_workingDirectory.isEmpty() && !m_workingDirectory.isDir())
         return Icons::WARNING.icon();
-    return QIcon();
+    return {};
 }
 
 QString DebuggerItem::validityMessage() const

@@ -111,7 +111,6 @@ public:
     void extensionsInitialized() override;
     void restoreKits();
     ShutdownFlag aboutToShutdown() override;
-    QVector<QObject *> createTestObjects() const override;
 
     static void setProjectExplorerSettings(const ProjectExplorerSettings &pes);
     static const ProjectExplorerSettings &projectExplorerSettings();
@@ -261,6 +260,9 @@ private slots:
     void testProject_parsingFail();
     void testProject_projectTree();
     void testProject_multipleBuildConfigs();
+
+    void testSourceToBinaryMapping();
+    void testSourceToBinaryMapping_data();
 
     void testSessionSwitch();
 #endif // WITH_TESTS

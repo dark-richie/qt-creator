@@ -21,6 +21,7 @@ class tst_QtcProcess;
 namespace Utils {
 
 namespace Internal { class QtcProcessPrivate; }
+namespace Pty { class Data; }
 
 class Environment;
 class DeviceProcessHooks;
@@ -75,6 +76,9 @@ public:
     // ProcessSetupData related
 
     void setProcessImpl(ProcessImpl processImpl);
+
+    void setPtyData(const std::optional<Pty::Data> &data);
+    std::optional<Pty::Data> ptyData() const;
 
     void setTerminalMode(TerminalMode mode);
     TerminalMode terminalMode() const;
@@ -176,6 +180,9 @@ public:
     QString exitMessage() const;
 
     QString toStandaloneCommandLine() const;
+
+    void setCreateConsoleOnWindows(bool create);
+    bool createConsoleOnWindows() const;
 
 signals:
     void starting(); // On NotRunning -> Starting state transition

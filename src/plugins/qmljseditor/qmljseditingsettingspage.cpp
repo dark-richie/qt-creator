@@ -181,12 +181,12 @@ void QmlJsEditingSettings::setUseCustomFormatCommand(bool customCommand)
     m_useCustomFormatCommand = customCommand;
 }
 
-QmllsSettings &QmlJsEditingSettings::qmllsSettigs()
+QmllsSettings &QmlJsEditingSettings::qmllsSettings()
 {
     return m_qmllsSettings;
 }
 
-const QmllsSettings &QmlJsEditingSettings::qmllsSettigs() const
+const QmllsSettings &QmlJsEditingSettings::qmllsSettings() const
 {
     return m_qmllsSettings;
 }
@@ -239,10 +239,10 @@ public:
         uiQmlOpenComboBox->setSizeAdjustPolicy(QComboBox::QComboBox::AdjustToContents);
 
         useQmlls = new QCheckBox(Tr::tr("Use qmlls (EXPERIMENTAL!)"));
-        useQmlls->setChecked(s.qmllsSettigs().useQmlls);
+        useQmlls->setChecked(s.qmllsSettings().useQmlls);
         useLatestQmlls = new QCheckBox(Tr::tr("Always use latest qmlls"));
-        useLatestQmlls->setChecked(s.qmllsSettigs().useLatestQmlls);
-        useLatestQmlls->setEnabled(s.qmllsSettigs().useQmlls);
+        useLatestQmlls->setChecked(s.qmllsSettings().useLatestQmlls);
+        useLatestQmlls->setEnabled(s.qmllsSettings().useQmlls);
         QObject::connect(useQmlls, &QCheckBox::stateChanged, this, [this](int checked) {
             useLatestQmlls->setEnabled(checked != Qt::Unchecked);
         });
@@ -287,8 +287,7 @@ public:
                                                           Utils::globalMacroExpander());
 
         const auto updateFormatCommandState = [&, formatCommandLabel, formatCommandOptionsLabel] {
-            const bool enabled = useCustomFormatCommand->isChecked()
-                                 && autoFormatOnSave->isChecked();
+            const bool enabled = useCustomFormatCommand->isChecked();
             formatCommandLabel->setEnabled(enabled);
             formatCommand->setEnabled(enabled);
             formatCommandOptionsLabel->setEnabled(enabled);
@@ -298,7 +297,6 @@ public:
 
         connect(autoFormatOnSave, &QCheckBox::toggled, this, [&, updateFormatCommandState]() {
             autoFormatOnlyCurrentProject->setEnabled(autoFormatOnSave->isChecked());
-            useCustomFormatCommand->setEnabled(autoFormatOnSave->isChecked());
             updateFormatCommandState();
         });
         connect(useCustomFormatCommand, &QCheckBox::toggled, this, updateFormatCommandState);
@@ -316,8 +314,8 @@ public:
         s.setFormatCommandOptions(formatCommandOptions->text());
         s.setFoldAuxData(foldAuxData->isChecked());
         s.setUiQmlOpenMode(uiQmlOpenComboBox->currentData().toString());
-        s.qmllsSettigs().useQmlls = useQmlls->isChecked();
-        s.qmllsSettigs().useLatestQmlls = useLatestQmlls->isChecked();
+        s.qmllsSettings().useQmlls = useQmlls->isChecked();
+        s.qmllsSettings().useLatestQmlls = useLatestQmlls->isChecked();
         s.set();
     }
 

@@ -42,6 +42,28 @@ public:
     virtual ~CodeFormatterData();
 };
 
+class TEXTEDITOR_EXPORT TextSuggestion
+{
+public:
+    TextSuggestion();
+    virtual ~TextSuggestion();
+    // Returns true if the suggestion was applied completely, false if it was only partially applied.
+    virtual bool apply() = 0;
+    // Returns true if the suggestion was applied completely, false if it was only partially applied.
+    virtual bool applyWord(TextEditorWidget *widget) = 0;
+    virtual void reset() = 0;
+    virtual int position() = 0;
+
+    int currentPosition() const { return m_currentPosition; }
+    void setCurrentPosition(int position) { m_currentPosition = position; }
+
+    QTextDocument *document() { return &m_replacementDocument; }
+
+private:
+    QTextDocument m_replacementDocument;
+    int m_currentPosition = -1;
+};
+
 class TEXTEDITOR_EXPORT TextBlockUserData : public QTextBlockUserData
 {
 public:
@@ -126,9 +148,9 @@ public:
     QByteArray expectedRawStringSuffix() { return m_expectedRawStringSuffix; }
     void setExpectedRawStringSuffix(const QByteArray &suffix) { m_expectedRawStringSuffix = suffix; }
 
-    void setReplacement(const QString &replacement);
-    void clearReplacement() { m_replacement.reset(); }
-    QTextDocument *replacement() const { return m_replacement.get(); }
+    void insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion);
+    TextSuggestion *suggestion() const;
+    void clearSuggestion();
 
 private:
     TextMarks m_marks;
@@ -144,8 +166,8 @@ private:
     KSyntaxHighlighting::State m_syntaxState;
     QByteArray m_expectedRawStringSuffix; // A bit C++-specific, but let's be pragmatic.
     std::unique_ptr<QTextDocument> m_replacement;
+    std::unique_ptr<TextSuggestion> m_suggestion;
 };
-
 
 class TEXTEDITOR_EXPORT TextDocumentLayout : public QPlainTextDocumentLayout
 {
@@ -177,9 +199,12 @@ public:
     static void setFolded(const QTextBlock &block, bool folded);
     static void setExpectedRawStringSuffix(const QTextBlock &block, const QByteArray &suffix);
     static QByteArray expectedRawStringSuffix(const QTextBlock &block);
-    static void updateReplacmentFormats(const QTextBlock &block, const FontSettings &fontSettings);
-    static QString replacement(const QTextBlock &block);
-    static QTextDocument *replacementDocument(const QTextBlock &block);
+    static TextSuggestion *suggestion(const QTextBlock &block);
+    static void updateSuggestionFormats(const QTextBlock &block,
+                                        const FontSettings &fontSettings);
+    static bool updateSuggestion(const QTextBlock &block,
+                                 int position,
+                                 const FontSettings &fontSettings);
 
     class TEXTEDITOR_EXPORT FoldValidator
     {
@@ -220,7 +245,8 @@ public:
     QRectF blockBoundingRect(const QTextBlock &block) const override;
 
     TextMarks documentClosing();
-    void documentReloaded(TextMarks marks, TextDocument *baseextDocument);
+    void documentAboutToReload();
+    void documentReloaded(TextDocument *baseextDocument);
     void updateMarksLineNumber();
     void updateMarksBlock(const QTextBlock &block);
     void scheduleUpdate();
@@ -228,6 +254,8 @@ public:
 
 private:
     bool m_updateScheduled = false;
+    TextMarks m_reloadMarks;
+    void resetReloadMarks();
 
 signals:
     void updateExtraArea();

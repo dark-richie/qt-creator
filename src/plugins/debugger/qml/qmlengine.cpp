@@ -736,7 +736,7 @@ bool QmlEngine::acceptsBreakpoint(const BreakpointParameters &bp) const
     return bp.isQmlFileAndLineBreakpoint();
 }
 
-void QmlEngine::loadSymbols(const QString &moduleName)
+void QmlEngine::loadSymbols(const FilePath &moduleName)
 {
     Q_UNUSED(moduleName)
 }
@@ -759,7 +759,7 @@ void QmlEngine::updateAll()
     d->updateLocals();
 }
 
-void QmlEngine::requestModuleSymbols(const QString &moduleName)
+void QmlEngine::requestModuleSymbols(const FilePath &moduleName)
 {
     Q_UNUSED(moduleName)
 }
@@ -1802,10 +1802,10 @@ void QmlEnginePrivate::messageReceived(const QByteArray &data)
                             updateScriptSource(name, lineOffset, columnOffset, source);
                         }
 
-                        QMap<QString,QString> files;
+                        QMap<QString, FilePath> files;
                         for (const QString &file : std::as_const(sourceFiles)) {
                             QString shortName = file;
-                            QString fullName = engine->toFileInProject(file);
+                            FilePath fullName = engine->toFileInProject(file);
                             files.insert(shortName, fullName);
                         }
 
@@ -1915,7 +1915,7 @@ void QmlEnginePrivate::messageReceived(const QByteArray &data)
 
                     const QVariantMap script = body.value("script").toMap();
                     QUrl fileUrl(script.value(NAME).toString());
-                    QString filePath = engine->toFileInProject(fileUrl);
+                    FilePath filePath = engine->toFileInProject(fileUrl);
 
                     const QVariantMap exception = body.value("exception").toMap();
                     QString errorMessage = exception.value("text").toString();
@@ -2045,8 +2045,7 @@ StackFrame QmlEnginePrivate::extractStackFrame(const QVariant &bodyVal)
     stackFrame.function = extractString(body.value("func"));
     if (stackFrame.function.isEmpty())
         stackFrame.function = Tr::tr("Anonymous Function");
-    stackFrame.file = FilePath::fromString(
-        engine->toFileInProject(extractString(body.value("script"))));
+    stackFrame.file = engine->toFileInProject(extractString(body.value("script")));
     stackFrame.usable = stackFrame.file.isReadableFile();
     stackFrame.receiver = extractString(body.value("receiver"));
     stackFrame.line = body.value("line").toInt() + 1;
@@ -2321,7 +2320,6 @@ void QmlEnginePrivate::insertSubItems(WatchItem *parent, const QVariantList &pro
     QTC_ASSERT(parent, return);
     LookupItems itemsToLookup;
 
-    const QSet<QString> expandedINames = engine->watchHandler()->expandedINames();
     for (const QVariant &property : properties) {
         QmlV8ObjectData propertyData = extractData(property);
         std::unique_ptr<WatchItem> item(new WatchItem);
@@ -2343,7 +2341,7 @@ void QmlEnginePrivate::insertSubItems(WatchItem *parent, const QVariantList &pro
         item->id = propertyData.handle;
         item->type = propertyData.type;
         item->value = propertyData.value.toString();
-        if (item->type.isEmpty() || expandedINames.contains(item->iname))
+        if (item->type.isEmpty() || engine->watchHandler()->isExpandedIName(item->iname))
             itemsToLookup.insert(propertyData.handle, {item->iname, item->name, item->exp});
         setWatchItemHasChildren(item.get(), propertyData.hasChildren());
         parent->appendChild(item.release());
@@ -2445,7 +2443,7 @@ void QmlEnginePrivate::flushSendBuffer()
     sendBuffer.clear();
 }
 
-QString QmlEngine::toFileInProject(const QUrl &fileUrl)
+FilePath QmlEngine::toFileInProject(const QUrl &fileUrl)
 {
     // make sure file finder is properly initialized
     const DebuggerRunParameters &rp = runParameters();
@@ -2454,7 +2452,7 @@ QString QmlEngine::toFileInProject(const QUrl &fileUrl)
     d->fileFinder.setAdditionalSearchDirectories(rp.additionalSearchDirectories);
     d->fileFinder.setSysroot(rp.sysRoot);
 
-    return d->fileFinder.findFile(fileUrl).constFirst().toString();
+    return d->fileFinder.findFile(fileUrl).constFirst();
 }
 
 DebuggerEngine *createQmlEngine()

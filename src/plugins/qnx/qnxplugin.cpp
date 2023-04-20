@@ -1,10 +1,7 @@
 // Copyright (C) 2016 BlackBerry Limited. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "qnxplugin.h"
-
 #include "qnxanalyzesupport.h"
-#include "qnxconfigurationmanager.h"
 #include "qnxconstants.h"
 #include "qnxdebugsupport.h"
 #include "qnxdevice.h"
@@ -20,7 +17,10 @@
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 
+#include <extensionsystem/iplugin.h>
+
 #include <projectexplorer/devicesupport/devicecheckbuildstep.h>
+#include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/deployconfiguration.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/projectexplorer.h>
@@ -32,11 +32,7 @@
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
-#include <remotelinux/genericdirectuploadstep.h>
-#include <remotelinux/makeinstallstep.h>
 #include <remotelinux/remotelinux_constants.h>
-
-#include <qtsupport/qtkitinformation.h>
 
 #include <QAction>
 
@@ -44,21 +40,12 @@ using namespace ProjectExplorer;
 
 namespace Qnx::Internal {
 
-class QnxUploadStep : public RemoteLinux::GenericDirectUploadStep
+class QnxDeployStepFactory : public BuildStepFactory
 {
 public:
-    QnxUploadStep(BuildStepList *bsl, Utils::Id id) : GenericDirectUploadStep(bsl, id, false) {}
-    static Utils::Id stepId() { return "Qnx.DirectUploadStep"; }
-};
-
-template <class Step>
-class GenericQnxDeployStepFactory : public BuildStepFactory
-{
-public:
-    GenericQnxDeployStepFactory()
+    QnxDeployStepFactory(Utils::Id existingStepId, Utils::Id overrideId = {})
     {
-        registerStep<Step>(Step::stepId());
-        setDisplayName(Step::displayName());
+        cloneStepCreator(existingStepId, overrideId);
         setSupportedConfiguration(Constants::QNX_QNX_DEPLOYCONFIGURATION_ID);
         setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
     }
@@ -79,8 +66,8 @@ public:
             return prj->deploymentKnowledge() == DeploymentKnowledge::Bad
                     && prj->hasMakeInstallEquivalent();
         });
-        addInitialStep(DeviceCheckBuildStep::stepId());
-        addInitialStep(QnxUploadStep::stepId());
+        addInitialStep(ProjectExplorer::Constants::DEVICE_CHECK_STEP);
+        addInitialStep(Constants::QNX_DIRECT_UPLOAD_STEP_ID);
     }
 };
 
@@ -92,51 +79,53 @@ public:
     QAction *m_debugSeparator = nullptr;
     QAction m_attachToQnxApplication{Tr::tr("Attach to remote QNX application..."), nullptr};
 
-    QnxConfigurationManager configurationFactory;
+    QnxSettingsPage settingsPage;
     QnxQtVersionFactory qtVersionFactory;
     QnxDeviceFactory deviceFactory;
     QnxDeployConfigurationFactory deployConfigFactory;
-    GenericQnxDeployStepFactory<QnxUploadStep> directUploadDeployFactory;
-    GenericQnxDeployStepFactory<RemoteLinux::MakeInstallStep> makeInstallDeployFactory;
-    GenericQnxDeployStepFactory<DeviceCheckBuildStep> checkBuildDeployFactory;
+    QnxDeployStepFactory directUploadDeployFactory{RemoteLinux::Constants::DirectUploadStepId,
+                                                   Constants::QNX_DIRECT_UPLOAD_STEP_ID};
+    QnxDeployStepFactory makeInstallStepFactory{RemoteLinux::Constants::MakeInstallStepId};
     QnxRunConfigurationFactory runConfigFactory;
-    QnxSettingsPage settingsPage;
     QnxToolChainFactory toolChainFactory;
     SimpleTargetRunnerFactory runWorkerFactory{{runConfigFactory.runConfigurationId()}};
     QnxDebugWorkerFactory debugWorkerFactory;
     QnxQmlProfilerWorkerFactory qmlProfilerWorkerFactory;
 };
 
-static QnxPluginPrivate *dd = nullptr;
-
-QnxPlugin::~QnxPlugin()
+class QnxPlugin final : public ExtensionSystem::IPlugin
 {
-    delete dd;
-}
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Qnx.json")
 
-void QnxPlugin::initialize()
-{
-    dd = new QnxPluginPrivate;
-}
+public:
+    ~QnxPlugin() final { delete d; }
+
+private:
+    void initialize() final { d = new QnxPluginPrivate; }
+    void extensionsInitialized() final;
+
+    QnxPluginPrivate *d = nullptr;
+};
 
 void QnxPlugin::extensionsInitialized()
 {
     // Attach support
-    connect(&dd->m_attachToQnxApplication, &QAction::triggered, this, &showAttachToProcessDialog);
+    connect(&d->m_attachToQnxApplication, &QAction::triggered, this, &showAttachToProcessDialog);
 
     const char QNX_DEBUGGING_GROUP[] = "Debugger.Group.Qnx";
 
     Core::ActionContainer *mstart = Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_DEBUG_STARTDEBUGGING);
     mstart->appendGroup(QNX_DEBUGGING_GROUP);
     mstart->addSeparator(Core::Context(Core::Constants::C_GLOBAL), QNX_DEBUGGING_GROUP,
-                         &dd->m_debugSeparator);
+                         &d->m_debugSeparator);
 
     Core::Command *cmd = Core::ActionManager::registerAction
-            (&dd->m_attachToQnxApplication, "Debugger.AttachToQnxApplication");
+            (&d->m_attachToQnxApplication, "Debugger.AttachToQnxApplication");
     mstart->addAction(cmd, QNX_DEBUGGING_GROUP);
 
     connect(KitManager::instance(), &KitManager::kitsChanged,
-            this, [] { dd->updateDebuggerActions(); });
+            this, [this] { d->updateDebuggerActions(); });
 }
 
 void QnxPluginPrivate::updateDebuggerActions()
@@ -153,3 +142,5 @@ void QnxPluginPrivate::updateDebuggerActions()
 }
 
 } // Qnx::Internal
+
+#include "qnxplugin.moc"

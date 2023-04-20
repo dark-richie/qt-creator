@@ -19,9 +19,17 @@ using namespace Utils;
 
 namespace ProjectExplorer {
 
-SshParameters::SshParameters()
+SshParameters::SshParameters() = default;
+
+QString SshParameters::userAtHost() const
 {
-    url.setPort(0);
+    QString res;
+    if (!m_userName.isEmpty())
+        res = m_userName + '@';
+    res += m_host;
+    if (m_port != 22)
+        res += QString(":%1").arg(m_port);
+    return res;
 }
 
 QStringList SshParameters::connectionOptions(const FilePath &binary) const
@@ -81,25 +89,16 @@ bool SshParameters::setupSshEnvironment(QtcProcess *process)
     return hasDisplay;
 }
 
-
-static inline bool equals(const SshParameters &p1, const SshParameters &p2)
+bool operator==(const SshParameters &p1, const SshParameters &p2)
 {
-    return p1.url == p2.url
+    return p1.m_host == p2.m_host
+            && p1.m_port == p2.m_port
+            && p1.m_userName == p2.m_userName
             && p1.authenticationType == p2.authenticationType
             && p1.privateKeyFile == p2.privateKeyFile
             && p1.hostKeyCheckingMode == p2.hostKeyCheckingMode
             && p1.x11DisplayName == p2.x11DisplayName
             && p1.timeout == p2.timeout;
-}
-
-bool operator==(const SshParameters &p1, const SshParameters &p2)
-{
-    return equals(p1, p2);
-}
-
-bool operator!=(const SshParameters &p1, const SshParameters &p2)
-{
-    return !equals(p1, p2);
 }
 
 #ifdef WITH_TESTS

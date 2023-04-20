@@ -3,6 +3,7 @@
 
 #include "client.h"
 
+#include "callhierarchy.h"
 #include "diagnosticmanager.h"
 #include "documentsymbolcache.h"
 #include "languageclientcompletionassist.h"
@@ -39,7 +40,7 @@
 #include <languageserverprotocol/workspace.h>
 
 #include <projectexplorer/project.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <texteditor/codeassist/documentcontentcompletion.h>
 #include <texteditor/codeassist/iassistprocessor.h>
@@ -156,7 +157,7 @@ public:
         m_documentUpdateTimer.setInterval(500);
         connect(&m_documentUpdateTimer, &QTimer::timeout, this,
                 [this] { sendPostponedDocumentUpdates(Schedule::Now); });
-        connect(SessionManager::instance(), &SessionManager::projectRemoved,
+        connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
                 q, &Client::projectClosed);
 
         QTC_ASSERT(clientInterface, return);
@@ -509,7 +510,7 @@ void Client::initialize()
         params.setRootUri(hostPathToServerUri(d->m_project->projectDirectory()));
 
     const QList<WorkSpaceFolder> workspaces
-        = Utils::transform(SessionManager::projects(), [this](Project *pro) {
+        = Utils::transform(ProjectManager::projects(), [this](Project *pro) {
               return WorkSpaceFolder(hostPathToServerUri(pro->projectDirectory()),
                                      pro->displayName());
           });
@@ -554,7 +555,7 @@ QString Client::stateString() const
     case InitializeRequested: return Tr::tr("initialize requested");
     case Initialized: return Tr::tr("initialized");
     case ShutdownRequested: return Tr::tr("shutdown requested");
-    case Shutdown: return Tr::tr("shutdown");
+    case Shutdown: return Tr::tr("shut down");
     case Error: return Tr::tr("error");
     }
     return {};
@@ -617,7 +618,7 @@ void Client::openDocument(TextEditor::TextDocument *document)
         }
     }
 
-    d->m_openedDocument[document].document = document->document()->clone(this);
+    d->m_openedDocument[document].document = new QTextDocument(document->document()->toPlainText());
     d->m_openedDocument[document].contentsChangedConnection
         = connect(document,
                   &TextDocument::contentsChangedWithPosition,
@@ -879,6 +880,8 @@ void Client::activateEditor(Core::IEditor *editor)
             optionalActions |= TextEditor::TextEditorActionHandler::FindUsage;
         if (symbolSupport().supportsRename(widget->textDocument()))
             optionalActions |= TextEditor::TextEditorActionHandler::RenameSymbol;
+        if (CallHierarchyFactory::supportsCallHierarchy(this, textEditor->document()))
+            optionalActions |= TextEditor::TextEditorActionHandler::CallHierarchy;
         widget->setOptionalActions(optionalActions);
     }
 }
@@ -1669,10 +1672,15 @@ LanguageClientValue<MessageActionItem> ClientPrivate::showMessageBox(
     }
     QHash<QAbstractButton *, MessageActionItem> itemForButton;
     if (const std::optional<QList<MessageActionItem>> actions = message.actions()) {
-        for (const MessageActionItem &action : *actions)
-            itemForButton.insert(box->addButton(action.title(), QMessageBox::InvalidRole), action);
+        auto button = box->addButton(QMessageBox::Close);
+        connect(button, &QPushButton::clicked, box, &QMessageBox::reject);
+        for (const MessageActionItem &action : *actions) {
+            connect(button, &QPushButton::clicked, box, &QMessageBox::accept);
+            itemForButton.insert(button, action);
+        }
     }
-    box->exec();
+    if (box->exec() == QDialog::Rejected)
+        return {};
     const MessageActionItem &item = itemForButton.value(box->clickedButton());
     return item.isValid() ? LanguageClientValue<MessageActionItem>(item)
                           : LanguageClientValue<MessageActionItem>();
@@ -1862,7 +1870,7 @@ void ClientPrivate::handleMethod(const QString &method, const MessageId &id, con
     } else if (method == WorkSpaceFolderRequest::methodName) {
         WorkSpaceFolderRequest::Response response(id);
         const QList<ProjectExplorer::Project *> projects
-            = ProjectExplorer::SessionManager::projects();
+            = ProjectExplorer::ProjectManager::projects();
         if (projects.isEmpty()) {
             response.setResult(nullptr);
         } else {
@@ -2106,7 +2114,7 @@ FilePath Client::serverUriToHostPath(const LanguageServerProtocol::DocumentUri &
 DocumentUri Client::hostPathToServerUri(const Utils::FilePath &path) const
 {
     return DocumentUri::fromFilePath(path, [&](const Utils::FilePath &clientPath) {
-        return clientPath.onDevice(d->m_serverDeviceTemplate);
+        return d->m_serverDeviceTemplate.withNewPath(clientPath.path());
     });
 }
 

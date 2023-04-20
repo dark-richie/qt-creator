@@ -23,15 +23,15 @@
 #include <languageserverprotocol/workspace.h>
 
 #include <projectexplorer/extracompiler.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
 
+#include <utils/asynctask.h>
 #include <utils/infobar.h>
 #include <utils/qtcprocess.h>
-#include <utils/runextensions.h>
 #include <utils/variablechooser.h>
 
 #include <QCheckBox>
@@ -305,7 +305,7 @@ void PyLSConfigureAssistant::installPythonLanguageServer(const FilePath &python,
         install->deleteLater();
     });
 
-    install->setPackage(PipPackage{"python-lsp-server[all]", "Python Language Server"});
+    install->setPackages({PipPackage{"python-lsp-server[all]", "Python Language Server"}});
     install->run();
 }
 
@@ -341,7 +341,7 @@ void PyLSConfigureAssistant::openDocumentWithPython(const FilePath &python,
                 instance()->handlePyLSState(python, watcher->result(), document);
                 watcher->deleteLater();
             });
-    watcher->setFuture(Utils::runAsync(&checkPythonLanguageServer, python));
+    watcher->setFuture(Utils::asyncRun(&checkPythonLanguageServer, python));
 }
 
 void PyLSConfigureAssistant::handlePyLSState(const FilePath &python,

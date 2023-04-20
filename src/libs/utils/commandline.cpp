@@ -362,12 +362,12 @@ static QStringList splitArgsUnix(const QString &args, bool abortOnMeta,
                         if (var == pwdName && pwd && !pwd->isEmpty()) {
                             cret += *pwd;
                         } else {
-                            Environment::const_iterator vit = env->constFind(var);
-                            if (vit == env->constEnd()) {
+                            const Environment::FindResult res = env->find(var);
+                            if (!res) {
                                 if (abortOnMeta)
                                     goto metaerr; // Assume this is a shell builtin
                             } else {
-                                cret += env->expandedValueForKey(env->key(vit));
+                                cret += env->expandedValueForKey(res->key);
                             }
                         }
                         if (!braced)
@@ -412,12 +412,12 @@ static QStringList splitArgsUnix(const QString &args, bool abortOnMeta,
                 if (var == pwdName && pwd && !pwd->isEmpty()) {
                     val = *pwd;
                 } else {
-                    Environment::const_iterator vit = env->constFind(var);
-                    if (vit == env->constEnd()) {
+                    const Environment::FindResult res = env->find(var);
+                    if (!res) {
                         if (abortOnMeta)
                             goto metaerr; // Assume this is a shell builtin
                     } else {
-                        val = env->expandedValueForKey(env->key(vit));
+                        val = env->expandedValueForKey(res->key);
                     }
                 }
                 for (int i = 0; i < val.length(); i++) {
@@ -1409,6 +1409,8 @@ CommandLine::CommandLine(const FilePath &executable)
     : m_executable(executable)
 {}
 
+CommandLine::~CommandLine() = default;
+
 CommandLine::CommandLine(const FilePath &exe, const QStringList &args)
     : m_executable(exe)
 {
@@ -1429,16 +1431,20 @@ CommandLine::CommandLine(const FilePath &exe, const QString &args, RawType)
 
 CommandLine CommandLine::fromUserInput(const QString &cmdline, MacroExpander *expander)
 {
-    CommandLine cmd;
-    const int pos = cmdline.indexOf(' ');
-    if (pos == -1) {
-        cmd.m_executable = FilePath::fromString(cmdline);
-    } else {
-        cmd.m_executable = FilePath::fromString(cmdline.left(pos));
-        cmd.m_arguments = cmdline.right(cmdline.length() - pos - 1);
-        if (expander)
-            cmd.m_arguments = expander->expand(cmd.m_arguments);
-    }
+    if (cmdline.isEmpty())
+        return {};
+
+    QString input = cmdline.trimmed();
+
+    QStringList result = ProcessArgs::splitArgs(cmdline, HostOsInfo::hostOs());
+
+    if (result.isEmpty())
+        return {};
+
+    auto cmd = CommandLine(FilePath::fromUserInput(result.value(0)), result.mid(1));
+    if (expander)
+        cmd.m_arguments = expander->expand(cmd.m_arguments);
+
     return cmd;
 }
 

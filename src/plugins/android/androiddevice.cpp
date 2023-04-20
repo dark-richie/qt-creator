@@ -18,12 +18,12 @@
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfiguration.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
+#include <utils/asynctask.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
-#include <utils/runextensions.h>
 #include <utils/url.h>
 
 #include <QEventLoop>
@@ -388,11 +388,6 @@ IDeviceWidget *AndroidDevice::createWidget()
     return new AndroidDeviceWidget(sharedFromThis());
 }
 
-bool AndroidDevice::canAutoDetectPorts() const
-{
-    return true;
-}
-
 DeviceProcessSignalOperation::Ptr AndroidDevice::signalOperation() const
 {
     return DeviceProcessSignalOperation::Ptr(new AndroidSignalOperation());
@@ -454,7 +449,7 @@ void AndroidDeviceManager::startAvd(const ProjectExplorer::IDevice::Ptr &device,
     const AndroidDevice *androidDev = static_cast<const AndroidDevice *>(device.data());
     const QString name = androidDev->avdName();
     qCDebug(androidDeviceLog, "Starting Android AVD id \"%s\".", qPrintable(name));
-    runAsync([this, name, device] {
+    auto future = Utils::asyncRun([this, name, device] {
         const QString serialNumber = m_avdManager.startAvd(name);
         // Mark the AVD as ReadyToUse once we know it's started
         if (!serialNumber.isEmpty()) {
@@ -462,6 +457,7 @@ void AndroidDeviceManager::startAvd(const ProjectExplorer::IDevice::Ptr &device,
             devMgr->setDeviceState(device->id(), IDevice::DeviceReadyToUse);
         }
     });
+    // TODO: use future!
 }
 
 void AndroidDeviceManager::eraseAvd(const IDevice::Ptr &device, QWidget *parent)
@@ -479,7 +475,7 @@ void AndroidDeviceManager::eraseAvd(const IDevice::Ptr &device, QWidget *parent)
         return;
 
     qCDebug(androidDeviceLog) << QString("Erasing Android AVD \"%1\" from the system.").arg(name);
-    m_removeAvdFutureWatcher.setFuture(runAsync([this, name, device] {
+    m_removeAvdFutureWatcher.setFuture(Utils::asyncRun([this, name, device] {
         QPair<IDevice::ConstPtr, bool> pair;
         pair.first = device;
         pair.second = false;
@@ -645,6 +641,7 @@ void AndroidDeviceManager::setupDevicesWatcher()
 
     const CommandLine command = CommandLine(m_androidConfig.adbToolPath(), {"track-devices"});
     m_adbDeviceWatcherProcess->setCommand(command);
+    m_adbDeviceWatcherProcess->setWorkingDirectory(command.executable().parentDir());
     m_adbDeviceWatcherProcess->setEnvironment(AndroidConfigurations::toolsEnvironment(m_androidConfig));
     m_adbDeviceWatcherProcess->start();
 
@@ -846,7 +843,6 @@ AndroidDeviceFactory::AndroidDeviceFactory()
     setDisplayName(Tr::tr("Android Device"));
     setCombinedIcon(":/android/images/androiddevicesmall.png",
                     ":/android/images/androiddevice.png");
-
     setConstructionFunction(&AndroidDevice::create);
     if (m_androidConfig.sdkToolsOk()) {
         setCreator([this] {

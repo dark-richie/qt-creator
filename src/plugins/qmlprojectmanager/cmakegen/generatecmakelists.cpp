@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "generatecmakelists.h"
+
 #include "generatecmakelistsconstants.h"
 #include "cmakegeneratordialog.h"
 #include "../qmlprojectmanagertr.h"
@@ -10,9 +11,9 @@
 #include <coreplugin/actionmanager/actioncontainer.h>
 
 #include <projectexplorer/buildsystem.h>
-#include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
 #include <qmlprojectmanager/qmlmainfileaspect.h>
@@ -59,6 +60,16 @@ enum ProjectDirectoryError {
 
 const QString MENU_ITEM_GENERATE = Tr::tr("Generate CMake Build Files...");
 
+const QmlBuildSystem *getBuildSystem()
+{
+    auto project = ProjectExplorer::ProjectManager::startupProject();
+    if (project && project->activeTarget() && project->activeTarget()->buildSystem()) {
+        return qobject_cast<QmlProjectManager::QmlBuildSystem *>(
+            project->activeTarget()->buildSystem());
+    }
+    return nullptr;
+}
+
 void generateMenuEntry(QObject *parent)
 {
     Core::ActionContainer *menu = Core::ActionManager::actionContainer(Core::Constants::M_FILE);
@@ -79,18 +90,17 @@ void generateMenuEntry(QObject *parent)
     exportMenu->addAction(cmd, QmlProjectManager::Constants::G_EXPORT_GENERATE);
 
     action->setEnabled(false);
-    QObject::connect(ProjectExplorer::SessionManager::instance(),
-                     &ProjectExplorer::SessionManager::startupProjectChanged,
+    QObject::connect(ProjectExplorer::ProjectManager::instance(),
+                     &ProjectExplorer::ProjectManager::startupProjectChanged,
                      [action]() {
-                         auto qmlProject = qobject_cast<QmlProject *>(
-                             ProjectExplorer::SessionManager::startupProject());
-                         action->setEnabled(qmlProject != nullptr);
+                         if (auto buildSystem = getBuildSystem())
+                             action->setEnabled(!buildSystem->qtForMCUs());
                      });
 }
 
 void onGenerateCmakeLists()
 {
-    FilePath rootDir = ProjectExplorer::SessionManager::startupProject()->projectDirectory();
+    FilePath rootDir = ProjectExplorer::ProjectManager::startupProject()->projectDirectory();
 
     int projectDirErrors = isProjectCorrectlyFormed(rootDir);
     if (projectDirErrors != NoError) {
@@ -246,17 +256,15 @@ const QString projectEnvironmentVariable(const QString &key)
 {
     QString value = {};
 
-    auto *target = ProjectExplorer::SessionManager::startupProject()->activeTarget();
-    if (target && target->buildSystem()) {
-        auto buildSystem = qobject_cast<QmlProjectManager::QmlBuildSystem *>(target->buildSystem());
-        if (buildSystem) {
-            auto envItems = buildSystem->environment();
-            auto confEnv = std::find_if(envItems.begin(), envItems.end(),
-                                     [key](NameValueItem &item){return item.name == key;});
-            if (confEnv != envItems.end())
-                value = confEnv->value;
-        }
+    if (auto buildSystem = getBuildSystem()) {
+        auto envItems = buildSystem->environment();
+        auto confEnv = std::find_if(envItems.begin(), envItems.end(), [key](NameValueItem &item) {
+            return item.name == key;
+        });
+        if (confEnv != envItems.end())
+            value = confEnv->value;
     }
+
     return value;
 }
 
@@ -304,7 +312,7 @@ const char ADD_SUBDIR[] = "add_subdirectory(%1)\n";
 void CmakeFileGenerator::generateMainCmake(const FilePath &rootDir)
 {
     //TODO startupProject() may be a terrible way to try to get "current project". It's not necessarily the same thing at all.
-    QString projectName = ProjectExplorer::SessionManager::startupProject()->displayName();
+    QString projectName = ProjectExplorer::ProjectManager::startupProject()->displayName();
     QString appName = projectName + "App";
 
     QString fileSection = "";
@@ -523,14 +531,13 @@ bool CmakeFileGenerator::isDirBlacklisted(const FilePath &dir)
 bool CmakeFileGenerator::includeFile(const FilePath &filePath)
 {
     if (m_checkFileIsInProject) {
-        ProjectExplorer::Project *project = ProjectExplorer::SessionManager::startupProject();
+        ProjectExplorer::Project *project = ProjectExplorer::ProjectManager::startupProject();
         if (!project->isKnownFile(filePath))
             return false;
     }
 
     return !isFileBlacklisted(filePath.fileName());
 }
-
 
 bool CmakeFileGenerator::generateEntryPointFiles(const FilePath &dir)
 {
@@ -570,22 +577,19 @@ bool CmakeFileGenerator::generateMainCpp(const FilePath &dir)
 
     bool envHeaderOk = true;
     QString environment;
-    auto *target = ProjectExplorer::SessionManager::startupProject()->activeTarget();
-    if (target && target->buildSystem()) {
-        auto buildSystem = qobject_cast<QmlProjectManager::QmlBuildSystem *>(target->buildSystem());
-        if (buildSystem) {
-            for (EnvironmentItem &envItem : buildSystem->environment()) {
-                QString key = envItem.name;
-                QString value = envItem.value;
-                if (isFileResource(value))
-                    value.prepend(":/");
-                environment.append(QString(ENV_HEADER_VARIABLE_LINE).arg(key).arg(value));
-            }
-            QString envHeaderContent = GenerateCmake::readTemplate(ENV_HEADER_TEMPLATE_PATH)
-                    .arg(environment);
-            FilePath envHeaderPath = srcDir.pathAppended(FILENAME_ENV_HEADER);
-            envHeaderOk = m_fileQueue.queueFile(envHeaderPath, envHeaderContent);
+
+    if (auto buildSystem = getBuildSystem()) {
+        for (EnvironmentItem &envItem : buildSystem->environment()) {
+            QString key = envItem.name;
+            QString value = envItem.value;
+            if (isFileResource(value))
+                value.prepend(":/");
+            environment.append(QString(ENV_HEADER_VARIABLE_LINE).arg(key).arg(value));
         }
+        QString envHeaderContent = GenerateCmake::readTemplate(ENV_HEADER_TEMPLATE_PATH)
+                                       .arg(environment);
+        FilePath envHeaderPath = srcDir.pathAppended(FILENAME_ENV_HEADER);
+        envHeaderOk = m_fileQueue.queueFile(envHeaderPath, envHeaderContent);
     }
 
     return cppOk && pluginHeaderOk && envHeaderOk;
@@ -607,6 +611,8 @@ bool CmakeFileGenerator::isFileResource(const QString &relativeFilePath)
 
     return false;
 }
+
+
 
 } //GenerateCmake
 } //QmlProjectManager

@@ -30,11 +30,10 @@ using namespace Utils;
 
 namespace Qdb::Internal {
 
-class QdbProcessImpl : public LinuxProcessInterface
+class QdbProcessImpl : public SshProcessInterface
 {
 public:
-    QdbProcessImpl(const LinuxDevice *linuxDevice)
-        : LinuxProcessInterface(linuxDevice) {}
+    QdbProcessImpl(const IDevice::ConstPtr &device) : SshProcessInterface(device) {}
     ~QdbProcessImpl() { killIfRunning(); }
 
 private:
@@ -105,6 +104,7 @@ private:
 QdbDevice::QdbDevice()
 {
     setDisplayType(Tr::tr("Boot2Qt Device"));
+    setType(Constants::QdbLinuxOsType);
 
     addDeviceAction({Tr::tr("Reboot Device"), [](const IDevice::Ptr &device, QWidget *) {
         (void) new DeviceApplicationObserver(device, {device->filePath("reboot"), {}});
@@ -124,7 +124,7 @@ ProjectExplorer::IDeviceWidget *QdbDevice::createWidget()
 
 ProcessInterface *QdbDevice::createProcessInterface() const
 {
-    return new QdbProcessImpl(this);
+    return new QdbProcessImpl(sharedFromThis());
 }
 
 void QdbDevice::setSerialNumber(const QString &serial)
@@ -248,6 +248,7 @@ QdbLinuxDeviceFactory::QdbLinuxDeviceFactory()
 {
     setDisplayName(Tr::tr("Boot2Qt Device"));
     setCombinedIcon(":/qdb/images/qdbdevicesmall.png", ":/qdb/images/qdbdevice.png");
+    setQuickCreationAllowed(true);
     setConstructionFunction(&QdbDevice::create);
     setCreator([] {
         QdbDeviceWizard wizard(Core::ICore::dialogParent());

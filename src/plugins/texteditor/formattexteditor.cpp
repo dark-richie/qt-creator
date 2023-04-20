@@ -10,10 +10,10 @@
 
 #include <coreplugin/messagemanager.h>
 
+#include <utils/asynctask.h>
 #include <utils/differ.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
-#include <utils/runextensions.h>
 #include <utils/temporarydirectory.h>
 #include <utils/textutils.h>
 
@@ -215,7 +215,7 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
                     }
                 }
             }
-            cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, d.text.size());
+            cursor.setPosition(cursor.position() + d.text.size(), QTextCursor::KeepAnchor);
             cursor.removeSelectedText();
             break;
         }
@@ -223,7 +223,7 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
         case Diff::Equal:
             // Adjust cursor position
             charactersInfrontOfCursor -= d.text.size();
-            cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, d.text.size());
+            cursor.setPosition(cursor.position() + d.text.size(), QTextCursor::MoveAnchor);
             break;
         }
     }
@@ -324,8 +324,61 @@ void formatEditorAsync(TextEditorWidget *editor, const Command &command, int sta
             checkAndApplyTask(watcher->result());
         watcher->deleteLater();
     });
-    watcher->setFuture(Utils::runAsync(&format, FormatTask(editor, doc->filePath(), sd,
+    watcher->setFuture(Utils::asyncRun(&format, FormatTask(editor, doc->filePath(), sd,
                                                            command, startPos, endPos)));
 }
 
 } // namespace TextEditor
+
+#ifdef WITH_TESTS
+#include "texteditorplugin.h"
+#include <QTest>
+
+namespace TextEditor::Internal {
+
+void TextEditorPlugin::testFormatting_data()
+{
+    QTest::addColumn<QString>("code");
+    QTest::addColumn<QString>("result");
+
+    {
+        QString code {
+            "import QtQuick\n\n"
+            "  Item {\n"
+            "     property string cat: [\"👩🏽‍🚒d👩🏽‍🚒d👩🏽‍🚒\"]\n"
+            "        property string dog: cat\n"
+            "}\n"
+        };
+
+        QString result {
+            "import QtQuick\n\n"
+            "Item {\n"
+            "    property string cat: [\"👩🏽‍🚒\"]\n"
+            "    property string dog: cat\n"
+            "}\n"
+        };
+
+        QTest::newRow("unicodeCharacterInFormattedCode") << code << result;
+    }
+}
+
+void TextEditorPlugin::testFormatting()
+{
+    QFETCH(QString, code);
+    QFETCH(QString, result);
+
+    QScopedPointer<TextEditorWidget> editor(new TextEditorWidget);
+    QVERIFY(editor.get());
+
+    QSharedPointer<TextDocument> doc(new TextDocument);
+    doc->setPlainText(code);
+    editor->setTextDocument(doc);
+
+    TextEditor::updateEditorText(editor.get(), result);
+
+    QCOMPARE(editor->toPlainText(), result);
+}
+
+} // namespace TextEditor::Internal
+
+#endif

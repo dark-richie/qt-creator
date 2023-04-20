@@ -36,7 +36,6 @@ public:
         BadgeLabelBackgroundColorUnchecked,
         BadgeLabelTextColorChecked,
         BadgeLabelTextColorUnchecked,
-        CanceledSearchTextColor,
         ComboBoxArrowColor,
         ComboBoxArrowColorDisabled,
         ComboBoxTextColor,
@@ -285,7 +284,6 @@ public:
         QmlDesigner_ScrollBarHandleColor,
 
         /* Palette for DS Controls */
-
         DSpanelBackground,
         DSinteraction,
         DSerrorColor,
@@ -305,9 +303,28 @@ public:
         DStextSelectionColor,
         DStextSelectedTextColor,
 
+        /*NEW for QtDS 4.0*/
+        DScontrolBackground_toolbarIdle,
+        DScontrolBackground_toolbarHover,
+        DStoolbarBackground,
+        DStoolbarIcon_blocked,
+        DSthumbnailBackground_baseState,
+        DSidleGreen,
+        DSrunningGreen,
+        DSstatusbarBackground,
+        DScontrolBackground_statusbarIdle,
+        DScontrolBackground_topToolbarHover,
+        DSControlBackground_statusbarHover,
+        DScontrolOutline_topToolbarIdle,
+        DScontrolOutline_topToolbarHover,
+        DSprimaryButton_hoverHighlight,
+        DSstateBackgroundColor_hover,
+        DSstateControlBackgroundColor_hover,
+        DSstateControlBackgroundColor_globalHover,
         DSplaceholderTextColor,
         DSplaceholderTextColorInteraction,
 
+        /*Legacy QtDS*/
         DSiconColor,
         DSiconColorHover,
         DSiconColorInteraction,
@@ -420,6 +437,28 @@ public:
 
         DSstatePanelBackground,
         DSstateHighlight,
+
+        TerminalForeground,
+        TerminalBackground,
+        TerminalSelection,
+        TerminalFindMatch,
+
+        TerminalAnsi0,
+        TerminalAnsi1,
+        TerminalAnsi2,
+        TerminalAnsi3,
+        TerminalAnsi4,
+        TerminalAnsi5,
+        TerminalAnsi6,
+        TerminalAnsi7,
+        TerminalAnsi8,
+        TerminalAnsi9,
+        TerminalAnsi10,
+        TerminalAnsi11,
+        TerminalAnsi12,
+        TerminalAnsi13,
+        TerminalAnsi14,
+        TerminalAnsi15,
     };
 
     enum ImageFile {
@@ -448,7 +487,8 @@ public:
         FlatMenuBar,
         ToolBarIconShadow,
         WindowColorAsBase,
-        DarkUserInterface
+        DarkUserInterface,
+        QDSTheme
     };
 
     Q_ENUM(Color)

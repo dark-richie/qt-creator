@@ -36,8 +36,10 @@ public:
     int editType() const;
 
     static const qint64 InvalidId = -1;
+    constexpr static char loadMoreName[] = "<load more>";
 
     void setHasChildren(bool c)   { wantsChildren = c; }
+    bool isLoadMore() const;
 
     bool isValid()   const { return !iname.isEmpty(); }
     bool isVTablePointer() const;
@@ -77,6 +79,9 @@ public:
     bool            valueEditable = true;  // Value will be editable
     bool            outdated = false;      // \internal item is to be removed.
     double          time = 0;              // Time used on the dumper side to produce this item
+
+    mutable QString  valueCache;           // Pre-computed displayed value
+    void updateValueCache() const;          // implemented in watchhandler.cpp
 
 private:
     void parseHelper(const GdbMi &input, bool maySort);

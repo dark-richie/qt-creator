@@ -601,7 +601,7 @@ void CMakeBuildSystem::updateProjectData()
     for (RawProjectPart &rpp : rpps) {
         rpp.setQtVersion(
                     kitInfo.projectPartQtVersion); // TODO: Check if project actually uses Qt.
-        const QString includeFileBaseDir = buildConfiguration()->buildDirectory().toString();
+        const FilePath includeFileBaseDir = buildConfiguration()->buildDirectory();
         QStringList cxxFlags = rpp.flagsForCxx.commandLineFlags;
         QStringList cFlags = rpp.flagsForC.commandLineFlags;
         addTargetFlagForIos(cxxFlags, cFlags, this, [this] {
@@ -747,7 +747,11 @@ void CMakeBuildSystem::handleParsingSucceeded(bool restoredFromBackup)
         m_ctestPath = tool->cmakeExecutable().withNewPath(m_reader.ctestPath());
 
     setApplicationTargets(appTargets());
-    setDeploymentData(deploymentData());
+
+    // Note: This is practically always wrong and resulting in an empty view.
+    // Setting the real data is triggered from a successful run of a
+    // MakeInstallStep.
+    setDeploymentData(deploymentDataFromFile());
 
     QTC_ASSERT(m_waitingForParse, return );
     m_waitingForParse = false;
@@ -1064,7 +1068,7 @@ CommandLine CMakeBuildSystem::commandLineForTests(const QList<QString> &tests,
     return {m_ctestPath, args};
 }
 
-DeploymentData CMakeBuildSystem::deploymentData() const
+DeploymentData CMakeBuildSystem::deploymentDataFromFile() const
 {
     DeploymentData result;
 
@@ -1226,7 +1230,6 @@ void CMakeBuildSystem::updateInitialCMakeExpandableVars()
         "CMAKE_CXX_COMPILER",
         "QT_QMAKE_EXECUTABLE",
         "QT_HOST_PATH",
-        "CMAKE_PROJECT_INCLUDE_BEFORE",
         "CMAKE_TOOLCHAIN_FILE"
     };
     for (const auto &var : singlePathList) {
@@ -1299,7 +1302,7 @@ MakeInstallCommand CMakeBuildSystem::makeInstallCommand(const FilePath &installR
         buildDirectory = bc->buildDirectory();
 
     cmd.command.addArg("--build");
-    cmd.command.addArg(buildDirectory.onDevice(cmd.command.executable()).path());
+    cmd.command.addArg(buildDirectory.path());
     cmd.command.addArg("--target");
     cmd.command.addArg(installTarget);
 

@@ -12,9 +12,12 @@
 #include "processreaper.h"
 #include "processutils.h"
 #include "stringutils.h"
-#include "terminalprocess_p.h"
+#include "terminalhooks.h"
 #include "threadutils.h"
 #include "utilstr.h"
+
+#include <iptyprocess.h>
+#include <ptyqt.h>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -304,6 +307,107 @@ private:
     QProcess *m_process = nullptr;
 };
 
+class PtyProcessImpl final : public DefaultImpl
+{
+public:
+    ~PtyProcessImpl() { QTC_CHECK(m_setup.m_ptyData); m_setup.m_ptyData->setResizeHandler({}); }
+
+    qint64 write(const QByteArray &data) final
+    {
+        if (m_ptyProcess)
+            return m_ptyProcess->write(data);
+        return -1;
+    }
+
+    void sendControlSignal(ControlSignal controlSignal) final
+    {
+        if (!m_ptyProcess)
+            return;
+
+        switch (controlSignal) {
+        case ControlSignal::Terminate:
+            m_ptyProcess.reset();
+            break;
+        case ControlSignal::Kill:
+            m_ptyProcess->kill();
+            break;
+        default:
+            QTC_CHECK(false);
+        }
+    }
+
+    void doDefaultStart(const QString &program, const QStringList &arguments) final
+    {
+        QTC_CHECK(m_setup.m_ptyData);
+        m_setup.m_ptyData->setResizeHandler([this](const QSize &size) {
+            if (m_ptyProcess)
+                m_ptyProcess->resize(size.width(), size.height());
+        });
+        m_ptyProcess.reset(PtyQt::createPtyProcess(IPtyProcess::AutoPty));
+        if (!m_ptyProcess) {
+            const ProcessResultData result = {-1,
+                                              QProcess::CrashExit,
+                                              QProcess::FailedToStart,
+                                              "Failed to create pty process"};
+            emit done(result);
+            return;
+        }
+
+        QProcessEnvironment penv = m_setup.m_environment.toProcessEnvironment();
+        if (penv.isEmpty())
+            penv = Environment::systemEnvironment().toProcessEnvironment();
+        const QStringList senv = penv.toStringList();
+
+        bool startResult
+            = m_ptyProcess->startProcess(program,
+                                         HostOsInfo::isWindowsHost()
+                                             ? QStringList{m_setup.m_nativeArguments} << arguments
+                                             : arguments,
+                                         m_setup.m_workingDirectory.nativePath(),
+                                         senv,
+                                         m_setup.m_ptyData->size().width(),
+                                         m_setup.m_ptyData->size().height());
+
+        if (!startResult) {
+            const ProcessResultData result = {-1,
+                                              QProcess::CrashExit,
+                                              QProcess::FailedToStart,
+                                              "Failed to start pty process: "
+                                                  + m_ptyProcess->lastError()};
+            emit done(result);
+            return;
+        }
+
+        if (!m_ptyProcess->lastError().isEmpty()) {
+            const ProcessResultData result
+                = {-1, QProcess::CrashExit, QProcess::FailedToStart, m_ptyProcess->lastError()};
+            emit done(result);
+            return;
+        }
+
+        connect(m_ptyProcess->notifier(), &QIODevice::readyRead, this, [this] {
+            emit readyRead(m_ptyProcess->readAll(), {});
+        });
+
+        connect(m_ptyProcess->notifier(), &QIODevice::aboutToClose, this, [this] {
+            if (m_ptyProcess) {
+                const ProcessResultData result
+                    = {m_ptyProcess->exitCode(), QProcess::NormalExit, QProcess::UnknownError, {}};
+                emit done(result);
+                return;
+            }
+
+            const ProcessResultData result = {0, QProcess::NormalExit, QProcess::UnknownError, {}};
+            emit done(result);
+        });
+
+        emit started(m_ptyProcess->pid());
+    }
+
+private:
+    std::unique_ptr<IPtyProcess> m_ptyProcess;
+};
+
 class QProcessImpl final : public DefaultImpl
 {
 public:
@@ -355,10 +459,13 @@ private:
         ProcessStartHandler *handler = m_process->processStartHandler();
         handler->setProcessMode(m_setup.m_processMode);
         handler->setWriteData(m_setup.m_writeData);
-        if (m_setup.m_belowNormalPriority)
-            handler->setBelowNormalPriority();
         handler->setNativeArguments(m_setup.m_nativeArguments);
-        m_process->setProcessEnvironment(m_setup.m_environment.toProcessEnvironment());
+        handler->setWindowsSpecificStartupFlags(m_setup.m_belowNormalPriority,
+                                                m_setup.m_createConsoleOnWindows);
+
+        const QProcessEnvironment penv = m_setup.m_environment.toProcessEnvironment();
+        if (!penv.isEmpty())
+            m_process->setProcessEnvironment(penv);
         m_process->setWorkingDirectory(m_setup.m_workingDirectory.path());
         m_process->setStandardInputFile(m_setup.m_standardInputFile);
         m_process->setProcessChannelMode(m_setup.m_processChannelMode);
@@ -615,7 +722,6 @@ public:
         , q(parent)
         , m_killTimer(this)
     {
-        m_setup.m_controlEnvironment = Environment::systemEnvironment();
         m_killTimer.setSingleShot(true);
         connect(&m_killTimer, &QTimer::timeout, this, [this] {
             m_killTimer.stop();
@@ -629,14 +735,16 @@ public:
 
     ProcessInterface *createProcessInterface()
     {
+        if (m_setup.m_ptyData)
+            return new PtyProcessImpl;
         if (m_setup.m_terminalMode != TerminalMode::Off)
-            return new TerminalImpl();
+            return Terminal::Hooks::instance().createTerminalProcessInterface();
 
         const ProcessImpl impl = m_setup.m_processImpl == ProcessImpl::Default
                                ? defaultProcessImpl() : m_setup.m_processImpl;
         if (impl == ProcessImpl::QProcess)
-            return new QProcessImpl();
-        return new ProcessLauncherImpl();
+            return new QProcessImpl;
+        return new ProcessLauncherImpl;
     }
 
     void setProcessInterface(ProcessInterface *process)
@@ -665,22 +773,6 @@ public:
         CommandLine rootCommand("sudo", {"-A"});
         rootCommand.addCommandLineAsArgs(m_setup.m_commandLine);
         return rootCommand;
-    }
-
-    Environment fullEnvironment() const
-    {
-        Environment env = m_setup.m_environment;
-        if (!env.hasChanges() && env.combineWithDeviceEnvironment()) {
-            // FIXME: Either switch to using EnvironmentChange instead of full Environments, or
-            // feed the full environment into the QtcProcess instead of fixing it up here.
-            //            qWarning("QtcProcess::start: Empty environment set when running '%s'.",
-            //                 qPrintable(m_setup.m_commandLine.executable().toString()));
-            env = m_setup.m_commandLine.executable().deviceEnvironment();
-        }
-        // TODO: needs SshSettings
-        //        if (m_runAsRoot)
-        //            RunControl::provideAskPassEntry(env);
-        return env;
     }
 
     QtcProcess *q;
@@ -1025,6 +1117,16 @@ void QtcProcess::setProcessImpl(ProcessImpl processImpl)
     d->m_setup.m_processImpl = processImpl;
 }
 
+void QtcProcess::setPtyData(const std::optional<Pty::Data> &data)
+{
+    d->m_setup.m_ptyData = data;
+}
+
+std::optional<Pty::Data> QtcProcess::ptyData() const
+{
+    return d->m_setup.m_ptyData;
+}
+
 ProcessMode QtcProcess::processMode() const
 {
     return d->m_setup.m_processMode;
@@ -1115,7 +1217,6 @@ void QtcProcess::start()
     d->m_state = QProcess::Starting;
     d->m_process->m_setup = d->m_setup;
     d->m_process->m_setup.m_commandLine = d->fullCommandLine();
-    d->m_process->m_setup.m_environment = d->fullEnvironment();
     d->emitGuardedSignal(&QtcProcess::starting);
     d->m_process->start();
 }
@@ -1200,6 +1301,16 @@ QString QtcProcess::toStandaloneCommandLine() const
     parts.append(d->m_setup.m_commandLine.executable().path());
     parts.append(d->m_setup.m_commandLine.splitArguments());
     return parts.join(" ");
+}
+
+void QtcProcess::setCreateConsoleOnWindows(bool create)
+{
+    d->m_setup.m_createConsoleOnWindows = create;
+}
+
+bool QtcProcess::createConsoleOnWindows() const
+{
+    return d->m_setup.m_createConsoleOnWindows;
 }
 
 void QtcProcess::setExtraData(const QString &key, const QVariant &value)

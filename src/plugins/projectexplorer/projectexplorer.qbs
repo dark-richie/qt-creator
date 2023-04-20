@@ -45,6 +45,7 @@ Project {
                 "codestylesettingspropertiespage.cpp", "codestylesettingspropertiespage.h",
                 "compileoutputwindow.cpp", "compileoutputwindow.h",
                 "configtaskhandler.cpp", "configtaskhandler.h",
+                "copystep.cpp", "copystep.h",
                 "copytaskhandler.cpp", "copytaskhandler.h",
                 "currentprojectfilter.cpp", "currentprojectfilter.h",
                 "currentprojectfind.cpp", "currentprojectfind.h",
@@ -116,7 +117,7 @@ Project {
                 "projectfilewizardextension.cpp", "projectfilewizardextension.h",
                 "projectimporter.cpp", "projectimporter.h",
                 "projectmacro.cpp", "projectmacro.h",
-                "projectmanager.h",
+                "projectmanager.cpp", "projectmanager.h",
                 "projectmodels.cpp", "projectmodels.h",
                 "projectnodes.cpp", "projectnodes.h",
                 "projectpanelfactory.cpp", "projectpanelfactory.h",
@@ -134,7 +135,7 @@ Project {
                 "runsettingspropertiespage.cpp", "runsettingspropertiespage.h",
                 "sanitizerparser.cpp", "sanitizerparser.h",
                 "selectablefilesmodel.cpp", "selectablefilesmodel.h",
-                "session.cpp", "session.h",
+                "session.cpp", "session.h", "session_p.h",
                 "sessionmodel.cpp", "sessionmodel.h",
                 "sessionview.cpp", "sessionview.h",
                 "sessiondialog.cpp", "sessiondialog.h",
@@ -226,8 +227,7 @@ Project {
                 "idevicefactory.cpp", "idevicefactory.h",
                 "idevicefwd.h",
                 "idevicewidget.h",
-                "localprocesslist.cpp", "localprocesslist.h",
-                "sshdeviceprocesslist.cpp", "sshdeviceprocesslist.h",
+                "processlist.cpp", "processlist.h",
                 "sshparameters.cpp", "sshparameters.h",
                 "sshsettings.cpp", "sshsettings.h",
                 "sshsettingspage.cpp", "sshsettingspage.h",
@@ -250,9 +250,7 @@ Project {
             ]
         }
 
-        Group {
-            name: "Tests"
-            condition: qtc.testsEnabled
+        QtcTestFiles {
             files: ["outputparser_test.h", "outputparser_test.cpp"]
         }
 

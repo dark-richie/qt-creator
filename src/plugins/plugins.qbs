@@ -23,6 +23,7 @@ Project {
         "coco/coco.qbs",
         "compilationdatabaseprojectmanager/compilationdatabaseprojectmanager.qbs",
         "conan/conan.qbs",
+        "copilot/copilot.qbs",
         "coreplugin/coreplugin.qbs",
         "coreplugin/images/logo/logo.qbs",
         "cpaster/cpaster.qbs",
@@ -68,6 +69,7 @@ Project {
         "qmlprojectmanager/qmlprojectmanager.qbs",
         "qnx/qnx.qbs",
         "qmakeprojectmanager/qmakeprojectmanager.qbs",
+        "qmldesignerbase/qmldesignerbase.qbs",
         "qtsupport/qtsupport.qbs",
         "remotelinux/remotelinux.qbs",
         "resourceeditor/resourceeditor.qbs",
@@ -78,12 +80,14 @@ Project {
         "squish/squish.qbs",
         "studiowelcome/studiowelcome.qbs",
         "subversion/subversion.qbs",
+        "terminal/terminal.qbs",
         "texteditor/texteditor.qbs",
         "todo/todo.qbs",
         "updateinfo/updateinfo.qbs",
         "valgrind/valgrind.qbs",
+        "vcpkg/vcpkg.qbs",
         "vcsbase/vcsbase.qbs",
         "webassembly/webassembly.qbs",
-        "welcome/welcome.qbs"
+        "welcome/welcome.qbs",
     ].concat(project.additionalPlugins)
 }

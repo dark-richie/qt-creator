@@ -24,7 +24,7 @@
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/buildsystem.h>
 
@@ -268,7 +268,28 @@ FilePath AndroidManager::buildDirectory(const Target *target)
     return {};
 }
 
-FilePath AndroidManager::apkPath(const Target *target)
+enum PackageFormat {
+    Apk,
+    Aab
+};
+
+QString packageSubPath(PackageFormat format, BuildConfiguration::BuildType buildType, bool sig)
+{
+    const bool deb = (buildType == BuildConfiguration::Debug);
+
+    if (format == Apk) {
+        if (deb) {
+            return sig ? packageSubPath(Apk, BuildConfiguration::Release, true) // Intentional
+                       : QLatin1String("apk/debug/android-build-debug.apk");
+        }
+        return QLatin1String(sig ? "apk/release/android-build-release-signed.apk"
+                                 : "apk/release/android-build-release-unsigned.apk");
+    }
+    return QLatin1String(deb ? "bundle/debug/android-build-debug.aab"
+                             : "bundle/release/android-build-release.aab");
+}
+
+FilePath AndroidManager::packagePath(const Target *target)
 {
     QTC_ASSERT(target, return {});
 
@@ -279,13 +300,10 @@ FilePath AndroidManager::apkPath(const Target *target)
     if (!buildApkStep)
         return {};
 
-    QString apkPath("build/outputs/apk/android-build-");
-    if (buildApkStep->signPackage())
-        apkPath += QLatin1String("release.apk");
-    else
-        apkPath += QLatin1String("debug.apk");
+    const QString subPath = packageSubPath(buildApkStep->buildAAB() ? Aab : Apk,
+                                           bc->buildType(), buildApkStep->signPackage());
 
-    return androidBuildDirectory(target) / apkPath;
+    return androidBuildDirectory(target) / "build/outputs" / subPath;
 }
 
 bool AndroidManager::matchedAbis(const QStringList &deviceAbis, const QStringList &appAbis)
@@ -339,6 +357,21 @@ Abi AndroidManager::androidAbi2Abi(const QString &androidAbi)
                    Abi::BinaryFormat::ElfFormat,
                    0, androidAbi};
     }
+}
+
+bool AndroidManager::skipInstallationAndPackageSteps(const Target *target)
+{
+    const Project *p = target->project();
+
+    const Core::Context cmakeCtx = Core::Context(CMakeProjectManager::Constants::CMAKE_PROJECT_ID);
+    const bool isCmakeProject = p->projectContext() == cmakeCtx;
+    if (isCmakeProject)
+        return false; // CMake reports ProductType::Other for Android Apps
+
+    const ProjectNode *n = p->rootProjectNode()->findProjectNode([] (const ProjectNode *n) {
+        return n->productType() == ProductType::App;
+    });
+    return n == nullptr; // If no Application target found, then skip steps
 }
 
 FilePath AndroidManager::manifestSourcePath(const Target *target)
@@ -501,9 +534,9 @@ QString AndroidManager::androidNameForApiLevel(int x)
     case 31:
         return QLatin1String("Android 12.0 (S)");
     case 32:
-        return QLatin1String("Android 12L (API 32)");
+        return QLatin1String("Android 12L (Sv2, API 32)");
     case 33:
-        return QLatin1String("Android Tiramisu");
+        return QLatin1String("Android 13.0 (Tiramisu)");
     default:
         return Tr::tr("Unknown Android version. API Level: %1").arg(x);
     }

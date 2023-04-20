@@ -12,11 +12,13 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
+#include <utils/outputformatter.h>
 #include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
 
 #include <QAction>
+#include <QDesktopServices>
 #include <QGridLayout>
 #include <QPainter>
 #include <QToolButton>
@@ -79,6 +81,8 @@ TextMark::~TextMark()
         TextMarkRegistry::remove(this);
     if (m_baseTextDocument)
         m_baseTextDocument->removeMark(this);
+    if (m_deleteCallback)
+        m_deleteCallback();
     m_baseTextDocument = nullptr;
 }
 
@@ -284,7 +288,7 @@ void TextMark::addToToolTipLayout(QGridLayout *target) const
         const bool isHidden = TextDocument::marksAnnotationHidden(m_category.id);
         visibilityAction->setIcon(Utils::Icons::EYE_OPEN_TOOLBAR.icon());
         const QString tooltip = (isHidden ? Tr::tr("Show inline annotations for %1")
-                                          : Tr::tr("Temporary hide inline annotations for %1"))
+                                          : Tr::tr("Temporarily hide inline annotations for %1"))
                                     .arg(m_category.displayName);
         visibilityAction->setToolTip(tooltip);
         auto callback = [id = m_category.id, isHidden] {
@@ -338,11 +342,18 @@ bool TextMark::addToolTipContent(QLayout *target) const
     }
 
     auto textLabel = new QLabel;
-    textLabel->setOpenExternalLinks(true);
     textLabel->setText(text);
     // Differentiate between tool tips that where explicitly set and default tool tips.
     textLabel->setDisabled(useDefaultToolTip);
     target->addWidget(textLabel);
+    QObject::connect(textLabel, &QLabel::linkActivated, [](const QString &link) {
+        if (OutputLineParser::isLinkTarget(link)) {
+            Core::EditorManager::openEditorAt(OutputLineParser::parseLinkTarget(link), {},
+                                              Core::EditorManager::SwitchSplitIfAlreadyVisible);
+        } else {
+            QDesktopServices::openUrl(link);
+        }
+    });
 
     return true;
 }

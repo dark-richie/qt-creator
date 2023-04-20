@@ -4,6 +4,7 @@
 #include "dockmanager.h"
 
 #include "ads_globals.h"
+#include "ads_globals_p.h"
 #include "dockareawidget.h"
 #include "dockfocuscontroller.h"
 #include "dockingstatereader.h"
@@ -38,7 +39,7 @@
 #include <QVariant>
 #include <QXmlStreamWriter>
 
-static Q_LOGGING_CATEGORY(adsLog, "qtc.qmldesigner.advanceddockingsystem", QtWarningMsg);
+Q_LOGGING_CATEGORY(adsLog, "qtc.qmldesigner.advanceddockingsystem", QtWarningMsg);
 
 using namespace Utils;
 
@@ -598,10 +599,13 @@ namespace ADS
         return d->m_settings->value(Constants::AUTO_RESTORE_WORKSPACE_SETTINGS_KEY).toBool();
     }
 
-    const QString m_dirName = QLatin1String("workspaces");
-    const QString m_fileExt = QLatin1String(".wrk"); // TODO
+    constexpr QStringView m_dirName{u"workspaces"};
+    constexpr QStringView m_fileExt{u".wrk"}; // TODO
 
-    QString DockManager::workspaceFileExtension() const { return m_fileExt; }
+    QStringView DockManager::workspaceFileExtension() const
+    {
+        return m_fileExt;
+    }
 
     QStringList DockManager::workspaces()
     {

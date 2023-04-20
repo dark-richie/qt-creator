@@ -3,20 +3,27 @@
 
 #include "ilocatorfilter.h"
 
+#include "../coreplugin.h"
 #include "../coreplugintr.h"
+#include "../editormanager/editormanager.h"
 
+#include <utils/asynctask.h>
 #include <utils/fuzzymatcher.h>
+#include <utils/tasktree.h>
 
 #include <QBoxLayout>
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFutureWatcher>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QRegularExpression>
+
+#include <unordered_set>
 
 using namespace Utils;
 
@@ -43,6 +50,427 @@ using namespace Utils;
 */
 
 namespace Core {
+
+class OutputDataProvider
+{
+    enum class State {
+        Awaiting,
+        NewData,
+        Canceled
+    };
+
+    struct WorkingData {
+        WorkingData() = default;
+        WorkingData(const LocatorMatcherTask::OutputData &entries, std::atomic<State> &state) {
+            mergeWith(entries, state);
+        }
+        LocatorMatcherTask::OutputData mergeWith(const LocatorMatcherTask::OutputData &entries,
+                                                 std::atomic<State> &state) {
+            LocatorMatcherTask::OutputData results;
+            results.reserve(entries.size());
+            for (const LocatorFilterEntry &entry : entries) {
+                if (state == State::Canceled)
+                    return LocatorMatcherTask::OutputData();
+                const auto &link = entry.linkForEditor;
+                if (!link || m_cache.emplace(*link).second)
+                    results.append(entry);
+            }
+            if (state == State::Canceled)
+                return LocatorMatcherTask::OutputData();
+
+            m_data += results;
+            return results;
+        }
+        LocatorMatcherTask::OutputData entries() const { return m_data; }
+    private:
+        LocatorMatcherTask::OutputData m_data;
+        std::unordered_set<Utils::Link> m_cache;
+    };
+
+public:
+    OutputDataProvider(int filterCount)
+        : m_filterCount(filterCount)
+        , m_outputData(filterCount, {})
+    {}
+
+    void addOutputData(int index, const LocatorMatcherTask::OutputData &outputData)
+    {
+        QTC_ASSERT(index >= 0, return);
+
+        QMutexLocker locker(&m_mutex);
+        QTC_ASSERT(index < m_filterCount, return);
+        QTC_ASSERT(m_state != State::Canceled, return);
+        QTC_ASSERT(!m_outputData.at(index).has_value(), return);
+
+        m_outputData[index] = outputData;
+        m_state = State::NewData;
+        m_waitCondition.wakeOne();
+    }
+
+    void cancel()
+    {
+        QMutexLocker locker(&m_mutex);
+        m_state = State::Canceled;
+        m_waitCondition.wakeOne();
+    }
+
+    // Called from separate thread (OutputFilter's thread)
+    void run(QPromise<LocatorMatcherTask::OutputData> &promise)
+    {
+        QList<std::optional<LocatorMatcherTask::OutputData>> data;
+        QList<std::optional<WorkingData>> workingList(m_filterCount, {});
+        while (waitForData(&data)) {
+            // Emit new results only when new data is reachable from the beginning (i.e. no gaps)
+            int currentIndex = 0;
+            int mergeToIndex = 0;
+            bool hasGap = false;
+            while (currentIndex < m_filterCount) {
+                if (m_state == State::Canceled)
+                    return;
+                const auto &outputData = data.at(currentIndex);
+                if (!outputData.has_value()) {
+                    ++currentIndex;
+                    mergeToIndex = currentIndex;
+                    hasGap = true;
+                    continue;
+                }
+                const auto &workingData = workingList.at(currentIndex);
+                if (!workingData.has_value()) {
+                    const bool mergeToCurrent = currentIndex == mergeToIndex;
+                    const LocatorMatcherTask::OutputData dataForIndex = mergeToCurrent
+                        ? *outputData : LocatorMatcherTask::OutputData();
+                    workingList[currentIndex] = std::make_optional(WorkingData(dataForIndex,
+                                                                               m_state));
+                    if (m_state == State::Canceled)
+                        return;
+                    const LocatorMatcherTask::OutputData newData = mergeToCurrent
+                        ? workingList[currentIndex]->entries()
+                        : workingList[mergeToIndex]->mergeWith(*outputData, m_state);
+                    if (m_state == State::Canceled)
+                        return;
+                    if (!hasGap && !newData.isEmpty())
+                        promise.addResult(newData);
+                } else if (currentIndex != mergeToIndex) {
+                    const LocatorMatcherTask::OutputData newData
+                        = workingList[mergeToIndex]->mergeWith(workingData->entries(), m_state);
+                    workingList[currentIndex] = std::make_optional<WorkingData>({});
+                    if (m_state == State::Canceled)
+                        return;
+                    if (!hasGap && !newData.isEmpty())
+                        promise.addResult(newData);
+                }
+                ++currentIndex;
+            }
+            // All data arrived (no gap), so finish here
+            if (!hasGap)
+                return;
+        }
+    }
+
+private:
+    bool waitForData(QList<std::optional<LocatorMatcherTask::OutputData>> *data)
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_state == State::Canceled)
+            return false;
+        if (m_state == State::NewData) {
+            m_state = State::Awaiting;
+            *data = m_outputData;
+            return true;
+        }
+        m_waitCondition.wait(&m_mutex);
+        QTC_ASSERT(m_state != State::Awaiting, return false);
+        if (m_state == State::Canceled)
+            return false;
+        m_state = State::Awaiting;
+        *data = m_outputData;
+        return true;
+    }
+
+    QMutex m_mutex;
+    QWaitCondition m_waitCondition;
+    const int m_filterCount = 0;
+    std::atomic<State> m_state = State::Awaiting;
+    QList<std::optional<LocatorMatcherTask::OutputData>> m_outputData;
+};
+
+class OutputFilter : public QObject
+{
+    Q_OBJECT
+
+public:
+    ~OutputFilter();
+    void setFilterCount(int count);
+    // When last index is added it ends automatically (asynchronously)
+    void addOutputData(int index, const LocatorMatcherTask::OutputData &outputData);
+    void start();
+
+    bool isRunning() const { return m_watcher.get(); }
+
+signals:
+    void serialOutputDataReady(const LocatorMatcherTask::OutputData &serialOutputData);
+    void done();
+
+private:
+    int m_filterCount = 0;
+    std::unique_ptr<QFutureWatcher<LocatorMatcherTask::OutputData>> m_watcher;
+    std::shared_ptr<OutputDataProvider> m_dataProvider;
+};
+
+OutputFilter::~OutputFilter()
+{
+    if (!isRunning())
+        return;
+
+    m_dataProvider->cancel();
+    Internal::CorePlugin::futureSynchronizer()->addFuture(m_watcher->future());
+}
+
+void OutputFilter::setFilterCount(int count)
+{
+    QTC_ASSERT(!isRunning(), return);
+    QTC_ASSERT(count >= 0, return);
+
+    m_filterCount = count;
+}
+
+void OutputFilter::addOutputData(int index, const LocatorMatcherTask::OutputData &outputData)
+{
+    QTC_ASSERT(isRunning(), return);
+
+    m_dataProvider->addOutputData(index, outputData);
+}
+
+void OutputFilter::start()
+{
+    QTC_ASSERT(!m_watcher, return);
+    QTC_ASSERT(!isRunning(), return);
+    if (m_filterCount == 0) {
+        emit done();
+        return;
+    }
+
+    m_dataProvider.reset(new OutputDataProvider(m_filterCount));
+    m_watcher.reset(new QFutureWatcher<LocatorMatcherTask::OutputData>);
+    connect(m_watcher.get(), &QFutureWatcherBase::resultReadyAt, this, [this](int index) {
+        emit serialOutputDataReady(m_watcher->resultAt(index));
+    });
+    connect(m_watcher.get(), &QFutureWatcherBase::finished, this, [this] {
+        emit done();
+        m_watcher.release()->deleteLater();
+        m_dataProvider.reset();
+    });
+
+    // TODO: When filterCount == 1, deliver results directly and finish?
+    auto filter = [](QPromise<LocatorMatcherTask::OutputData> &promise,
+                     const std::shared_ptr<OutputDataProvider> &dataProvider) {
+        dataProvider->run(promise);
+    };
+    m_watcher->setFuture(Utils::asyncRun(filter, m_dataProvider));
+}
+
+class OutputFilterAdapter : public Tasking::TaskAdapter<OutputFilter>
+{
+public:
+    OutputFilterAdapter() {
+        connect(task(), &OutputFilter::done, this, [this] { emit done(true); });
+    }
+    void start() final { task()->start(); }
+};
+
+} // namespace Core
+
+QTC_DECLARE_CUSTOM_TASK(Filter, Core::OutputFilterAdapter);
+
+namespace Core {
+
+class LocatorMatcherPrivate
+{
+public:
+    QList<LocatorMatcherTask> m_tasks;
+    LocatorMatcherTask::Storage m_storage;
+    int m_parallelLimit = 0;
+    std::unique_ptr<TaskTree> m_taskTree;
+};
+
+LocatorMatcher::LocatorMatcher()
+    : d(new LocatorMatcherPrivate) {}
+
+LocatorMatcher::~LocatorMatcher() = default;
+
+void LocatorMatcher::setTasks(const QList<LocatorMatcherTask> &tasks)
+{
+    d->m_tasks = tasks;
+}
+
+void LocatorMatcher::setInputData(const LocatorMatcherTask::InputData &inputData)
+{
+    d->m_storage.input = inputData;
+}
+
+void LocatorMatcher::setParallelLimit(int limit)
+{
+    d->m_parallelLimit = limit;
+}
+
+void LocatorMatcher::start()
+{
+    QTC_ASSERT(!isRunning(), return);
+    d->m_storage.output = {};
+    d->m_taskTree.reset(new TaskTree);
+
+    using namespace Tasking;
+
+    struct FilterStorage
+    {
+        OutputFilter *m_filter = nullptr;
+    };
+    TreeStorage<FilterStorage> filterStorage;
+
+    const auto onFilterSetup = [this, filterCount = d->m_tasks.size(), filterStorage](OutputFilter &filter) {
+        filterStorage->m_filter = &filter;
+        filter.setFilterCount(filterCount);
+        connect(&filter, &OutputFilter::serialOutputDataReady,
+                this, [this](const LocatorMatcherTask::OutputData &serialOutputData) {
+            d->m_storage.output += serialOutputData;
+            emit serialOutputDataReady(serialOutputData);
+        });
+    };
+    const auto onFilterDone = [filterStorage](const OutputFilter &filter) {
+        Q_UNUSED(filter)
+        filterStorage->m_filter = nullptr;
+    };
+
+    QList<TaskItem> parallelTasks { ParallelLimit(d->m_parallelLimit) };
+
+    const auto onGroupSetup = [this](const TreeStorage<LocatorMatcherTask::Storage> &storage) {
+        return [this, storage] { storage->input = d->m_storage.input; };
+    };
+    const auto onGroupDone = [filterStorage]
+        (const TreeStorage<LocatorMatcherTask::Storage> &storage, int index) {
+        return [filterStorage, storage, index] {
+            OutputFilter *outputFilter = filterStorage->m_filter;
+            QTC_ASSERT(outputFilter, return);
+            outputFilter->addOutputData(index, storage->output);
+        };
+    };
+
+    int index = 0;
+    for (const LocatorMatcherTask &task : std::as_const(d->m_tasks)) {
+        const auto storage = task.storage;
+        const Group group {
+            optional,
+            Storage(storage),
+            OnGroupSetup(onGroupSetup(storage)),
+            OnGroupDone(onGroupDone(storage, index)),
+            OnGroupError(onGroupDone(storage, index)),
+            task.task
+        };
+        parallelTasks << group;
+        ++index;
+    }
+
+    const Group root {
+        parallel,
+        Storage(filterStorage),
+        Filter(onFilterSetup, onFilterDone, onFilterDone),
+        Group {
+            parallelTasks
+        }
+    };
+
+    d->m_taskTree->setupRoot(root);
+
+    const auto onFinish = [this](bool success) {
+        return [this, success] {
+            emit done(success);
+            d->m_taskTree.release()->deleteLater();
+        };
+    };
+    connect(d->m_taskTree.get(), &TaskTree::done, this, onFinish(true));
+    connect(d->m_taskTree.get(), &TaskTree::errorOccurred, this, onFinish(false));
+    d->m_taskTree->start();
+}
+
+void LocatorMatcher::stop()
+{
+    if (!isRunning())
+        return;
+
+    d->m_taskTree->stop();
+    d->m_taskTree.reset();
+}
+
+bool LocatorMatcher::isRunning() const
+{
+    return d->m_taskTree.get() && d->m_taskTree->isRunning();
+}
+
+LocatorMatcherTask::OutputData LocatorMatcher::outputData() const
+{
+    return d->m_storage.output;
+}
+
+LocatorMatcherTask::OutputData LocatorMatcher::runBlocking(const QList<LocatorMatcherTask> &tasks,
+                               const LocatorMatcherTask::InputData &input, int parallelLimit)
+{
+    LocatorMatcher tree;
+    tree.setTasks(tasks);
+    tree.setInputData(input);
+    tree.setParallelLimit(parallelLimit);
+
+    QEventLoop loop;
+    connect(&tree, &LocatorMatcher::done, &loop, [&loop] { loop.quit(); });
+    tree.start();
+    if (tree.isRunning())
+        loop.exec(QEventLoop::ExcludeUserInputEvents);
+    return tree.outputData();
+}
+
+static QList<LocatorMatcherTaskCreator> s_locatorMatcherCreators = {};
+static QList<LocatorMatcherTaskCreator> s_classMatcherCreators = {};
+static QList<LocatorMatcherTaskCreator> s_functionMatcherCreators = {};
+
+void LocatorMatcher::addLocatorMatcherCreator(const LocatorMatcherTaskCreator &creator)
+{
+    QTC_ASSERT(creator, return);
+    s_locatorMatcherCreators.append(creator);
+}
+
+void LocatorMatcher::addClassMatcherCreator(const LocatorMatcherTaskCreator &creator)
+{
+    QTC_ASSERT(creator, return);
+    s_classMatcherCreators.append(creator);
+}
+
+void LocatorMatcher::addFunctionMatcherCreator(const LocatorMatcherTaskCreator &creator)
+{
+    QTC_ASSERT(creator, return);
+    s_functionMatcherCreators.append(creator);
+}
+
+static QList<LocatorMatcherTask> matchers(const QList<LocatorMatcherTaskCreator> &creators)
+{
+    QList<LocatorMatcherTask> result;
+    for (const LocatorMatcherTaskCreator &creator : creators)
+        result << creator();
+    return result;
+}
+
+QList<LocatorMatcherTask> LocatorMatcher::locatorMatchers()
+{
+    return matchers(s_locatorMatcherCreators);
+}
+
+QList<LocatorMatcherTask> LocatorMatcher::classMatchers()
+{
+    return matchers(s_classMatcherCreators);
+}
+
+QList<LocatorMatcherTask> LocatorMatcher::functionMatchers()
+{
+    return matchers(s_functionMatcherCreators);
+}
 
 static QList<ILocatorFilter *> g_locatorFilters;
 
@@ -96,6 +524,42 @@ QString ILocatorFilter::shortcutString() const
 void ILocatorFilter::prepareSearch(const QString &entry)
 {
     Q_UNUSED(entry)
+}
+
+
+/*!
+    Sets the refresh recipe for refreshing cached data.
+*/
+void ILocatorFilter::setRefreshRecipe(const std::optional<Utils::Tasking::TaskItem> &recipe)
+{
+    m_refreshRecipe = recipe;
+}
+
+/*!
+    Returns the refresh recipe for refreshing cached data. By default, the locator filter has
+    no recipe set, so that it won't be refreshed.
+*/
+std::optional<Utils::Tasking::TaskItem> ILocatorFilter::refreshRecipe() const
+{
+    return m_refreshRecipe;
+}
+
+/*!
+    Called with the entry specified by \a selection when the user activates it
+    in the result list.
+    Implementations can return a new search term \a newText, which has \a selectionLength characters
+    starting from \a selectionStart preselected, and the cursor set to the end of the selection.
+
+    The default implementation tries to open an editor for \a selections's linkForEditor,
+    if it exists.
+*/
+void ILocatorFilter::accept(const LocatorFilterEntry &selection, QString *newText,
+                            int *selectionStart, int *selectionLength) const
+{
+    Q_UNUSED(newText)
+    Q_UNUSED(selectionStart)
+    Q_UNUSED(selectionLength)
+    EditorManager::openEditor(selection);
 }
 
 /*!
@@ -201,13 +665,13 @@ void ILocatorFilter::restoreState(const QByteArray &state)
     various aspects of the filter. Called when the user requests to configure
     the filter.
 
-    Set \a needsRefresh to \c true, if a refresh() should be done after
+    Set \a needsRefresh to \c true, if a refresh should be done after
     closing the dialog. Return \c false if the user canceled the dialog.
 
     The default implementation allows changing the shortcut and whether the
     filter is included by default.
 
-    \sa refresh()
+    \sa refreshRecipe()
 */
 bool ILocatorFilter::openConfigDialog(QWidget *parent, bool &needsRefresh)
 {
@@ -425,7 +889,10 @@ ILocatorFilter::Priority ILocatorFilter::priority() const
 */
 void ILocatorFilter::setEnabled(bool enabled)
 {
+    if (enabled == m_enabled)
+        return;
     m_enabled = enabled;
+    emit enabledChanged(m_enabled);
 }
 
 /*!
@@ -598,23 +1065,6 @@ bool ILocatorFilter::isOldSetting(const QByteArray &state)
 */
 
 /*!
-    \fn void Core::ILocatorFilter::accept(Core::const LocatorFilterEntry &selection, QString *newText, int *selectionStart, int *selectionLength) const
-
-    Called with the entry specified by \a selection when the user activates it
-    in the result list.
-    Implementations can return a new search term \a newText, which has \a selectionLength characters
-    starting from \a selectionStart preselected, and the cursor set to the end of the selection.
-*/
-
-/*!
-    \fn void Core::ILocatorFilter::refresh(QFutureInterface<void> &future)
-
-    Refreshes cached data asynchronously.
-
-    If \a future is \c canceled, the refresh should be aborted.
-*/
-
-/*!
     \enum Core::ILocatorFilter::Priority
 
     This enum value holds the priority that is used for ordering the results
@@ -648,3 +1098,5 @@ bool ILocatorFilter::isOldSetting(const QByteArray &state)
 */
 
 } // Core
+
+#include "ilocatorfilter.moc"

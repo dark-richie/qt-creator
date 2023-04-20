@@ -15,10 +15,9 @@ public:
     // ILocatorFilter interface
 public:
     void prepareSearch(const QString &entry) override;
-    void refresh(QFutureInterface<void> &future) override;
 
 private:
-    void markOutdated();
+    void invalidateCache();
 
     bool m_needsUpdate = true;
 };

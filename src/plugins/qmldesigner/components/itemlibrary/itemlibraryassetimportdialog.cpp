@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+
 #include "itemlibraryassetimportdialog.h"
 #include "ui_itemlibraryassetimportdialog.h"
 
@@ -13,7 +14,8 @@
 #include "theme.h"
 
 #include <projectexplorer/project.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
+
 #include <coreplugin/icore.h>
 
 #include <QFileInfo>
@@ -60,6 +62,9 @@ const int checkBoxColWidth = 18;
 const int labelMinWidth = 130;
 const int controlMinWidth = 65;
 const int columnSpacing = 16;
+
+constexpr QStringView qdsWorkaroundsKey{u"designStudioWorkarounds"};
+constexpr QStringView expandValuesKey{u"expandValueComponents"};
 
 } // namespace
 
@@ -170,6 +175,11 @@ ItemLibraryAssetImportDialog::ItemLibraryAssetImportDialog(
         while (optIt != supportedOpts.constEnd()) {
             QJsonObject options = QJsonObject::fromVariantMap(qvariant_cast<QVariantMap>(optIt.value()));
             m_importOptions << options.value("options").toObject();
+            if (m_importOptions.last().contains(qdsWorkaroundsKey)) {
+                QJsonObject optObj = m_importOptions.last()[qdsWorkaroundsKey].toObject();
+                optObj.insert("value", QJsonValue{true});
+                m_importOptions.last().insert(qdsWorkaroundsKey, optObj);
+            }
             auto it = defaultOpts.constBegin();
             while (it != defaultOpts.constEnd()) {
                 if (m_importOptions.last().contains(it.key())) {
@@ -322,7 +332,7 @@ void ItemLibraryAssetImportDialog::updateImport(const ModelNode &updateNode,
                             // Unable to find original scene source, launch file dialog to locate it
                             QString initialPath;
                             ProjectExplorer::Project *currentProject
-                                    = ProjectExplorer::SessionManager::projectForFile(
+                                    = ProjectExplorer::ProjectManager::projectForFile(
                                         Utils::FilePath::fromString(compFileName));
                             if (currentProject)
                                 initialPath = currentProject->projectDirectory().toString();
@@ -475,7 +485,7 @@ QGridLayout *ItemLibraryAssetImportDialog::createOptionsGrid(
     QJsonObject &options = m_importOptions[optionsIndex];
     const auto optKeys = options.keys();
     for (const auto &optKey : optKeys) {
-        if (!advanced && !isSimpleOption(optKey))
+        if ((!advanced && !isSimpleOption(optKey)) || isHiddenOption(optKey))
             continue;
         QJsonObject optObj = options.value(optKey).toObject();
         const QString optName = optObj.value("name").toString();
@@ -587,8 +597,31 @@ QGridLayout *ItemLibraryAssetImportDialog::createOptionsGrid(
             m_labelToControlWidgetMaps[optionsIndex].insert(optKey, optControl);
     }
 
-    // Handle conditions
+    // Find condition chains (up to two levels supported)
+    // key: Option that has condition and is also specified in another condition as property
+    // value: List of extra widgets that are affected by key property via condition
+    QHash<QString, QList<QWidget *>> conditionChains;
     auto it = conditionMap.constBegin();
+    while (it != conditionMap.constEnd()) {
+        const QString &option = it.key();
+        const QJsonArray &conditions = it.value();
+        if (!conditions.isEmpty()) {
+            const QString optItem = conditions[0].toObject().value("property").toString();
+            if (conditionMap.contains(optItem)) {
+                if (!conditionChains.contains(optItem))
+                    conditionChains.insert(optItem, {});
+                QPair<QWidget *, QWidget *> widgetPair = optionToWidgetsMap.value(option);
+                if (widgetPair.first)
+                    conditionChains[optItem].append(widgetPair.first);
+                if (widgetPair.second)
+                    conditionChains[optItem].append(widgetPair.second);
+            }
+        }
+        ++it;
+    }
+
+    // Handle conditions
+    it = conditionMap.constBegin();
     while (it != conditionMap.constEnd()) {
         const QString &option = it.key();
         const QJsonArray &conditions = it.value();
@@ -620,21 +653,33 @@ QGridLayout *ItemLibraryAssetImportDialog::createOptionsGrid(
                 auto optSpin = qobject_cast<QDoubleSpinBox *>(optWidgets.second);
                 if (optCb) {
                     auto enableConditionally = [optValue](QCheckBox *cb, QWidget *w1,
-                            QWidget *w2, Mode mode) {
+                            QWidget *w2, const QList<QWidget *> &extraWidgets, Mode mode) {
                         bool equals = (mode == Mode::equals) == optValue.toBool();
                         bool enable = cb->isChecked() == equals;
                         w1->setEnabled(enable);
                         w2->setEnabled(enable);
+                        if (extraWidgets.isEmpty())
+                            return;
+
+                        if (auto conditionCb = qobject_cast<QCheckBox *>(w2)) {
+                            for (const auto w : extraWidgets)
+                                w->setEnabled(conditionCb->isChecked() && enable);
+                        }
                     };
-                    enableConditionally(optCb, conLabel, conControl, mode);
+                    // Only initialize conditional state if conditional control is enabled.
+                    // If it is disabled, it is assumed that previous chained condition handling
+                    // already handled this case.
+                    if (optCb->isEnabled())
+                        enableConditionally(optCb, conLabel, conControl, conditionChains[option], mode);
                     if (conditionalWidgetMap.contains(optCb))
                         conditionalWidgetMap.insert(optCb, nullptr);
                     else
                         conditionalWidgetMap.insert(optCb, conControl);
                     QObject::connect(
                                 optCb, &QCheckBox::toggled, optCb,
-                                [optCb, conLabel, conControl, mode, enableConditionally]() {
-                        enableConditionally(optCb, conLabel, conControl, mode);
+                                [optCb, conLabel, conControl, extraWidgets = conditionChains[option],
+                                mode, enableConditionally]() {
+                        enableConditionally(optCb, conLabel, conControl, extraWidgets, mode);
                     });
                 }
                 if (optSpin) {
@@ -800,6 +845,16 @@ bool ItemLibraryAssetImportDialog::isSimpleOption(const QString &id)
     };
 
     return simpleOptions.contains(id);
+}
+
+bool ItemLibraryAssetImportDialog::isHiddenOption(const QString &id)
+{
+    static QList<QStringView> hiddenOptions {
+        qdsWorkaroundsKey,
+        expandValuesKey // Hidden because qdsWorkaroundsKey we force true implies this
+    };
+
+    return hiddenOptions.contains(id);
 }
 
 void ItemLibraryAssetImportDialog::resizeEvent(QResizeEvent *event)

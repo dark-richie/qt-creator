@@ -112,6 +112,10 @@ static const char modeSelectorLayoutKey[] = "ModeSelectorLayout";
 
 static const bool askBeforeExitDefault = false;
 
+static bool hideToolsMenu()
+{
+    return Core::ICore::settings()->value(Constants::SETTINGS_MENU_HIDE_TOOLS, false).toBool();
+}
 
 enum { debugMainWindow = 0 };
 
@@ -498,7 +502,10 @@ void MainWindow::registerDefaultContainers()
 
     // Tools Menu
     ActionContainer *ac = ActionManager::createMenu(Constants::M_TOOLS);
-    menubar->addMenu(ac, Constants::G_TOOLS);
+    ac->setParent(this);
+    if (!hideToolsMenu())
+        menubar->addMenu(ac, Constants::G_TOOLS);
+
     ac->menu()->setTitle(Tr::tr("&Tools"));
 
     // Window Menu
@@ -1377,67 +1384,6 @@ public:
     }
 };
 
-class MarkdownHighlighter : public QSyntaxHighlighter
-{
-    QBrush h2Brush;
-public:
-    MarkdownHighlighter(QTextDocument *parent)
-        : QSyntaxHighlighter(parent)
-        , h2Brush(Qt::NoBrush)
-    {
-        parent->setIndentWidth(30); // default value is 40
-    }
-
-    void highlightBlock(const QString &text)
-    {
-        if (text.isEmpty())
-            return;
-
-        QTextBlockFormat fmt = currentBlock().blockFormat();
-        QTextCursor cur(currentBlock());
-        if (fmt.hasProperty(QTextFormat::HeadingLevel)) {
-            fmt.setTopMargin(10);
-            fmt.setBottomMargin(10);
-
-            // Draw an underline for Heading 2, by creating a texture brush
-            // with the last pixel visible
-            if (fmt.property(QTextFormat::HeadingLevel) == 2) {
-                QTextCharFormat charFmt = currentBlock().charFormat();
-                charFmt.setBaselineOffset(15);
-                setFormat(0, text.length(), charFmt);
-
-                if (h2Brush.style() == Qt::NoBrush) {
-                    const int height = QFontMetrics(charFmt.font()).height();
-                    QImage image(1, height, QImage::Format_ARGB32);
-
-                    image.fill(QColor(0, 0, 0, 0).rgba());
-                    image.setPixel(0,
-                                   height - 1,
-                                   Utils::creatorTheme()->color(Theme::TextColorDisabled).rgba());
-
-                    h2Brush = QBrush(image);
-                }
-                fmt.setBackground(h2Brush);
-            }
-            cur.setBlockFormat(fmt);
-        } else if (fmt.hasProperty(QTextFormat::BlockCodeLanguage) && fmt.indent() == 0) {
-            // set identation for code blocks
-            fmt.setIndent(1);
-            cur.setBlockFormat(fmt);
-        }
-
-        // Show the bulet points as filled circles
-        QTextList *list = cur.currentList();
-        if (list) {
-            QTextListFormat listFmt = list->format();
-            if (listFmt.indent() == 1 && listFmt.style() == QTextListFormat::ListCircle) {
-                listFmt.setStyle(QTextListFormat::ListDisc);
-                list->setFormat(listFmt);
-            }
-        }
-    }
-};
-
 void MainWindow::changeLog()
 {
     static QPointer<LogDialog> dialog;
@@ -1477,8 +1423,7 @@ void MainWindow::changeLog()
     aggregate->add(textEdit);
     aggregate->add(new Core::BaseTextFind(textEdit));
 
-    auto highlighter = new MarkdownHighlighter(textEdit->document());
-    (void)highlighter;
+    new MarkdownHighlighter(textEdit->document());
 
     auto textEditWidget = new QFrame;
     textEditWidget->setFrameStyle(QFrame::NoFrame);

@@ -12,6 +12,7 @@
 #include <debugger/analyzer/analyzermanager.h>
 
 #include <utils/filepath.h>
+#include <utils/filestreamermanager.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 #include <utils/temporaryfile.h>
@@ -85,7 +86,7 @@ QStringList CallgrindToolRunner::toolArguments() const
 
     arguments << "--callgrind-out-file=" + m_valgrindOutputFile.path();
 
-    arguments << ProcessArgs::splitArgs(m_settings.callgrindArguments.value());
+    arguments << ProcessArgs::splitArgs(m_settings.callgrindArguments.value(), HostOsInfo::hostOs());
 
     return arguments;
 }
@@ -200,7 +201,7 @@ void CallgrindToolRunner::run(Option option)
             this, &CallgrindToolRunner::controllerProcessDone);
 
     const FilePath control =
-            FilePath(CALLGRIND_CONTROL_BINARY).onDevice(m_valgrindRunnable.command.executable());
+            m_valgrindRunnable.command.executable().withNewPath(CALLGRIND_CONTROL_BINARY);
     m_controllerProcess->setCommand({control, {toOptionString(option), QString::number(m_pid)}});
     m_controllerProcess->setWorkingDirectory(m_valgrindRunnable.workingDirectory);
     m_controllerProcess->setEnvironment(m_valgrindRunnable.environment);
@@ -261,7 +262,9 @@ void CallgrindToolRunner::triggerParse()
         showStatusMessage(Tr::tr("Parsing Profile Data..."));
         m_parser.parse(m_hostOutputFile);
     };
-    m_valgrindOutputFile.asyncCopyFile(afterCopy, m_hostOutputFile);
+    // TODO: Store the handle and cancel on CallgrindToolRunner destructor?
+    // TODO: Should d'tor of context object cancel the running task?
+    FileStreamerManager::copy(m_valgrindOutputFile, m_hostOutputFile, this, afterCopy);
 }
 
 void CallgrindToolRunner::cleanupTempFile()

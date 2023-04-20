@@ -533,15 +533,7 @@ bool AndroidBuildApkStep::init()
 
     m_openPackageLocationForRun = m_openPackageLocation;
     const FilePath outputDir = AndroidManager::androidBuildDirectory(target());
-
-    if (m_buildAAB) {
-        const QString bt = buildType() == BuildConfiguration::Release ? QLatin1String("release")
-                                                                      : QLatin1String("debug");
-        m_packagePath = outputDir.pathAppended(
-            QString("build/outputs/bundle/%1/android-build-%1.aab").arg(bt));
-    } else {
-        m_packagePath = AndroidManager::apkPath(target());
-    }
+    m_packagePath = AndroidManager::packagePath(target());
 
     qCDebug(buildapkstepLog).noquote() << "APK or AAB path:" << m_packagePath.toUserOutput();
 
@@ -719,6 +711,13 @@ void AndroidBuildApkStep::doRun()
         return;
     }
 
+    if (AndroidManager::skipInstallationAndPackageSteps(target())) {
+        reportWarningOrError(Tr::tr("Product type is not an application, not building an APK."),
+                             Task::Warning);
+        emit finished(true);
+        return;
+    }
+
     auto setup = [this] {
         const auto androidAbis = AndroidManager::applicationAbis(target());
         const QString buildKey = target()->activeBuildKey();
@@ -871,7 +870,7 @@ void AndroidBuildApkStep::updateBuildToolsVersionInJsonFile()
     if (!contents)
         return;
 
-    QRegularExpression regex(QLatin1String("\"sdkBuildToolsRevision\":.\"[0-9.]+\""));
+    static const QRegularExpression regex(R"("sdkBuildToolsRevision":."[0-9.]+")");
     QRegularExpressionMatch match = regex.match(QString::fromUtf8(contents.value()));
     const QString version = buildToolsVersion().toString();
     if (match.hasMatch() && !version.isEmpty()) {
@@ -933,7 +932,8 @@ void AndroidBuildApkStep::setBuildToolsVersion(const QVersionNumber &version)
 void AndroidBuildApkStep::stdError(const QString &output)
 {
     QString newOutput = output;
-    newOutput.remove(QRegularExpression("^(\\n)+"));
+    static const QRegularExpression re("^(\\n)+");
+    newOutput.remove(re);
 
     if (newOutput.isEmpty())
         return;

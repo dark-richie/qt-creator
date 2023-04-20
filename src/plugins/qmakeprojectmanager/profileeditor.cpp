@@ -7,17 +7,22 @@
 #include "profilehighlighter.h"
 #include "profilehoverhandler.h"
 #include "qmakenodes.h"
-#include "qmakeproject.h"
 #include "qmakeprojectmanagerconstants.h"
 
+#include <coreplugin/coreplugintr.h>
+
 #include <extensionsystem/pluginmanager.h>
-#include <qtsupport/qtsupportconstants.h>
+
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
-#include <projectexplorer/session.h>
-#include <texteditor/texteditoractionhandler.h>
+
+#include <qtsupport/qtsupportconstants.h>
+
 #include <texteditor/textdocument.h>
+#include <texteditor/texteditoractionhandler.h>
+
 #include <utils/fsengine/fileiconprovider.h>
 #include <utils/qtcassert.h>
 #include <utils/theme/theme.h>
@@ -64,7 +69,7 @@ QString ProFileEditorWidget::checkForPrfFile(const QString &baseName) const
     const QmakePriFileNode *projectNode = nullptr;
 
     // FIXME: Remove this check once project nodes are fully "static".
-    for (const Project * const project : SessionManager::projects()) {
+    for (const Project * const project : ProjectManager::projects()) {
         static const auto isParsing = [](const Project *project) {
             for (const Target * const t : project->targets()) {
                 for (const BuildConfiguration * const bc : t->buildConfigurations()) {
@@ -253,7 +258,7 @@ static TextDocument *createProFileDocument()
 ProFileEditorFactory::ProFileEditorFactory()
 {
     setId(Constants::PROFILE_EDITOR_ID);
-    setDisplayName(QCoreApplication::translate("OpenWith::Editors", Constants::PROFILE_EDITOR_DISPLAY_NAME));
+    setDisplayName(::Core::Tr::tr(Constants::PROFILE_EDITOR_DISPLAY_NAME));
     addMimeType(Constants::PROFILE_MIMETYPE);
     addMimeType(Constants::PROINCLUDEFILE_MIMETYPE);
     addMimeType(Constants::PROFEATUREFILE_MIMETYPE);

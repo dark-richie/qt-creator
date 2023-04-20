@@ -284,7 +284,7 @@ static QStringList extraOptions(const QString &envVar)
     if (!qtcEnvironmentVariableIsSet(envVar))
         return QStringList();
     QString arguments = qtcEnvironmentVariable(envVar);
-    return Utils::ProcessArgs::splitArgs(arguments);
+    return ProcessArgs::splitArgs(arguments, HostOsInfo::hostOs());
 }
 
 QStringList extraClangToolsPrependOptions()
@@ -294,7 +294,7 @@ QStringList extraClangToolsPrependOptions()
     static const QStringList options = extraOptions(csaPrependOptions)
                                        + extraOptions(toolsPrependOptions);
     if (!options.isEmpty())
-        qWarning() << "ClangTools options are prepended with " << options.toVector();
+        qWarning() << "ClangTools options are prepended with " << options;
     return options;
 }
 
@@ -305,7 +305,7 @@ QStringList extraClangToolsAppendOptions()
     static const QStringList options = extraOptions(csaAppendOptions)
                                        + extraOptions(toolsAppendOptions);
     if (!options.isEmpty())
-        qWarning() << "ClangTools options are appended with " << options.toVector();
+        qWarning() << "ClangTools options are appended with " << options;
     return options;
 }
 
@@ -341,6 +341,14 @@ QString clazyDocUrl(const QString &check)
     static const char urlTemplate[]
             = "https://github.com/KDE/clazy/blob/%1/docs/checks/README-%2.md";
     return QString::fromLatin1(urlTemplate).arg(versionString, check);
+}
+
+bool toolEnabled(CppEditor::ClangToolType type, const ClangDiagnosticConfig &config,
+                 const RunSettings &runSettings)
+{
+    if (type == ClangToolType::Tidy && runSettings.preferConfigFile())
+        return true;
+    return config.isEnabled(type);
 }
 
 } // namespace Internal

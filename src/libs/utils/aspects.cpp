@@ -9,6 +9,7 @@
 #include "layoutbuilder.h"
 #include "pathchooser.h"
 #include "qtcassert.h"
+#include "qtcolorbutton.h"
 #include "qtcsettings.h"
 #include "utilstr.h"
 #include "variablechooser.h"
@@ -579,6 +580,12 @@ public:
     QPointer<QGroupBox> m_groupBox; // For BoolAspects handling GroupBox check boxes
 };
 
+class ColorAspectPrivate
+{
+public:
+    QPointer<QtColorButton> m_colorButton; // Owned by configuration widget
+};
+
 class SelectionAspectPrivate
 {
 public:
@@ -625,7 +632,7 @@ public:
     QString m_placeHolderText;
     QString m_historyCompleterKey;
     PathChooser::Kind m_expectedKind = PathChooser::File;
-    EnvironmentChange m_environmentChange;
+    Environment m_environment;
     QPointer<ElidingLabel> m_labelDisplay;
     QPointer<FancyLineEdit> m_lineEditDisplay;
     QPointer<PathChooser> m_pathChooserDisplay;
@@ -968,16 +975,11 @@ void StringAspect::setExpectedKind(const PathChooser::Kind expectedKind)
         d->m_pathChooserDisplay->setExpectedKind(expectedKind);
 }
 
-void StringAspect::setEnvironmentChange(const EnvironmentChange &change)
-{
-    d->m_environmentChange = change;
-    if (d->m_pathChooserDisplay)
-        d->m_pathChooserDisplay->setEnvironmentChange(change);
-}
-
 void StringAspect::setEnvironment(const Environment &env)
 {
-    setEnvironmentChange(EnvironmentChange::fromDictionary(env.toDictionary()));
+    d->m_environment = env;
+    if (d->m_pathChooserDisplay)
+        d->m_pathChooserDisplay->setEnvironment(env);
 }
 
 void StringAspect::setBaseFileName(const FilePath &baseFileName)
@@ -1075,7 +1077,7 @@ void StringAspect::addToLayout(Layouting::LayoutBuilder &builder)
             d->m_pathChooserDisplay->setHistoryCompleter(d->m_historyCompleterKey);
         if (d->m_validator)
             d->m_pathChooserDisplay->setValidationFunction(d->m_validator);
-        d->m_pathChooserDisplay->setEnvironmentChange(d->m_environmentChange);
+        d->m_pathChooserDisplay->setEnvironment(d->m_environment);
         d->m_pathChooserDisplay->setBaseDirectory(d->m_baseFileName);
         d->m_pathChooserDisplay->setOpenTerminalHandler(d->m_openTerminal);
         if (defaultValue() == value())
@@ -1285,6 +1287,70 @@ void StringAspect::makeCheckable(CheckBoxPlacement checkBoxPlacement,
     connect(d->m_checker.get(), &BoolAspect::changed, this, &StringAspect::checkedChanged);
 
     update();
+}
+
+/*!
+    \class Utils::ColorAspect
+    \inmodule QtCreator
+
+    \brief A color aspect is a color property of some object, together with
+    a description of its behavior for common operations like visualizing or
+    persisting.
+
+    The color aspect is displayed using a QtColorButton.
+*/
+
+ColorAspect::ColorAspect(const QString &settingsKey)
+    : d(new Internal::ColorAspectPrivate)
+{
+    setDefaultValue(QColor::fromRgb(0, 0, 0));
+    setSettingsKey(settingsKey);
+    setSpan(1, 1);
+
+    addDataExtractor(this, &ColorAspect::value, &Data::value);
+}
+
+ColorAspect::~ColorAspect() = default;
+
+void ColorAspect::addToLayout(Layouting::LayoutBuilder &builder)
+{
+    QTC_CHECK(!d->m_colorButton);
+    d->m_colorButton = createSubWidget<QtColorButton>();
+    builder.addItem(d->m_colorButton.data());
+    d->m_colorButton->setColor(value());
+    if (isAutoApply()) {
+        connect(d->m_colorButton.data(),
+                &QtColorButton::colorChanged,
+                this,
+                [this](const QColor &color) { setValue(color); });
+    }
+}
+
+QColor ColorAspect::value() const
+{
+    return BaseAspect::value().value<QColor>();
+}
+
+void ColorAspect::setValue(const QColor &value)
+{
+    if (BaseAspect::setValueQuietly(value))
+        emit changed();
+}
+
+QVariant ColorAspect::volatileValue() const
+{
+    QTC_CHECK(!isAutoApply());
+    if (d->m_colorButton)
+        return d->m_colorButton->color();
+    QTC_CHECK(false);
+    return {};
+}
+
+void ColorAspect::setVolatileValue(const QVariant &val)
+{
+    QTC_CHECK(!isAutoApply());
+    if (d->m_colorButton)
+        d->m_colorButton->setColor(val.value<QColor>());
 }
 
 /*!

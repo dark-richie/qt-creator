@@ -185,7 +185,7 @@ void BuildSettingsWidget::currentIndexChanged(int index)
 {
     auto buildConfiguration = qobject_cast<BuildConfiguration *>(
                 m_target->buildConfigurationModel()->projectConfigurationAt(index));
-    SessionManager::setActiveBuildConfiguration(m_target, buildConfiguration, SetActive::Cascade);
+    m_target->setActiveBuildConfiguration(buildConfiguration, SetActive::Cascade);
 }
 
 void BuildSettingsWidget::updateActiveConfiguration()
@@ -222,7 +222,7 @@ void BuildSettingsWidget::createConfiguration(const BuildInfo &info_)
         return;
 
     m_target->addBuildConfiguration(bc);
-    SessionManager::setActiveBuildConfiguration(m_target, bc, SetActive::Cascade);
+    m_target->setActiveBuildConfiguration(bc, SetActive::Cascade);
 }
 
 QString BuildSettingsWidget::uniqueName(const QString & name)
@@ -276,6 +276,9 @@ void BuildSettingsWidget::cloneConfiguration()
     if (name.isEmpty())
         return;
 
+    // Save the current build configuration settings, so that the clone gets all the settings
+    m_target->project()->saveSettings();
+
     BuildConfiguration *bc = BuildConfigurationFactory::clone(m_target, m_buildConfiguration);
     if (!bc)
         return;
@@ -283,7 +286,7 @@ void BuildSettingsWidget::cloneConfiguration()
     bc->setDisplayName(name);
     const FilePath buildDirectory = bc->buildDirectory();
     if (buildDirectory != m_target->project()->projectDirectory()) {
-        const std::function<bool(const FilePath &)> isBuildDirOk = [this](const FilePath &candidate) {
+        const FilePathPredicate isBuildDirOk = [this](const FilePath &candidate) {
             if (candidate.exists())
                 return false;
             return !anyOf(m_target->buildConfigurations(), [&candidate](const BuildConfiguration *bc) {
@@ -292,7 +295,7 @@ void BuildSettingsWidget::cloneConfiguration()
         bc->setBuildDirectory(makeUniquelyNumbered(buildDirectory, isBuildDirOk));
     }
     m_target->addBuildConfiguration(bc);
-    SessionManager::setActiveBuildConfiguration(m_target, bc, SetActive::Cascade);
+    m_target->setActiveBuildConfiguration(bc, SetActive::Cascade);
 }
 
 void BuildSettingsWidget::deleteConfiguration(BuildConfiguration *deleteConfiguration)

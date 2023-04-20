@@ -10,6 +10,7 @@
 #include "cppeditorwidget.h"
 #include "cppfunctiondecldeflink.h"
 #include "cppinsertvirtualmethods.h"
+#include "cpplocatordata.h"
 #include "cpppointerdeclarationformatter.h"
 #include "cppquickfixassistant.h"
 #include "cppquickfixprojectsettings.h"
@@ -33,7 +34,7 @@
 
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <utils/algorithm.h>
 #include <utils/basetreeview.h>
@@ -1990,45 +1991,45 @@ Snapshot forwardingHeaders(const CppQuickFixInterface &interface)
     return result;
 }
 
-bool matchName(const Name *name, QList<Core::LocatorFilterEntry> *matches, QString *className) {
+QList<IndexItem::Ptr> matchName(const Name *name, QString *className)
+{
     if (!name)
-        return false;
+        return {};
 
     QString simpleName;
-    if (Core::ILocatorFilter *classesFilter = CppModelManager::instance()->classesFilter()) {
-        QFutureInterface<Core::LocatorFilterEntry> dummy;
-
-        const Overview oo;
-        if (const QualifiedNameId *qualifiedName = name->asQualifiedNameId()) {
-            const Name *name = qualifiedName->name();
-            if (const TemplateNameId *templateName = name->asTemplateNameId()) {
-                *className = templateNameAsString(templateName);
-            } else {
-                simpleName = oo.prettyName(name);
-                *className = simpleName;
-                *matches = classesFilter->matchesFor(dummy, *className);
-                if (matches->empty()) {
-                    if (const Name *name = qualifiedName->base()) {
-                        if (const TemplateNameId *templateName = name->asTemplateNameId())
-                            *className = templateNameAsString(templateName);
-                        else
-                            *className = oo.prettyName(name);
-                    }
-                }
-            }
-        } else if (const TemplateNameId *templateName = name->asTemplateNameId()) {
+    QList<IndexItem::Ptr> matches;
+    CppLocatorData *locatorData = CppModelManager::instance()->locatorData();
+    const Overview oo;
+    if (const QualifiedNameId *qualifiedName = name->asQualifiedNameId()) {
+        const Name *name = qualifiedName->name();
+        if (const TemplateNameId *templateName = name->asTemplateNameId()) {
             *className = templateNameAsString(templateName);
         } else {
-            *className = oo.prettyName(name);
-        }
-
-        if (matches->empty())
-            *matches = classesFilter->matchesFor(dummy, *className);
-        if (matches->empty() && !simpleName.isEmpty())
+            simpleName = oo.prettyName(name);
             *className = simpleName;
+            matches = locatorData->findSymbols(IndexItem::Class, *className);
+            if (matches.isEmpty()) {
+                if (const Name *name = qualifiedName->base()) {
+                    if (const TemplateNameId *templateName = name->asTemplateNameId())
+                        *className = templateNameAsString(templateName);
+                    else
+                        *className = oo.prettyName(name);
+                }
+            }
+        }
+    } else if (const TemplateNameId *templateName = name->asTemplateNameId()) {
+        *className = templateNameAsString(templateName);
+    } else {
+        *className = oo.prettyName(name);
     }
 
-    return !matches->empty();
+    if (matches.isEmpty())
+        matches = locatorData->findSymbols(IndexItem::Class, *className);
+
+    if (matches.isEmpty() && !simpleName.isEmpty())
+        *className = simpleName;
+
+    return matches;
 }
 
 } // anonymous namespace
@@ -2045,17 +2046,16 @@ void AddIncludeForUndefinedIdentifier::match(const CppQuickFixInterface &interfa
         return;
 
     QString className;
-    QList<Core::LocatorFilterEntry> matches;
     const QString currentDocumentFilePath = interface.semanticInfo().doc->filePath().toString();
     const ProjectExplorer::HeaderPaths headerPaths = relevantHeaderPaths(currentDocumentFilePath);
     FilePaths headers;
 
+    const QList<IndexItem::Ptr> matches = matchName(nameAst->name, &className);
     // Find an include file through the locator
-    if (matchName(nameAst->name, &matches, &className)) {
+    if (!matches.isEmpty()) {
         QList<IndexItem::Ptr> indexItems;
         const Snapshot forwardHeaders = forwardingHeaders(interface);
-        for (const Core::LocatorFilterEntry &entry : std::as_const(matches)) {
-            IndexItem::Ptr info = entry.internalData.value<IndexItem::Ptr>();
+        for (const IndexItem::Ptr &info : matches) {
             if (!info || info->symbolName() != className)
                 continue;
             indexItems << info;
@@ -7986,7 +7986,7 @@ private:
             }
         };
 
-        if (const Project *project = SessionManager::projectForFile(filePath())) {
+        if (const Project *project = ProjectManager::projectForFile(filePath())) {
             const FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
             QSet<FilePath> projectFiles(files.begin(), files.end());
             for (const auto &file : files) {

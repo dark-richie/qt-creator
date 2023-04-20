@@ -4,32 +4,28 @@
 #pragma once
 
 #include "cppeditor_global.h"
-#include "cpplocatordata.h"
-#include "searchsymbols.h"
+#include "indexitem.h"
 
 #include <coreplugin/locator/ilocatorfilter.h>
 
 namespace CppEditor {
+
+Core::LocatorMatcherTask CPPEDITOR_EXPORT cppLocatorMatcher();
+Core::LocatorMatcherTask CPPEDITOR_EXPORT cppClassMatcher();
+Core::LocatorMatcherTask CPPEDITOR_EXPORT cppFunctionMatcher();
 
 class CPPEDITOR_EXPORT CppLocatorFilter : public Core::ILocatorFilter
 {
     Q_OBJECT
 
 public:
-    explicit CppLocatorFilter(CppLocatorData *locatorData);
-    ~CppLocatorFilter() override;
+    explicit CppLocatorFilter();
 
     QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
                                                const QString &entry) override;
-    void accept(const Core::LocatorFilterEntry &selection,
-                QString *newText, int *selectionStart, int *selectionLength) const override;
-
 protected:
     virtual IndexItem::ItemType matchTypes() const { return IndexItem::All; }
     virtual Core::LocatorFilterEntry filterEntryFromIndexItem(IndexItem::Ptr info);
-
-protected:
-    CppLocatorData *m_data = nullptr;
 };
 
 class CPPEDITOR_EXPORT CppClassesFilter : public CppLocatorFilter
@@ -37,8 +33,7 @@ class CPPEDITOR_EXPORT CppClassesFilter : public CppLocatorFilter
     Q_OBJECT
 
 public:
-    explicit CppClassesFilter(CppLocatorData *locatorData);
-    ~CppClassesFilter() override;
+    explicit CppClassesFilter();
 
 protected:
     IndexItem::ItemType matchTypes() const override { return IndexItem::Class; }
@@ -50,8 +45,7 @@ class CPPEDITOR_EXPORT CppFunctionsFilter : public CppLocatorFilter
     Q_OBJECT
 
 public:
-    explicit CppFunctionsFilter(CppLocatorData *locatorData);
-    ~CppFunctionsFilter() override;
+    explicit CppFunctionsFilter();
 
 protected:
     IndexItem::ItemType matchTypes() const override { return IndexItem::Function; }

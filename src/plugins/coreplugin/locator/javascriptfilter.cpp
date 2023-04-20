@@ -12,8 +12,6 @@
 namespace Core {
 namespace Internal {
 
-enum class EngineAction { Reset = 1, Abort };
-
 JavaScriptFilter::JavaScriptFilter()
 {
     setId("JavaScriptFilter");
@@ -52,43 +50,44 @@ QList<LocatorFilterEntry> JavaScriptFilter::matchesFor(
 
     QList<LocatorFilterEntry> entries;
     if (entry.trimmed().isEmpty()) {
-        entries.append({this, Tr::tr("Reset Engine"), QVariant::fromValue(EngineAction::Reset)});
+        LocatorFilterEntry entry;
+        entry.displayName = Tr::tr("Reset Engine");
+        entry.acceptor = [this] {
+            m_engine.reset();
+            return AcceptResult();
+        };
+        entries.append(entry);
     } else {
+        // Note, that evaluate may be interrupted from caller thread.
+        // In this case m_aborted is set to true.
         const QString result = m_engine->evaluate(entry).toString();
         if (m_aborted) {
             const QString message = entry + " = " + Tr::tr("Engine aborted after timeout.");
-            entries.append({this, message, QVariant::fromValue(EngineAction::Abort)});
+            LocatorFilterEntry entry;
+            entry.displayName = message;
+            entry.acceptor = [] { return AcceptResult(); };
+            entries.append(entry);
         } else {
+            const auto acceptor = [](const QString &clipboardContents) {
+                return [clipboardContents] {
+                    QGuiApplication::clipboard()->setText(clipboardContents);
+                    return AcceptResult();
+                };
+            };
             const QString expression = entry + " = " + result;
-            entries.append({this, expression, QVariant()});
-            entries.append({this, Tr::tr("Copy to clipboard: %1").arg(result), result});
-            entries.append({this, Tr::tr("Copy to clipboard: %1").arg(expression), expression});
+            entries.append({this, expression});
+            LocatorFilterEntry resultEntry;
+            resultEntry.displayName = Tr::tr("Copy to clipboard: %1").arg(result);
+            resultEntry.acceptor = acceptor(result);
+            entries.append(resultEntry);
+
+            LocatorFilterEntry expressionEntry;
+            expressionEntry.displayName = Tr::tr("Copy to clipboard: %1").arg(expression);
+            expressionEntry.acceptor = acceptor(expression);
+            entries.append(expressionEntry);
         }
     }
-
     return entries;
-}
-
-void JavaScriptFilter::accept(const LocatorFilterEntry &selection, QString *newText,
-                              int *selectionStart, int *selectionLength) const
-{
-    Q_UNUSED(newText)
-    Q_UNUSED(selectionStart)
-    Q_UNUSED(selectionLength)
-
-    if (selection.internalData.isNull())
-        return;
-
-    const EngineAction action = selection.internalData.value<EngineAction>();
-    if (action == EngineAction::Reset) {
-        m_engine.reset();
-        return;
-    }
-    if (action == EngineAction::Abort)
-        return;
-
-    QClipboard *clipboard = QGuiApplication::clipboard();
-    clipboard->setText(selection.internalData.toString());
 }
 
 void JavaScriptFilter::setupEngine()
@@ -122,5 +121,3 @@ void JavaScriptFilter::setupEngine()
 
 } // namespace Internal
 } // namespace Core
-
-Q_DECLARE_METATYPE(Core::Internal::EngineAction)

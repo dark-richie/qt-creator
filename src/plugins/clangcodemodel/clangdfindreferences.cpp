@@ -21,9 +21,10 @@
 #include <languageserverprotocol/lsptypes.h>
 
 #include <projectexplorer/projectexplorer.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 
 #include <texteditor/basefilefind.h>
 
@@ -451,7 +452,7 @@ void ClangdFindReferences::Private::addSearchResultsForFile(const FilePath &file
         item.setContainingFunctionName(getContainingFunction(astPath, range).detail());
 
         if (search->supportsReplace()) {
-            const bool fileInSession = SessionManager::projectForFile(file);
+            const bool fileInSession = ProjectManager::projectForFile(file);
             item.setSelectForReplacement(fileInSession);
             if (fileInSession && file.baseName().compare(replacementData->oldSymbolName,
                                                          Qt::CaseInsensitive) == 0) {
@@ -592,6 +593,19 @@ static Usage::Tags getUsageType(const ClangdAstPath &path, const QString &search
                         && !detail.at(opString.size()).isLetterOrNumber()
                         && detail.at(opString.size()) != '_') {
                     tags |= Usage::Tag::Operator;
+                }
+            }
+            if (pathIt->kind() == "CXXMethod") {
+                const ClangdAstNode &classNode = *std::next(pathIt);
+                if (classNode.hasChild([&](const ClangdAstNode &n) {
+                    if (n.kind() != "StaticAssert")
+                        return false;
+                    return n.hasChild([&](const ClangdAstNode &n) {
+                        return n.arcanaContains("Q_PROPERTY"); }, true)
+                           && n.hasChild([&](const ClangdAstNode &n) {
+                                  return n.arcanaContains(" " + searchTerm); }, true);
+                    }, false)) {
+                    tags |= Usage::Tag::MocInvokable;
                 }
             }
             return tags;

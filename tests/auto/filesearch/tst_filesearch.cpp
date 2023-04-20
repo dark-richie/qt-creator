@@ -31,12 +31,10 @@ namespace {
                      const QString &term,
                      QTextDocument::FindFlags flags, tst_FileSearch::RegExpFlag regexp = tst_FileSearch::NoRegExp)
     {
-        Utils::FileIterator *it = new Utils::FileListIterator(FilePaths{FilePath::fromString(
-                                                                  FILENAME)},
-                                                              QList<QTextCodec *>()
-                                                                  << QTextCodec::codecForLocale());
+        Utils::FileIterator *it = new Utils::FileListIterator({FilePath::fromString(FILENAME)},
+                                                              {QTextCodec::codecForLocale()});
         QFutureWatcher<Utils::FileSearchResultList> watcher;
-        QSignalSpy ready(&watcher, SIGNAL(resultsReadyAt(int,int)));
+        QSignalSpy ready(&watcher, &QFutureWatcherBase::resultsReadyAt);
         if (regexp == tst_FileSearch::NoRegExp)
             watcher.setFuture(Utils::findInFiles(term, it, flags));
         else

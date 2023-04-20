@@ -12,8 +12,64 @@ shadowBackground=ff232323
 splitterColor=ff151515
 qmlDesignerButtonColor=ff4c4e50
 
+;DS Theme Palette START
+;greyscale
+fullWhite=ffffffff
+lightWhite=ffdfdfdf
+offWhite=ffdcdada
+slateGrey=ff8d8d8d
+concreteGrey=ffbbbbbb
+smokeGrey=ff8b8b8b
+shadowGrey=ff636363
+duskGrey=ff606060
+raincloudGrey=ff4d4d4d
+graniteGrey=ff343434
+ashGrey=ff434343
+midnightGrey=ff333333
+dawnGrey=ff2a2a2a
+offBlack=ff202020
+nearBlack=ff1b1b1b
+fullBlack=ff000000
+
+;special colors
+idleGreen=ff649a5d
+runningGreen=ff2eff68
+successGreen=ff2bcf32
+idleRed=ff6a4242
+recordingRed=ffcc3c34
+errorRed=ffaf2b2b
+warningOrange=ffca8113
+splitterBlue=ff64daff
+rgbBlue=ff64daff
+highlightBlue=ff57b9fc
+highlightHover=ff74CBFC
+;DS Theme Palette END
+
 [Colors]
 ;DS controls theme START
+
+;NEW FOR QtDS 4.0
+DScontrolBackground_toolbarIdle=offWhite
+DScontrolBackground_toolbarHover=offWhite
+DScontrolBackground_topToolbarHover=concreteGrey
+DScontrolBackground_statusbarIdle=concreteGrey
+DSControlBackground_statusbarHover=lightWhite
+DScontrolOutline_topToolbarIdle=concreteGrey
+DScontrolOutline_topToolbarHover=lightWhite
+DSidleGreen=idleGreen
+DSrunningGreen=runningGreen
+DStoolbarBackground=offWhite
+DStoolbarIcon_blocked=shadowGrey
+DSthumbnailBackground_baseState=smokeGrey
+DStextColor=raincloudGrey
+DSstatusbarBackground=concreteGrey
+DSprimaryButton_hoverHighlight=highlightHover
+DSstateBackgroundColor_hover=concreteGrey
+DSstateControlBackgroundColor_globalHover=concreteGrey
+DSstateControlBackgroundColor_hover=smokeGrey
+DSpanelBackground=dawnGrey
+;END NEW FOR QtDS 4.0
+
 DSpanelBackground=ffeaeaea
 
 DSwelcomeScreenBackground=ffEAEAEA
@@ -86,7 +142,7 @@ DSstateBackgroundColor=ffe0e0e0
 DSstatePreviewOutline=ff363636
 
 DSstatePanelBackground=ffdadada
-DSstateHighlight=ff8d8d8d
+DSstateHighlight=offWhite
 
 DSchangedStateText=ff99ccff
 
@@ -163,6 +219,7 @@ DSUnimportedModuleColor=ffe33c2e
 DSBackgroundColorAlternate=ffeaeaea
 DSBackgroundColorNormal=ffd8d8d8
 
+
 ;DS controls theme END
 
 BackgroundColorAlternate=ff3d3d3d
@@ -175,7 +232,6 @@ BadgeLabelBackgroundColorChecked=ffe0e0e0
 BadgeLabelBackgroundColorUnchecked=ff808080
 BadgeLabelTextColorChecked=ff606060
 BadgeLabelTextColorUnchecked=ffffffff
-CanceledSearchTextColor=ffff0000
 ComboBoxArrowColor=ffb8b5b2
 ComboBoxArrowColorDisabled=ffdcdcdc
 ComboBoxTextColor=ffffffff
@@ -353,6 +409,27 @@ QmlDesigner_FormeditorBackgroundColor=qmlDesignerButtonColor
 QmlDesigner_AlternateBackgroundColor=qmlDesignerButtonColor
 QmlDesigner_ScrollBarHandleColor=ff7a7a7a
 
+TerminalForeground=ff000000
+TerminalBackground=ffffffff
+TerminalSelection=3f000000
+TerminalFindMatch=7fffff00
+TerminalAnsi0=000000
+TerminalAnsi1=8b1b10
+TerminalAnsi2=4aa32e
+TerminalAnsi3=9a9a2f
+TerminalAnsi4=0000ab
+TerminalAnsi5=a320ac
+TerminalAnsi6=49a3b0
+TerminalAnsi7=bfbfbf
+TerminalAnsi8=666666
+TerminalAnsi9=d22d1f
+TerminalAnsi10=62d63f
+TerminalAnsi11=dac911
+TerminalAnsi12=0000fe
+TerminalAnsi13=d22dde
+TerminalAnsi14=69e2e4
+TerminalAnsi15=e5e5e6
+
 [Flags]
 ComboBoxDrawTextShadow=true
 DerivePaletteFromTheme=false
@@ -369,3 +446,4 @@ FlatMenuBar=false
 ToolBarIconShadow=true
 WindowColorAsBase=false
 DarkUserInterface=false
+QDSTheme=false

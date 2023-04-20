@@ -13,7 +13,7 @@
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/target.h>
 
@@ -36,7 +36,7 @@ static void handleAction(const SelectionContext &context)
     if (context.view()->isAttached()) {
         if (context.toggled()) {
             bool skipDeploy = false;
-            if (const Target *startupTarget = SessionManager::startupTarget()) {
+            if (const Target *startupTarget = ProjectManager::startupTarget()) {
                 const Kit *kit = startupTarget->kit();
                 if (kit
                     && (kit->supportedPlatforms().contains(Android::Constants::ANDROID_DEVICE_TYPE)
@@ -70,9 +70,9 @@ QmlPreviewAction::QmlPreviewAction() : ModelNodeAction(livePreviewId,
                                                        &SelectionContextFunctors::always)
 {
     if (!QmlPreviewWidgetPlugin::getPreviewPlugin())
-        defaultAction()->setVisible(false);
+        action()->setVisible(false);
 
-    defaultAction()->setCheckable(true);
+    action()->setCheckable(true);
 }
 
 void QmlPreviewAction::updateContext()
@@ -80,7 +80,7 @@ void QmlPreviewAction::updateContext()
     if (selectionContext().view()->isAttached())
         QmlPreviewWidgetPlugin::setQmlFile();
 
-    defaultAction()->setSelectionContext(selectionContext());
+    pureAction()->setSelectionContext(selectionContext());
 }
 
 ActionInterface::Type QmlPreviewAction::type() const
@@ -113,7 +113,7 @@ QByteArray ZoomPreviewAction::category() const
 
 QByteArray ZoomPreviewAction::menuId() const
 {
-    return QByteArray();
+    return "PreviewZoom";
 }
 
 int ZoomPreviewAction::priority() const
@@ -241,10 +241,10 @@ QWidget *SwitchLanguageComboboxAction::createWidget(QWidget *parent)
             }
         }
     };
-    connect(ProjectExplorer::SessionManager::instance(),  &ProjectExplorer::SessionManager::startupProjectChanged,
+    connect(ProjectExplorer::ProjectManager::instance(),  &ProjectExplorer::ProjectManager::startupProjectChanged,
         comboBox, refreshComboBoxFunction);
 
-    if (auto project = SessionManager::startupProject())
+    if (auto project = ProjectManager::startupProject())
         refreshComboBoxFunction(project);
 
     // do this after refreshComboBoxFunction so we do not get currentLocaleChanged signals at initialization

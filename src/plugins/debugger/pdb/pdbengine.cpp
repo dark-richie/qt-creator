@@ -128,7 +128,10 @@ void PdbEngine::handlePdbStarted()
     showStatusMessage(Tr::tr("Running requested..."), 5000);
     BreakpointManager::claimBreakpointsForEngine(this);
     notifyEngineRunAndInferiorStopOk();
-    updateAll();
+    if (runParameters().breakOnMain)
+        updateAll();
+    else
+        continueInferior();
 }
 
 void PdbEngine::interruptInferior()
@@ -260,7 +263,7 @@ void PdbEngine::removeBreakpoint(const Breakpoint &bp)
     notifyBreakpointRemoveOk(bp);
 }
 
-void PdbEngine::loadSymbols(const QString &moduleName)
+void PdbEngine::loadSymbols(const FilePath &moduleName)
 {
     Q_UNUSED(moduleName)
 }
@@ -291,16 +294,16 @@ void PdbEngine::refreshModules(const GdbMi &modules)
                 && path.endsWith("' (built-in)>")) {
             path = "(builtin)";
         }
-        module.modulePath = path;
+        module.modulePath = FilePath::fromString(path);
         handler->updateModule(module);
     }
     handler->endUpdateAll();
 }
 
-void PdbEngine::requestModuleSymbols(const QString &moduleName)
+void PdbEngine::requestModuleSymbols(const FilePath &moduleName)
 {
     DebuggerCommand cmd("listSymbols");
-    cmd.arg("module", moduleName);
+    cmd.arg("module", moduleName.path());
     runCommand(cmd);
 }
 
@@ -338,7 +341,7 @@ void PdbEngine::refreshSymbols(const GdbMi &symbols)
         symbol.name = item["name"].data();
         syms.append(symbol);
     }
-    showModuleSymbols(moduleName, syms);
+    showModuleSymbols(runParameters().inferior.command.executable().withNewPath(moduleName), syms);
 }
 
 bool PdbEngine::canHandleToolTip(const DebuggerToolTipContext &) const

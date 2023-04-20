@@ -13,8 +13,8 @@
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projecttree.h>
-#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
 using namespace Core;
@@ -39,7 +39,7 @@ void ConanPlugin::initialize()
     d = new ConanPluginPrivate;
     conanSettings()->readSettings(ICore::settings());
 
-    connect(SessionManager::instance(), &SessionManager::projectAdded,
+    connect(ProjectManager::instance(), &ProjectManager::projectAdded,
             this, &ConanPlugin::projectAdded);
 }
 
@@ -48,12 +48,12 @@ static void connectTarget(Project *project, Target *target)
     if (!ConanPlugin::conanFilePath(project).isEmpty()) {
         const QList<BuildConfiguration *> buildConfigurations = target->buildConfigurations();
         for (BuildConfiguration *buildConfiguration : buildConfigurations)
-            buildConfiguration->buildSteps()->appendStep(Constants::INSTALL_STEP);
+            buildConfiguration->buildSteps()->insertStep(0, Constants::INSTALL_STEP);
     }
     QObject::connect(target, &Target::addedBuildConfiguration,
                      target, [project] (BuildConfiguration *buildConfiguration) {
         if (!ConanPlugin::conanFilePath(project).isEmpty())
-            buildConfiguration->buildSteps()->appendStep(Constants::INSTALL_STEP);
+            buildConfiguration->buildSteps()->insertStep(0, Constants::INSTALL_STEP);
     });
 }
 

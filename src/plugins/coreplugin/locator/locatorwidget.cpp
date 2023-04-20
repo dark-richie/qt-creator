@@ -10,10 +10,12 @@
 #include "locatorsearchutils.h"
 #include "../actionmanager/actionmanager.h"
 #include "../coreplugintr.h"
+#include "../editormanager/editormanager.h"
 #include "../icore.h"
 #include "../modemanager.h"
 
 #include <utils/algorithm.h>
+#include <utils/asynctask.h>
 #include <utils/appmainwindow.h>
 #include <utils/fancylineedit.h>
 #include <utils/fsengine/fileiconprovider.h>
@@ -24,6 +26,7 @@
 #include <utils/qtcassert.h>
 #include <utils/runextensions.h>
 #include <utils/stylehelper.h>
+#include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
 
 #include <QAction>
@@ -597,6 +600,10 @@ LocatorWidget::LocatorWidget(Locator *locator)
     connect(m_filterMenu, &QMenu::aboutToShow, this, [this] {
         m_centeredPopupAction->setChecked(Locator::useCenteredPopupForShortcut());
     });
+    connect(m_filterMenu, &QMenu::hovered, this, [this](QAction *action) {
+        ToolTip::show(m_filterMenu->mapToGlobal(m_filterMenu->actionGeometry(action).topRight()),
+                      action->toolTip());
+    });
     connect(m_centeredPopupAction, &QAction::toggled, locator, [locator](bool toggled) {
         if (toggled != Locator::useCenteredPopupForShortcut()) {
             Locator::setUseCenteredPopupForShortcut(toggled);
@@ -670,12 +677,20 @@ void LocatorWidget::updatePlaceholderText(Command *command)
 void LocatorWidget::updateFilterList()
 {
     m_filterMenu->clear();
-    const QList<ILocatorFilter *> filters = Locator::filters();
+    const QList<ILocatorFilter *> filters = Utils::sorted(Locator::filters(),
+                                                          [](ILocatorFilter *a, ILocatorFilter *b) {
+                                                              return a->displayName()
+                                                                     < b->displayName();
+                                                          });
     for (ILocatorFilter *filter : filters) {
         if (filter->shortcutString().isEmpty() || filter->isHidden())
             continue;
         QAction *action = m_filterMenu->addAction(filter->displayName());
-        action->setToolTip(filter->description());
+        action->setEnabled(filter->isEnabled());
+        const QString description = filter->description();
+        action->setToolTip(description.isEmpty() ? QString()
+                                                 : ("<html>" + description.toHtmlEscaped()));
+        connect(filter, &ILocatorFilter::enabledChanged, action, &QAction::setEnabled);
         connect(action, &QAction::triggered, this, [this, filter] {
             Locator::showFilter(filter, this);
         });
@@ -1002,18 +1017,22 @@ void LocatorWidget::acceptEntry(int row)
     if (!index.isValid())
         return;
     const LocatorFilterEntry entry = m_locatorModel->data(index, LocatorEntryRole).value<LocatorFilterEntry>();
-    Q_ASSERT(entry.filter != nullptr);
-    QString newText;
-    int selectionStart = -1;
-    int selectionLength = 0;
     QWidget *focusBeforeAccept = QApplication::focusWidget();
-    entry.filter->accept(entry, &newText, &selectionStart, &selectionLength);
-    if (newText.isEmpty()) {
+    AcceptResult result;
+    if (entry.acceptor) {
+        result = entry.acceptor();
+    } else if (entry.filter) {
+        entry.filter->accept(entry, &result.newText, &result.selectionStart,
+                             &result.selectionLength);
+    } else {
+        EditorManager::openEditor(entry);
+    }
+    if (result.newText.isEmpty()) {
         emit hidePopup();
         if (QApplication::focusWidget() == focusBeforeAccept)
             resetFocus(m_previousFocusWidget, isInMainWindow());
     } else {
-        showText(newText, selectionStart, selectionLength);
+        showText(result.newText, result.selectionStart, result.selectionLength);
     }
 }
 
@@ -1085,7 +1104,6 @@ LocatorPopup *createLocatorPopup(Locator *locator, QWidget *parent)
     else
         popup->layout()->addWidget(widget);
     popup->setWindowFlags(Qt::Popup);
-    popup->setAttribute(Qt::WA_DeleteOnClose);
     return popup;
 }
 

@@ -165,28 +165,31 @@ void ClangToolRunWorker::start()
                      .arg(toolName, projectFile.toUserOutput(), m_diagnosticConfig.displayName()),
                   Utils::NormalMessageFormat);
 
-    // Collect files
-    const auto [includeDir, clangVersion]
-        = getClangIncludeDirAndVersion(runControl()->commandLine().executable());
+    const ClangToolType tool = m_tool == ClangTidyTool::instance() ? ClangToolType::Tidy
+                                                                   : ClangToolType::Clazy;
+    const FilePath executable = toolExecutable(tool);
+    const auto [includeDir, clangVersion] = getClangIncludeDirAndVersion(executable);
 
+    // Collect files
     AnalyzeUnits unitsToProcess;
     for (const FileInfo &fileInfo : m_fileInfos)
         unitsToProcess.append({fileInfo, includeDir, clangVersion});
 
-    qCDebug(LOG) << Q_FUNC_INFO << runControl()->commandLine().executable()
-                 << includeDir << clangVersion;
+    qCDebug(LOG) << Q_FUNC_INFO << executable << includeDir << clangVersion;
     qCDebug(LOG) << "Files to process:" << unitsToProcess;
     qCDebug(LOG) << "Environment:" << m_environment;
 
     m_filesAnalyzed.clear();
     m_filesNotAnalyzed.clear();
 
-    const ClangToolType tool = m_tool == ClangTidyTool::instance() ? ClangToolType::Tidy
-                                                                   : ClangToolType::Clazy;
     using namespace Tasking;
     QList<TaskItem> tasks{ParallelLimit(qMax(1, m_runSettings.parallelJobs()))};
     for (const AnalyzeUnit &unit : std::as_const(unitsToProcess)) {
-        const AnalyzeInputData input{tool, m_diagnosticConfig, m_temporaryDir.path(),
+        if (!m_diagnosticConfig.isEnabled(tool)
+            && !m_runSettings.hasConfigFileForSourceFile(unit.file)) {
+            continue;
+        }
+        const AnalyzeInputData input{tool, m_runSettings, m_diagnosticConfig, m_temporaryDir.path(),
                                      m_environment, unit};
         const auto setupHandler = [this, unit, tool] {
             const QString filePath = unit.file.toUserOutput();

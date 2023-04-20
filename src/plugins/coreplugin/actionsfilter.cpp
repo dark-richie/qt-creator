@@ -12,7 +12,6 @@
 
 #include <utils/algorithm.h>
 #include <utils/fuzzymatcher.h>
-#include <utils/mapreduce.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
@@ -21,6 +20,7 @@
 #include <QMenuBar>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QtConcurrent>
 #include <QTextDocument>
 
 static const char lastTriggeredC[] = "LastTriggeredActions";
@@ -155,8 +155,8 @@ QList<LocatorFilterEntry> ActionsFilter::matchesFor(QFutureInterface<LocatorFilt
     };
 
     QMap<MatchLevel, QList<LocatorFilterEntry>> filtered;
-    const QList<std::optional<FilterResult>> filterResults = Utils::map(std::as_const(m_entries), filter)
-                                                                 .results();
+    const QList<std::optional<FilterResult>> filterResults
+        = QtConcurrent::blockingMapped(m_entries, filter);
     for (const std::optional<FilterResult> &filterResult : filterResults) {
         if (filterResult)
             filtered[filterResult->first] << filterResult->second;
@@ -168,15 +168,12 @@ QList<LocatorFilterEntry> ActionsFilter::matchesFor(QFutureInterface<LocatorFilt
     return result;
 }
 
-void ActionsFilter::accept(const LocatorFilterEntry &selection, QString *newText,
-                           int *selectionStart, int *selectionLength) const
+LocatorFilterEntry::Acceptor ActionsFilter::acceptor(const ActionFilterEntryData &data) const
 {
     static const int maxHistorySize = 30;
-    Q_UNUSED(newText)
-    Q_UNUSED(selectionStart)
-    Q_UNUSED(selectionLength)
-    auto data = selection.internalData.value<ActionFilterEntryData>();
-    if (data.action) {
+    return [this, data] {
+        if (!data.action)
+            return AcceptResult();
         m_lastTriggered.removeAll(data);
         m_lastTriggered.prepend(data);
         QMetaObject::invokeMethod(data.action, [action = data.action] {
@@ -185,7 +182,8 @@ void ActionsFilter::accept(const LocatorFilterEntry &selection, QString *newText
         }, Qt::QueuedConnection);
         if (m_lastTriggered.size() > maxHistorySize)
             m_lastTriggered.resize(maxHistorySize);
-    }
+        return AcceptResult();
+    };
 }
 
 static QString actionText(QAction *action)
@@ -214,8 +212,10 @@ void ActionsFilter::collectEntriesForAction(QAction *action,
                 collectEntriesForAction(menuAction, menuPath, processedMenus);
         }
     } else if (!text.isEmpty()) {
-        const ActionFilterEntryData data{action, {}};
-        LocatorFilterEntry filterEntry(this, text, QVariant::fromValue(data), action->icon());
+        LocatorFilterEntry filterEntry;
+        filterEntry.displayName = text;
+        filterEntry.acceptor = acceptor({action, {}});
+        filterEntry.displayIcon = action->icon();
         filterEntry.extraInfo = path.join(" > ");
         updateEntry(action, filterEntry);
     }
@@ -241,8 +241,10 @@ void ActionsFilter::collectEntriesForCommands()
 
         const QString identifier = command->id().toString();
         const QStringList path = identifier.split(QLatin1Char('.'));
-        const ActionFilterEntryData data{action, command->id()};
-        LocatorFilterEntry filterEntry(this, text, QVariant::fromValue(data), action->icon());
+        LocatorFilterEntry filterEntry;
+        filterEntry.displayName = text;
+        filterEntry.acceptor = acceptor({action, command->id()});
+        filterEntry.displayIcon = action->icon();
         filterEntry.displayExtra = command->keySequence().toString(QKeySequence::NativeText);
         if (path.size() >= 2)
             filterEntry.extraInfo = path.mid(0, path.size() - 1).join(" > ");
@@ -259,8 +261,10 @@ void ActionsFilter::collectEntriesForLastTriggered()
         }
         if (!data.action || !m_enabledActions.contains(data.action))
             continue;
-        const QString text = actionText(data.action);
-        LocatorFilterEntry filterEntry(this, text, QVariant::fromValue(data), data.action->icon());
+        LocatorFilterEntry filterEntry;
+        filterEntry.displayName = actionText(data.action);
+        filterEntry.acceptor = acceptor(data);
+        filterEntry.displayIcon = data.action->icon();
         updateEntry(data.action, filterEntry);
     }
 }

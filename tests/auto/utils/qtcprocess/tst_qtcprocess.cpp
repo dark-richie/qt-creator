@@ -94,6 +94,33 @@ class tst_QtcProcess : public QObject
 private slots:
     void initTestCase();
 
+    void testEnv()
+    {
+        if (HostOsInfo::isWindowsHost())
+            QSKIP("Skipping env test on Windows");
+
+        QProcess qproc;
+        FilePath envPath = Environment::systemEnvironment().searchInPath("env");
+
+        qproc.setProgram(envPath.nativePath());
+        qproc.start();
+        qproc.waitForFinished();
+        QByteArray qoutput = qproc.readAllStandardOutput() + qproc.readAllStandardError();
+        qDebug() << "QProcess output:" << qoutput;
+        QCOMPARE(qproc.exitCode(), 0);
+
+        QtcProcess qtcproc;
+        qtcproc.setCommand({envPath, {}});
+        qtcproc.runBlocking();
+        QCOMPARE(qtcproc.exitCode(), 0);
+        QByteArray qtcoutput = qtcproc.readAllRawStandardOutput()
+                               + qtcproc.readAllRawStandardError();
+
+        qDebug() << "QtcProcess output:" << qtcoutput;
+
+        QCOMPARE(qtcoutput.size() > 0, qoutput.size() > 0);
+    }
+
     void multiRead();
 
     void splitArgs_data();
@@ -698,11 +725,11 @@ void tst_QtcProcess::expandMacros_data()
             title = vals[i].in;
         } else {
             char buf[80];
-            sprintf(buf, "%s: %s", title, vals[i].in);
+            snprintf(buf, 80, "%s: %s", title, vals[i].in);
             QTest::newRow(buf) << QString::fromLatin1(vals[i].in)
                                << QString::fromLatin1(vals[i].out)
                                << vals[i].os;
-            sprintf(buf, "padded %s: %s", title, vals[i].in);
+            snprintf(buf, 80, "padded %s: %s", title, vals[i].in);
             QTest::newRow(buf) << QString(sp + QString::fromLatin1(vals[i].in) + sp)
                                << QString(sp + QString::fromLatin1(vals[i].out) + sp)
                                << vals[i].os;

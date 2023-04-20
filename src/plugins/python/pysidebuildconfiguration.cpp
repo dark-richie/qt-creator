@@ -42,7 +42,7 @@ PySideBuildStepFactory::PySideBuildStepFactory()
     registerStep<PySideBuildStep>(pySideBuildStep);
     setSupportedProjectType(PythonProjectId);
     setDisplayName(Tr::tr("Run PySide6 project tool"));
-    setFlags(BuildStepInfo::UniqueStep);
+    setFlags(BuildStep::UniqueStep);
 }
 
 PySideBuildStep::PySideBuildStep(BuildStepList *bsl, Id id)
@@ -63,7 +63,7 @@ PySideBuildStep::PySideBuildStep(BuildStepList *bsl, Id id)
 
     setCommandLineProvider([this] { return CommandLine(m_pysideProject->filePath(), {"build"}); });
     setWorkingDirectoryProvider([this] {
-        return target()->project()->projectDirectory().onDevice(m_pysideProject->filePath());
+        return m_pysideProject->filePath().withNewMappedPath(target()->project()->projectDirectory()); // FIXME: new path needed?
     });
     setEnvironmentModifier([this](Environment &env) {
         env.prependOrSetPath(m_pysideProject->filePath().parentDir());

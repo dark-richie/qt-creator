@@ -17,6 +17,7 @@
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
+#include <utils/terminalhooks.h>
 
 #include <QHash>
 #include <QMutex>
@@ -442,6 +443,13 @@ DeviceManager::DeviceManager(bool isInstance) : d(std::make_unique<DeviceManager
         device->openTerminal(env, filePath);
     };
 
+    deviceHooks.osType = [](const FilePath &filePath) {
+        auto device = DeviceManager::deviceForPath(filePath);
+        if (!device)
+            return OsTypeLinux;
+        return device->osType();
+    };
+
     DeviceProcessHooks processHooks;
 
     processHooks.processImplHook = [](const FilePath &filePath) -> ProcessInterface * {
@@ -457,6 +465,22 @@ DeviceManager::DeviceManager(bool isInstance) : d(std::make_unique<DeviceManager
     };
 
     QtcProcess::setRemoteProcessHooks(processHooks);
+
+    Terminal::Hooks::instance().getTerminalCommandsForDevicesHook().set(
+        [this]() -> QList<Terminal::NameAndCommandLine> {
+            QList<Terminal::NameAndCommandLine> result;
+            for (const IDevice::ConstPtr device : d->devices) {
+                if (device->type() == Constants::DESKTOP_DEVICE_TYPE)
+                    continue;
+
+                const FilePath shell = Terminal::defaultShellForDevice(device->rootPath());
+
+                if (!shell.isEmpty())
+                    result << Terminal::NameAndCommandLine{device->displayName(),
+                                                           CommandLine{shell, {}}};
+            }
+            return result;
+        });
 }
 
 DeviceManager::~DeviceManager()

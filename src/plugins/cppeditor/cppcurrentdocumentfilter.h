@@ -20,16 +20,13 @@ class CppCurrentDocumentFilter : public  Core::ILocatorFilter
     Q_OBJECT
 
 public:
-    explicit CppCurrentDocumentFilter(CppModelManager *manager);
+    explicit CppCurrentDocumentFilter();
     ~CppCurrentDocumentFilter() override = default;
 
     void makeAuxiliary();
 
     QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
                                                const QString &entry) override;
-    void accept(const Core::LocatorFilterEntry &selection,
-                QString *newText, int *selectionStart, int *selectionLength) const override;
-
 private:
     void onDocumentUpdated(CPlusPlus::Document::Ptr doc);
     void onCurrentEditorChanged(Core::IEditor *currentEditor);

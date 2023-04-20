@@ -19,50 +19,54 @@ namespace Core { class IEditor; }
 
 namespace LanguageClient {
 
+// TODO: Could be public methods of Client instead
+Core::LocatorMatcherTask LANGUAGECLIENT_EXPORT workspaceLocatorMatcher(Client *client,
+                                                                       int maxResultCount = 0);
+Core::LocatorMatcherTask LANGUAGECLIENT_EXPORT workspaceClassMatcher(Client *client,
+                                                                     int maxResultCount = 0);
+Core::LocatorMatcherTask LANGUAGECLIENT_EXPORT workspaceFunctionMatcher(Client *client,
+                                                                        int maxResultCount = 0);
+
+class LanguageClientManager;
+
 class LANGUAGECLIENT_EXPORT DocumentLocatorFilter : public Core::ILocatorFilter
 {
     Q_OBJECT
 public:
     DocumentLocatorFilter();
 
-    void updateCurrentClient();
     void prepareSearch(const QString &entry) override;
     QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
                                                const QString &entry) override;
-    void accept(const Core::LocatorFilterEntry &selection,
-                QString *newText,
-                int *selectionStart,
-                int *selectionLength) const override;
-
 signals:
     void symbolsUpToDate(QPrivateSignal);
 
 protected:
     void forceUse() { m_forced = true; }
 
-    QPointer<DocumentSymbolCache> m_symbolCache;
-    LanguageServerProtocol::DocumentUri m_currentUri;
+    Utils::FilePath m_currentFilePath;
+
+    using DocSymbolGenerator = std::function<Core::LocatorFilterEntry(
+        const LanguageServerProtocol::DocumentSymbol &, const Core::LocatorFilterEntry &)>;
+
+    Utils::Link linkForDocSymbol(const LanguageServerProtocol::DocumentSymbol &info) const;
+    QList<Core::LocatorFilterEntry> matchesForImpl(
+        QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry,
+        const DocSymbolGenerator &docSymbolGenerator);
 
 private:
+    void updateCurrentClient();
     void updateSymbols(const LanguageServerProtocol::DocumentUri &uri,
                        const LanguageServerProtocol::DocumentSymbolsResult &symbols);
     void resetSymbols();
 
-    template<class T>
-    QList<Core::LocatorFilterEntry> generateEntries(const QList<T> &list, const QString &filter);
-    QList<Core::LocatorFilterEntry> generateLocatorEntries(
-            const LanguageServerProtocol::SymbolInformation &info,
-            const QRegularExpression &regexp,
-            const Core::LocatorFilterEntry &parent);
-    QList<Core::LocatorFilterEntry> generateLocatorEntries(
-            const LanguageServerProtocol::DocumentSymbol &info,
-            const QRegularExpression &regexp,
-            const Core::LocatorFilterEntry &parent);
-    virtual Core::LocatorFilterEntry generateLocatorEntry(
-            const LanguageServerProtocol::DocumentSymbol &info,
-            const Core::LocatorFilterEntry &parent);
-    virtual Core::LocatorFilterEntry generateLocatorEntry(
-            const LanguageServerProtocol::SymbolInformation &info);
+    QList<Core::LocatorFilterEntry> entriesForSymbolsInfo(
+        const QList<LanguageServerProtocol::SymbolInformation> &infoList,
+        const QRegularExpression &regexp);
+    QList<Core::LocatorFilterEntry> entriesForDocSymbols(
+        const QList<LanguageServerProtocol::DocumentSymbol> &infoList,
+        const QRegularExpression &regexp, const DocSymbolGenerator &docSymbolGenerator,
+        const Core::LocatorFilterEntry &parent = {});
 
     QMutex m_mutex;
     QMetaObject::Connection m_updateSymbolsConnection;
@@ -70,6 +74,8 @@ private:
     std::optional<LanguageServerProtocol::DocumentSymbolsResult> m_currentSymbols;
     LanguageServerProtocol::DocumentUri::PathMapper m_pathMapper;
     bool m_forced = false;
+    QPointer<DocumentSymbolCache> m_symbolCache;
+    LanguageServerProtocol::DocumentUri m_currentUri;
 };
 
 class LANGUAGECLIENT_EXPORT WorkspaceLocatorFilter : public Core::ILocatorFilter
@@ -80,25 +86,19 @@ public:
 
     /// request workspace symbols for all clients with enabled locator
     void prepareSearch(const QString &entry) override;
-    /// force request workspace symbols for all given clients
-    void prepareSearch(const QString &entry, const QList<Client *> &clients);
     QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
                                                const QString &entry) override;
-    void accept(const Core::LocatorFilterEntry &selection,
-                QString *newText,
-                int *selectionStart,
-                int *selectionLength) const override;
-
 signals:
     void allRequestsFinished(QPrivateSignal);
 
 protected:
     explicit WorkspaceLocatorFilter(const QVector<LanguageServerProtocol::SymbolKind> &filter);
 
+    /// force request workspace symbols for all given clients
+    void prepareSearchForClients(const QString &entry, const QList<Client *> &clients);
     void setMaxResultCount(qint64 limit) { m_maxResultCount = limit; }
 
 private:
-    void prepareSearch(const QString &entry, const QList<Client *> &clients, bool force);
     void handleResponse(Client *client,
                         const LanguageServerProtocol::WorkspaceSymbolRequest::Response &response);
 

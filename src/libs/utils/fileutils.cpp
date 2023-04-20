@@ -5,7 +5,7 @@
 #include "savefile.h"
 
 #include "algorithm.h"
-#include "hostosinfo.h"
+#include "devicefileaccess.h"
 #include "qtcassert.h"
 #include "utilstr.h"
 
@@ -190,12 +190,13 @@ FileSaver::FileSaver(const FilePath &filePath, QIODevice::OpenMode mode)
         auto tf = new QTemporaryFile(QDir::tempPath() + "/remotefilesaver-XXXXXX");
         tf->setAutoRemove(false);
         m_file.reset(tf);
-    } else if (mode & (QIODevice::ReadOnly | QIODevice::Append)) {
-        m_file.reset(new QFile{filePath.path()});
-        m_isSafe = false;
     } else {
-        m_file.reset(new SaveFile(filePath));
-        m_isSafe = true;
+        const bool readOnlyOrAppend = mode & (QIODevice::ReadOnly | QIODevice::Append);
+        m_isSafe = !readOnlyOrAppend && !filePath.hasHardLinks();
+        if (m_isSafe)
+            m_file.reset(new SaveFile(filePath));
+        else
+            m_file.reset(new QFile{filePath.path()});
     }
     if (!m_file->open(QIODevice::WriteOnly | mode)) {
         QString err = filePath.exists() ?
@@ -586,8 +587,7 @@ FilePaths FileUtils::getOpenFilePaths(QWidget *parent,
 
 #endif // QT_WIDGETS_LIB
 
-// Converts a hex string of the st_mode field of a stat structure to FileFlags.
-FilePathInfo::FileFlags fileInfoFlagsfromStatRawModeHex(const QString &hexString)
+FilePathInfo::FileFlags fileInfoFlagsfromStatMode(const QString &hexString, int modeBase)
 {
     // Copied from stat.h
     enum st_mode {
@@ -617,7 +617,7 @@ FilePathInfo::FileFlags fileInfoFlagsfromStatRawModeHex(const QString &hexString
     };
 
     bool ok = false;
-    uint mode = hexString.toUInt(&ok, 16);
+    uint mode = hexString.toUInt(&ok, modeBase);
 
     QTC_ASSERT(ok, return {});
 
@@ -657,13 +657,13 @@ FilePathInfo::FileFlags fileInfoFlagsfromStatRawModeHex(const QString &hexString
     return result;
 }
 
-FilePathInfo FileUtils::filePathInfoFromTriple(const QString &infos)
+FilePathInfo FileUtils::filePathInfoFromTriple(const QString &infos, int modeBase)
 {
     const QStringList parts = infos.split(' ', Qt::SkipEmptyParts);
     if (parts.size() != 3)
         return {};
 
-    FilePathInfo::FileFlags flags = fileInfoFlagsfromStatRawModeHex(parts[0]);
+    FilePathInfo::FileFlags flags = fileInfoFlagsfromStatMode(parts[0], modeBase);
 
     const QDateTime dt = QDateTime::fromSecsSinceEpoch(parts[1].toLongLong(), Qt::UTC);
     qint64 size = parts[2].toLongLong();
@@ -802,13 +802,13 @@ FilePath FileUtils::commonPath(const FilePath &oldCommonPath, const FilePath &fi
 
 FilePath FileUtils::homePath()
 {
-    return FilePath::fromString(doCleanPath(QDir::homePath()));
+    return FilePath::fromUserInput(QDir::homePath());
 }
 
-FilePaths FileUtils::toFilePathList(const QStringList &paths) {
-    return transform(paths, [](const QString &path) { return FilePath::fromString(path); });
+FilePaths FileUtils::toFilePathList(const QStringList &paths)
+{
+    return transform(paths, &FilePath::fromString);
 }
-
 
 qint64 FileUtils::bytesAvailableFromDFOutput(const QByteArray &dfOutput)
 {

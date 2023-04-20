@@ -41,7 +41,7 @@
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectexplorertr.h>
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/taskhub.h>
 
@@ -502,6 +502,10 @@ CMakeBuildSettingsWidget::CMakeBuildSettingsWidget(CMakeBuildSystem *bs) :
         updateInitialCMakeArguments();
     });
 
+    connect(m_buildSystem->target()->project(), &Project::aboutToSaveSettings, this, [this] {
+        updateInitialCMakeArguments();
+    });
+
     connect(bc->aspect<InitialCMakeArgumentsAspect>(),
             &Utils::BaseAspect::labelLinkActivated,
             this,
@@ -639,7 +643,7 @@ void CMakeBuildSettingsWidget::updateInitialCMakeArguments()
     // As the user would expect to have e.g. "--preset" from "Initial Configuration"
     // to "Current Configuration" as additional parameters
     m_buildSystem->setAdditionalCMakeArguments(ProcessArgs::splitArgs(
-        bc->aspect<InitialCMakeArgumentsAspect>()->value()));
+        bc->aspect<InitialCMakeArgumentsAspect>()->value(), HostOsInfo::hostOs()));
 }
 
 void CMakeBuildSettingsWidget::kitCMakeConfiguration()
@@ -661,12 +665,15 @@ void CMakeBuildSettingsWidget::kitCMakeConfiguration()
 
     auto layout = new QGridLayout(dialog);
 
-    kitAspect.createConfigWidget(m_buildSystem->kit())
-        ->addToLayoutWithLabel(layout->parentWidget());
-    generatorAspect.createConfigWidget(m_buildSystem->kit())
-        ->addToLayoutWithLabel(layout->parentWidget());
-    configurationKitAspect.createConfigWidget(m_buildSystem->kit())
-        ->addToLayoutWithLabel(layout->parentWidget());
+    KitAspectWidget *widget = kitAspect.createConfigWidget(m_buildSystem->kit());
+    widget->setParent(dialog);
+    widget->addToLayoutWithLabel(layout->parentWidget());
+    widget = generatorAspect.createConfigWidget(m_buildSystem->kit());
+    widget->setParent(dialog);
+    widget->addToLayoutWithLabel(layout->parentWidget());
+    widget = configurationKitAspect.createConfigWidget(m_buildSystem->kit());
+    widget->setParent(dialog);
+    widget->addToLayoutWithLabel(layout->parentWidget());
 
     layout->setColumnStretch(1, 1);
 
@@ -694,7 +701,7 @@ void CMakeBuildSettingsWidget::updateConfigureDetailsWidgetsSummary(
     const FilePath buildDirectory = bc ? bc->buildDirectory() : ".";
 
     cmd.addArgs({"-S", m_buildSystem->projectDirectory().path()});
-    cmd.addArgs({"-B", buildDirectory.onDevice(cmd.executable()).path()});
+    cmd.addArgs({"-B", buildDirectory.path()});
     cmd.addArgs(configurationArguments);
 
     params.setCommandLine(cmd);
@@ -819,9 +826,10 @@ void CMakeBuildSettingsWidget::updateFromKit()
 
     // Then the additional parameters
     const QStringList additionalKitCMake = ProcessArgs::splitArgs(
-        CMakeConfigurationKitAspect::additionalConfiguration(k));
+        CMakeConfigurationKitAspect::additionalConfiguration(k), HostOsInfo::hostOs());
     const QStringList additionalInitialCMake = ProcessArgs::splitArgs(
-        m_buildSystem->buildConfiguration()->aspect<InitialCMakeArgumentsAspect>()->value());
+        m_buildSystem->buildConfiguration()->aspect<InitialCMakeArgumentsAspect>()->value(),
+        HostOsInfo::hostOs());
 
     QStringList mergedArgumentList;
     std::set_union(additionalInitialCMake.begin(),
@@ -1130,7 +1138,7 @@ static CommandLine defaultInitialCMakeCommand(const Kit *k, const QString buildT
     // Package manager auto setup
     if (Internal::CMakeSpecificSettings::instance()->packageManagerAutoSetup.value()) {
         cmd.addArg(QString("-DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH="
-                           "%{buildDir}/%1/auto-setup.cmake")
+                           "%{BuildConfig:BuildDirectory:NativeFilePath}/%1/auto-setup.cmake")
                        .arg(Constants::PACKAGE_MANAGER_DIR));
     }
 
@@ -1169,6 +1177,12 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
     const QString presetName = presetItem.expandedValue(k);
     initialArguments.removeIf(
         [presetArgument](const QString &item) { return item == presetArgument; });
+
+    // Remove the -DQTC_KIT_DEFAULT_CONFIG_HASH argument
+    const QString presetHashArgument
+        = CMakeConfigurationKitAspect::kitDefaultConfigHashItem(k).toArgument();
+    initialArguments.removeIf(
+        [presetHashArgument](const QString &item) { return item == presetHashArgument; });
 
     PresetsDetails::ConfigurePreset configurePreset
         = Utils::findOrDefault(project->presetsData().configurePresets,
@@ -1242,6 +1256,12 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
         const QString presetItemArg = presetItem.toArgument();
         const QString presetItemArgNoType = presetItemArg.left(presetItemArg.indexOf(":"));
 
+        static QSet<QByteArray> defaultKitMacroValues{"CMAKE_C_COMPILER",
+                                                      "CMAKE_CXX_COMPILER",
+                                                      "QT_QMAKE_EXECUTABLE",
+                                                      "QT_HOST_PATH",
+                                                      "CMAKE_PROJECT_INCLUDE_BEFORE"};
+
         auto it = std::find_if(initialArguments.begin(),
                                initialArguments.end(),
                                [presetItemArgNoType](const QString &arg) {
@@ -1251,6 +1271,11 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
         if (it != initialArguments.end()) {
             QString &arg = *it;
             CMakeConfigItem argItem = CMakeConfigItem::fromString(arg.mid(2)); // skip -D
+
+            // These values have Qt Creator macro names pointing to the Kit values
+            // which are preset expanded values used when the Kit was created
+            if (defaultKitMacroValues.contains(argItem.key) && argItem.value.startsWith("%{"))
+                continue;
 
             // For multi value path variables append the non Qt path
             if (argItem.key == "CMAKE_PREFIX_PATH" || argItem.key == "CMAKE_FIND_ROOT_PATH") {
@@ -1262,7 +1287,7 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
                     QStringList argItemPaths = argItemExpandedValue.split(";");
                     for (const QString &argPath : argItemPaths) {
                         const FilePath argFilePath = FilePath::fromString(argPath);
-                        const FilePath presetFilePath = FilePath::fromString(presetPath);
+                        const FilePath presetFilePath = FilePath::fromUserInput(presetPath);
 
                         if (argFilePath == presetFilePath)
                             return true;
@@ -1277,12 +1302,10 @@ static void addCMakeConfigurePresetToInitialArguments(QStringList &initialArgume
                 }
 
                 arg = argItem.toArgument();
-            } else if (argItem.key == "CMAKE_C_COMPILER" || argItem.key == "CMAKE_CXX_COMPILER"
-                       || argItem.key == "QT_QMAKE_EXECUTABLE" || argItem.key == "QT_HOST_PATH"
-                       || argItem.key == "CMAKE_PROJECT_INCLUDE_BEFORE"
-                       || argItem.key == "CMAKE_TOOLCHAIN_FILE") {
+            } else if (argItem.key == "CMAKE_TOOLCHAIN_FILE") {
                 const FilePath argFilePath = FilePath::fromString(argItem.expandedValue(k));
-                const FilePath presetFilePath = FilePath::fromUtf8(presetItem.value);
+                const FilePath presetFilePath = FilePath::fromUserInput(
+                    QString::fromUtf8(presetItem.value));
 
                 if (argFilePath != presetFilePath)
                     arg = presetItem.toArgument();
@@ -1721,7 +1744,8 @@ void CMakeBuildSystem::setInitialCMakeArguments(const QStringList &args)
 
 QStringList CMakeBuildSystem::additionalCMakeArguments() const
 {
-    return ProcessArgs::splitArgs(buildConfiguration()->aspect<AdditionalCMakeOptionsAspect>()->value());
+    return ProcessArgs::splitArgs(buildConfiguration()->aspect<AdditionalCMakeOptionsAspect>()->value(),
+                                  HostOsInfo::hostOs());
 }
 
 void CMakeBuildSystem::setAdditionalCMakeArguments(const QStringList &args)
@@ -1744,7 +1768,8 @@ void CMakeBuildSystem::filterConfigArgumentsFromAdditionalCMakeArguments()
     // which is already part of the CMake variables and should not be also
     // in the addtional CMake options
     const QStringList arguments = ProcessArgs::splitArgs(
-        buildConfiguration()->aspect<AdditionalCMakeOptionsAspect>()->value());
+        buildConfiguration()->aspect<AdditionalCMakeOptionsAspect>()->value(),
+        HostOsInfo::hostOs());
     QStringList unknownOptions;
     const CMakeConfig config = CMakeConfig::fromArguments(arguments, unknownOptions);
 
@@ -2140,7 +2165,7 @@ const QStringList InitialCMakeArgumentsAspect::allValues() const
                                                              return ci.toArgument(nullptr);
                                                          });
 
-    initialCMakeArguments.append(ProcessArgs::splitArgs(value()));
+    initialCMakeArguments.append(ProcessArgs::splitArgs(value(), HostOsInfo::hostOs()));
 
     return initialCMakeArguments;
 }

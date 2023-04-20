@@ -6,7 +6,7 @@
 #include "iostr.h"
 
 #include <utils/algorithm.h>
-#include <utils/runextensions.h>
+#include <utils/asynctask.h>
 
 #include <QTimer>
 
@@ -109,7 +109,7 @@ void SimulatorInfoModel::requestSimulatorInfo()
     if (!m_fetchFuture.isEmpty())
         return; // Ignore the request if the last request is still pending.
 
-    m_fetchFuture.addFuture(Utils::onResultReady(SimulatorControl::updateAvailableSimulators(),
+    m_fetchFuture.addFuture(Utils::onResultReady(SimulatorControl::updateAvailableSimulators(this),
                                                  this, &SimulatorInfoModel::populateSimulators));
 }
 

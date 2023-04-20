@@ -2,7 +2,7 @@ add_qtc_library(Utils
   DEPENDS Qt::Qml Qt::Xml
   PUBLIC_DEPENDS
     Qt::Concurrent Qt::Core Qt::Network Qt::Gui Qt::Widgets
-    Qt6Core5Compat
+    Qt::Core5Compat
   SOURCES
     ../3rdparty/span/span.hpp
     ../3rdparty/tl_expected/include/tl/expected.hpp
@@ -55,6 +55,8 @@ add_qtc_library(Utils
     filepath.cpp filepath.h
     filepathinfo.h
     filesearch.cpp filesearch.h
+    filestreamer.cpp filestreamer.h
+    filestreamermanager.cpp filestreamermanager.h
     filesystemmodel.cpp filesystemmodel.h
     filesystemwatcher.cpp filesystemwatcher.h
     fileutils.cpp fileutils.h
@@ -138,6 +140,7 @@ add_qtc_library(Utils
     qtcolorbutton.cpp qtcolorbutton.h
     qtcprocess.cpp qtcprocess.h
     qtcsettings.cpp qtcsettings.h
+    ranges.h
     reloadpromptutils.cpp reloadpromptutils.h
     removefiledialog.cpp removefiledialog.h
     runextensions.cpp runextensions.h
@@ -163,6 +166,7 @@ add_qtc_library(Utils
     statuslabel.cpp statuslabel.h
     stringtable.cpp stringtable.h
     stringutils.cpp stringutils.h
+    styleanimator.cpp styleanimator.h
     styledbar.cpp styledbar.h
     stylehelper.cpp stylehelper.h
     tasktree.cpp tasktree.h
@@ -170,7 +174,8 @@ add_qtc_library(Utils
     temporarydirectory.cpp temporarydirectory.h
     temporaryfile.cpp temporaryfile.h
     terminalcommand.cpp terminalcommand.h
-    terminalprocess.cpp terminalprocess_p.h
+    terminalhooks.cpp terminalhooks.h
+    terminalinterface.cpp terminalinterface.h
     textfieldcheckbox.cpp textfieldcheckbox.h
     textfieldcombobox.cpp textfieldcombobox.h
     textfileformat.cpp textfileformat.h
@@ -190,6 +195,7 @@ add_qtc_library(Utils
     utils_global.h
     utilstr.h
     utilsicons.cpp utilsicons.h
+    utiltypes.h
     variablechooser.cpp variablechooser.h
     winutils.cpp winutils.h
     wizard.cpp wizard.h
@@ -256,7 +262,7 @@ extend_qtc_library(Utils CONDITION UNIX AND NOT APPLE
 
 extend_qtc_library(Utils
   CONDITION TARGET Qt::CorePrivate
-  DEPENDS Qt::CorePrivate
+  DEPENDS Qt::CorePrivate ptyqt
   DEFINES QTC_UTILS_WITH_FSENGINE
   SOURCES fsengine/fsengine_impl.cpp
           fsengine/fsengine_impl.h
@@ -270,19 +276,10 @@ extend_qtc_library(Utils
 )
 
 if (WIN32)
-  add_qtc_executable(qtcreator_process_stub
-    SOURCES process_stub_win.c
-    DEPENDS shell32
-    DEFINES _UNICODE UNICODE _CRT_SECURE_NO_WARNINGS
-  )
-
   add_qtc_executable(qtcreator_ctrlc_stub
     DEPENDS user32 shell32
     DEFINES _UNICODE UNICODE _CRT_SECURE_NO_WARNINGS
     SOURCES
       process_ctrlc_stub.cpp
   )
-else()
-  add_qtc_executable(qtcreator_process_stub SOURCES process_stub_unix.c)
 endif()
-

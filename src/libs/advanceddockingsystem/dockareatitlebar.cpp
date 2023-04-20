@@ -4,6 +4,7 @@
 #include "dockareatitlebar.h"
 
 #include "ads_globals.h"
+#include "ads_globals_p.h"
 #include "advanceddockingsystemtr.h"
 #include "dockareatabbar.h"
 #include "dockareawidget.h"
@@ -16,6 +17,8 @@
 #include "floatingdragpreview.h"
 #include "iconprovider.h"
 
+#include <utils/qtcassert.h>
+
 #include <QBoxLayout>
 #include <QLoggingCategory>
 #include <QMenu>
@@ -25,8 +28,6 @@
 #include <QStyle>
 
 #include <iostream>
-
-static Q_LOGGING_CATEGORY(adsLog, "qtc.qmldesigner.advanceddockingsystem", QtWarningMsg)
 
 namespace ADS
 {
@@ -380,6 +381,8 @@ namespace ADS
 
     void DockAreaTitleBar::updateDockWidgetActionsButtons()
     {
+        QTC_ASSERT(d->m_tabBar->currentTab(), return );
+        QTC_ASSERT(d->m_tabBar->currentTab()->dockWidget(), return );
         DockWidget* dockWidget = d->m_tabBar->currentTab()->dockWidget();
         if (!d->m_dockWidgetActionsButtons.isEmpty()) {
             for (auto button : std::as_const(d->m_dockWidgetActionsButtons)) {

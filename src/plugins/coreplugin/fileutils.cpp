@@ -19,6 +19,7 @@
 #include <utils/hostosinfo.h>
 #include <utils/qtcprocess.h>
 #include <utils/terminalcommand.h>
+#include <utils/terminalhooks.h>
 #include <utils/textfileformat.h>
 #include <utils/unixutils.h>
 
@@ -75,7 +76,8 @@ void FileUtils::showInGraphicalShell(QWidget *parent, const FilePath &pathIn)
         const QString folder = fileInfo.isDir() ? fileInfo.absoluteFilePath() : fileInfo.filePath();
         const QString app = UnixUtils::fileBrowser(ICore::settings());
         QStringList browserArgs = ProcessArgs::splitArgs(
-                    UnixUtils::substituteFileBrowserParameters(app, folder));
+                    UnixUtils::substituteFileBrowserParameters(app, folder),
+                    HostOsInfo::hostOs());
         QString error;
         if (browserArgs.isEmpty()) {
             error = Tr::tr("The command for file browser is not set.");
@@ -104,8 +106,7 @@ void FileUtils::showInFileSystemView(const FilePath &path)
 
 void FileUtils::openTerminal(const FilePath &path, const Environment &env)
 {
-    QTC_ASSERT(DeviceFileHooks::instance().openTerminal, return);
-    DeviceFileHooks::instance().openTerminal(path, env);
+    Terminal::Hooks::instance().openTerminal({std::nullopt, path, env});
 }
 
 QString FileUtils::msgFindInDirectory()

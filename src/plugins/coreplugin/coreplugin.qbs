@@ -157,8 +157,6 @@ Project {
                 "sidebarwidget.h",
                 "statusbarmanager.cpp",
                 "statusbarmanager.h",
-                "styleanimator.cpp",
-                "styleanimator.h",
                 "systemsettings.cpp",
                 "systemsettings.h",
                 "textdocument.cpp",
@@ -271,9 +269,7 @@ Project {
             ]
         }
 
-        Group {
-            name: "Tests"
-            condition: qtc.testsEnabled
+        QtcTestFiles {
             files: [
                 "testdatadir.cpp",
                 "testdatadir.h",

@@ -15,6 +15,10 @@
 
 namespace Debugger::Internal {
 
+const QStringView inameLocal = u"local.";
+const QStringView inameWatch = u"watch.";
+const QStringView inameInspect = u"inspect.";
+
 bool isPointerType(const QStringView type)
 {
     return type.endsWith('*') || type.endsWith(u"* const");
@@ -212,6 +216,13 @@ public:
             child->valueEditable = true;
             item->appendChild(child);
         }
+        if (childrenElided) {
+            auto child = new WatchItem;
+            child->name = WatchItem::loadMoreName;
+            child->iname = item->iname + "." + WatchItem::loadMoreName;
+            child->wantsChildren = true;
+            item->appendChild(child);
+        }
     }
 
     void decode()
@@ -260,6 +271,7 @@ public:
     QString rawData;
     QString childType;
     DebuggerEncoding encoding;
+    int childrenElided;
     quint64 addrbase;
     quint64 addrstep;
     Endian endian;
@@ -308,7 +320,7 @@ void WatchItem::parseHelper(const GdbMi &input, bool maySort)
     if (mi.isValid()) {
         address = mi.toAddress();
         if (exp.isEmpty()) {
-            if (iname.startsWith("local.") && iname.count('.') == 1)
+            if (iname.startsWith(inameLocal) && iname.count('.') == 1)
                 // Solve one common case of adding 'class' in
                 // *(class X*)0xdeadbeef for gdb.
                 exp = name;
@@ -375,6 +387,7 @@ void WatchItem::parseHelper(const GdbMi &input, bool maySort)
         decoder.item = this;
         decoder.rawData = mi.data();
         decoder.childType = input["childtype"].data();
+        decoder.childrenElided = input["childrenelided"].toInt();
         decoder.addrbase = input["addrbase"].toAddress();
         decoder.addrstep = input["addrstep"].toAddress();
         decoder.endian = input["endian"].data() == ">" ? Endian::Big : Endian::Little;
@@ -500,12 +513,17 @@ QString WatchItem::toToolTip() const
     return res;
 }
 
+bool WatchItem::isLoadMore() const
+{
+    return name == loadMoreName;
+}
+
 bool WatchItem::isLocal() const
 {
     if (arrayIndex >= 0)
         if (const WatchItem *p = parent())
             return p->isLocal();
-    return iname.startsWith("local.");
+    return iname.startsWith(inameLocal);
 }
 
 bool WatchItem::isWatcher() const
@@ -513,7 +531,7 @@ bool WatchItem::isWatcher() const
     if (arrayIndex >= 0)
         if (const WatchItem *p = parent())
             return p->isWatcher();
-    return iname.startsWith("watch.");
+    return iname.startsWith(inameWatch);
 }
 
 bool WatchItem::isInspect() const
@@ -521,7 +539,7 @@ bool WatchItem::isInspect() const
     if (arrayIndex >= 0)
         if (const WatchItem *p = parent())
             return p->isInspect();
-    return iname.startsWith("inspect.");
+    return iname.startsWith(inameInspect);
 }
 
 QString WatchItem::internalName() const

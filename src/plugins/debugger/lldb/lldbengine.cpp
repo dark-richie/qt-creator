@@ -219,7 +219,8 @@ void LldbEngine::handleLldbStarted()
 
     const DebuggerRunParameters &rp = runParameters();
 
-    executeCommand("script sys.path.insert(1, '" + rp.dumperPath.path() + "')");
+    QString dumperPath = ICore::resourcePath("debugger").path();
+    executeCommand("script sys.path.insert(1, '" + dumperPath + "')");
     // This triggers reportState("enginesetupok") or "enginesetupfailed":
     executeCommand("script from lldbbridge import *");
 
@@ -267,7 +268,8 @@ void LldbEngine::handleLldbStarted()
     cmd2.arg("nativemixed", isNativeMixedActive());
     cmd2.arg("workingdirectory", rp.inferior.workingDirectory.path());
     cmd2.arg("environment", rp.inferior.environment.toStringList());
-    cmd2.arg("processargs", toHex(ProcessArgs::splitArgs(rp.inferior.command.arguments()).join(QChar(0))));
+    cmd2.arg("processargs", toHex(ProcessArgs::splitArgs(rp.inferior.command.arguments(),
+                                                         HostOsInfo::hostOs()).join(QChar(0))));
     cmd2.arg("platform", rp.platform);
     cmd2.arg("symbolfile", rp.symbolFile.path());
 
@@ -278,15 +280,15 @@ void LldbEngine::handleLldbStarted()
                 ? QString::fromLatin1("Attaching to %1 (%2)").arg(attachedPID).arg(attachedMainThreadID)
                 : QString::fromLatin1("Attaching to %1").arg(attachedPID);
         showMessage(msg, LogMisc);
+        cmd2.arg("startmode", DebuggerStartMode::AttachToLocalProcess);
         cmd2.arg("attachpid", attachedPID);
-
     } else {
-
         cmd2.arg("startmode", rp.startMode);
         // it is better not to check the start mode on the python sid (as we would have to duplicate the
         // enum values), and thus we assume that if the rp.attachPID is valid we really have to attach
-        QTC_CHECK(!rp.attachPID.isValid() || (rp.startMode == AttachToCrashedProcess
-                                              || rp.startMode == AttachToLocalProcess));
+        QTC_CHECK(rp.attachPID.isValid() && (rp.startMode == AttachToRemoteProcess
+                                             || rp.startMode == AttachToLocalProcess
+                                             || rp.startMode == AttachToRemoteServer));
         cmd2.arg("attachpid", rp.attachPID.pid());
         cmd2.arg("sysroot", rp.deviceSymbolsRoot.isEmpty() ? rp.sysRoot.toString()
                                                            : rp.deviceSymbolsRoot);
@@ -629,7 +631,7 @@ void LldbEngine::handleInterpreterBreakpointModified(const GdbMi &bpItem)
     updateBreakpointData(bp, bpItem, false);
 }
 
-void LldbEngine::loadSymbols(const QString &moduleName)
+void LldbEngine::loadSymbols(const FilePath &moduleName)
 {
     Q_UNUSED(moduleName)
 }
@@ -642,12 +644,13 @@ void LldbEngine::reloadModules()
 {
     DebuggerCommand cmd("fetchModules");
     cmd.callback = [this](const DebuggerResponse &response) {
+        const FilePath inferior = runParameters().inferior.command.executable();
         const GdbMi &modules = response.data["modules"];
         ModulesHandler *handler = modulesHandler();
         handler->beginUpdateAll();
         for (const GdbMi &item : modules) {
             Module module;
-            module.modulePath = item["file"].data();
+            module.modulePath = inferior.withNewPath(item["file"].data());
             module.moduleName = item["name"].data();
             module.symbolsRead = Module::UnknownReadState;
             module.startAddress = item["loaded_addr"].toAddress();
@@ -659,13 +662,13 @@ void LldbEngine::reloadModules()
     runCommand(cmd);
 }
 
-void LldbEngine::requestModuleSymbols(const QString &moduleName)
+void LldbEngine::requestModuleSymbols(const FilePath &moduleName)
 {
     DebuggerCommand cmd("fetchSymbols");
-    cmd.arg("module", moduleName);
+    cmd.arg("module", moduleName.path());
     cmd.callback = [moduleName](const DebuggerResponse &response) {
         const GdbMi &symbols = response.data["symbols"];
-        QString moduleName = response.data["module"].data();
+        const QString module = response.data["module"].data();
         Symbols syms;
         for (const GdbMi &item : symbols) {
             Symbol symbol;
@@ -676,7 +679,7 @@ void LldbEngine::requestModuleSymbols(const QString &moduleName)
             symbol.demangled = item["demangled"].data();
             syms.append(symbol);
         }
-        showModuleSymbols(moduleName, syms);
+        showModuleSymbols(moduleName.withNewPath(module), syms);
     };
     runCommand(cmd);
 }

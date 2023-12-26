@@ -5,6 +5,7 @@
 
 #include "client.h"
 #include "languageclientmanager.h"
+#include "languageclientsettings.h"
 #include "languageclienttr.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
@@ -33,29 +34,21 @@ LanguageClientPlugin *LanguageClientPlugin::instance()
     return m_instance;
 }
 
-Utils::FutureSynchronizer *LanguageClientPlugin::futureSynchronizer()
-{
-    QTC_ASSERT(m_instance, return nullptr);
-    return &m_instance->m_futureSynchronizer;
-}
-
 void LanguageClientPlugin::initialize()
 {
     using namespace Core;
+
+    setupLanguageClientProjectPanel();
 
     LanguageClientManager::init();
     LanguageClientSettings::registerClientType({Constants::LANGUAGECLIENT_STDIO_SETTINGS_ID,
                                                 Tr::tr("Generic StdIO Language Server"),
                                                 []() { return new StdIOSettings; }});
 
-    //register actions
-    ActionContainer *toolsDebugContainer = ActionManager::actionContainer(
-        Core::Constants::M_TOOLS_DEBUG);
-
-    auto inspectAction = new QAction(Tr::tr("Inspect Language Clients..."), this);
-    connect(inspectAction, &QAction::triggered, this, &LanguageClientManager::showInspector);
-    toolsDebugContainer->addAction(
-        ActionManager::registerAction(inspectAction, "LanguageClient.InspectLanguageClients"));
+    ActionBuilder inspectAction(this, "LanguageClient.InspectLanguageClients");
+    inspectAction.setText(Tr::tr("Inspect Language Clients..."));
+    inspectAction.addToContainer(Core::Constants::M_TOOLS_DEBUG);
+    inspectAction.addOnTriggered(this, &LanguageClientManager::showInspector);
 }
 
 void LanguageClientPlugin::extensionsInitialized()
@@ -66,12 +59,12 @@ void LanguageClientPlugin::extensionsInitialized()
 ExtensionSystem::IPlugin::ShutdownFlag LanguageClientPlugin::aboutToShutdown()
 {
     LanguageClientManager::shutdown();
-    if (LanguageClientManager::clients().isEmpty())
+    if (LanguageClientManager::isShutdownFinished())
         return ExtensionSystem::IPlugin::SynchronousShutdown;
     QTC_ASSERT(LanguageClientManager::instance(),
                return ExtensionSystem::IPlugin::SynchronousShutdown);
     connect(LanguageClientManager::instance(), &LanguageClientManager::shutdownFinished,
-            this, &ExtensionSystem::IPlugin::asynchronousShutdownFinished, Qt::QueuedConnection);
+            this, &ExtensionSystem::IPlugin::asynchronousShutdownFinished);
     return ExtensionSystem::IPlugin::AsynchronousShutdown;
 }
 

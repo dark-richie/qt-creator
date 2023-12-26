@@ -3,7 +3,7 @@
 
 #include "cmakeproject.h"
 
-#include "cmakekitinformation.h"
+#include "cmakekitaspect.h"
 #include "cmakeprojectconstants.h"
 #include "cmakeprojectimporter.h"
 #include "cmakeprojectmanagertr.h"
@@ -12,12 +12,15 @@
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildsteplist.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/taskhub.h>
-#include <qtsupport/qtkitinformation.h>
+
+#include <qtsupport/qtkitaspect.h>
+
+#include <utils/mimeconstants.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -29,7 +32,7 @@ namespace CMakeProjectManager {
   \class CMakeProject
 */
 CMakeProject::CMakeProject(const FilePath &fileName)
-    : Project(Constants::CMAKE_MIMETYPE, fileName)
+    : Project(Utils::Constants::CMAKE_MIMETYPE, fileName)
 {
     setId(CMakeProjectManager::Constants::CMAKE_PROJECT_ID);
     setProjectLanguages(Core::Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
@@ -55,7 +58,7 @@ Tasks CMakeProject::projectIssues(const Kit *k) const
 
     if (!CMakeKitAspect::cmakeTool(k))
         result.append(createProjectTask(Task::TaskType::Error, Tr::tr("No cmake tool set.")));
-    if (ToolChainKitAspect::toolChains(k).isEmpty())
+    if (ToolchainKitAspect::toolChains(k).isEmpty())
         result.append(createProjectTask(Task::TaskType::Warning, Tr::tr("No compilers set in kit.")));
 
     result.append(m_issues);
@@ -67,7 +70,7 @@ Tasks CMakeProject::projectIssues(const Kit *k) const
 ProjectImporter *CMakeProject::projectImporter() const
 {
     if (!m_projectImporter)
-        m_projectImporter = new CMakeProjectImporter(projectFilePath(), m_presetsData);
+        m_projectImporter = new CMakeProjectImporter(projectFilePath(), this);
     return m_projectImporter;
 }
 
@@ -93,6 +96,14 @@ Internal::PresetsData CMakeProject::combinePresets(Internal::PresetsData &cmakeP
     result.version = cmakePresetsData.version;
     result.cmakeMinimimRequired = cmakePresetsData.cmakeMinimimRequired;
 
+    result.include = cmakePresetsData.include;
+    if (result.include) {
+        if (cmakeUserPresetsData.include)
+            result.include->append(cmakeUserPresetsData.include.value());
+    } else {
+        result.include = cmakeUserPresetsData.include;
+    }
+
     auto combinePresetsInternal = [](auto &presetsHash,
                                      auto &presets,
                                      auto &userPresets,
@@ -105,7 +116,18 @@ Internal::PresetsData CMakeProject::combinePresets(Internal::PresetsData &cmakeP
             Utils::sort(presetsList, [](const auto &left, const auto &right) {
                 const bool sameInheritance = left.inherits && right.inherits
                                              && left.inherits.value() == right.inherits.value();
-                if (!left.inherits || left.inherits.value().contains(right.name) || sameInheritance)
+                const bool leftInheritsRight = left.inherits
+                                               && left.inherits.value().contains(right.name);
+
+                const bool inheritsGreater = left.inherits && right.inherits
+                                             && left.inherits.value().first()
+                                                    > right.inherits.value().first();
+
+                const bool noInheritsGreater = !left.inherits && !right.inherits
+                                               && left.name > right.name;
+
+                if ((left.inherits && !right.inherits) || leftInheritsRight || sameInheritance
+                    || inheritsGreater || noInheritsGreater)
                     return false;
                 return true;
             });
@@ -228,7 +250,7 @@ void CMakeProject::readPresets()
                         if (includeStack.contains(includePath)) {
                             TaskHub::addTask(BuildSystemTask(
                                 Task::TaskType::Warning,
-                                Tr::tr("Attempt to include %1 which was already parsed.")
+                                Tr::tr("Attempt to include \"%1\" which was already parsed.")
                                     .arg(includePath.path()),
                                 Utils::FilePath(),
                                 -1));
@@ -294,6 +316,17 @@ void CMakeProject::configureAsExampleProject(ProjectExplorer::Kit *kit)
         }
     }
     setup(infoList);
+}
+
+void CMakeProjectManager::CMakeProject::setOldPresetKits(
+    const QList<ProjectExplorer::Kit *> &presetKits) const
+{
+    m_oldPresetKits = presetKits;
+}
+
+QList<Kit *> CMakeProject::oldPresetKits() const
+{
+    return m_oldPresetKits;
 }
 
 } // namespace CMakeProjectManager

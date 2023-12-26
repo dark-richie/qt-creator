@@ -13,6 +13,7 @@
 
 #include <abstractview.h>
 #include <bindingproperty.h>
+#include <model/modelutils.h>
 #include <variantproperty.h>
 #include <qmltimeline.h>
 #include <qmltimelinekeyframegroup.h>
@@ -349,7 +350,7 @@ void TransitionEditorSectionItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent
 
     if (event->button() == Qt::LeftButton) {
         event->accept();
-        if (!ModelNode::isThisOrAncestorLocked(m_targetNode))
+        if (!ModelUtils::isThisOrAncestorLocked(m_targetNode))
             toggleCollapsed();
     }
 }
@@ -382,7 +383,7 @@ void TransitionEditorSectionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *ev
         if (m_targetNode.isValid())
             m_targetNode.view()->setSelectedModelNode(m_targetNode);
     } else {
-        if (!ModelNode::isThisOrAncestorLocked(m_targetNode))
+        if (!ModelUtils::isThisOrAncestorLocked(m_targetNode))
             toggleCollapsed();
     }
     update();
@@ -441,7 +442,7 @@ void TransitionEditorSectionItem::invalidateHeight()
             model->qtQuickPropertyAnimationMetaInfo());
 
         height = TimelineConstants::sectionHeight
-                 + propertyAnimations.count() * TimelineConstants::sectionHeight;
+                 + propertyAnimations.size() * TimelineConstants::sectionHeight;
         visible = true;
     }
 
@@ -558,7 +559,7 @@ void TransitionEditorBarItem::commitPosition(const QPointF & /*point*/)
         if (m_handle != Location::Undefined) {
             sectionItem()
                 ->view()
-                ->executeInTransaction("TransitionEditorBarItem::commitPosition", [this]() {
+                ->executeInTransaction("TransitionEditorBarItem::commitPosition", [this] {
                     qreal scaleFactor = rect().width() / m_oldRect.width();
 
                     qreal moved = (rect().topLeft().x() - m_oldRect.topLeft().x()) / rulerScaling();
@@ -573,7 +574,7 @@ void TransitionEditorBarItem::commitPosition(const QPointF & /*point*/)
         if (m_handle != Location::Undefined) {
             propertyItem()
                 ->view()
-                ->executeInTransaction("TransitionEditorBarItem::commitPosition", [this]() {
+                ->executeInTransaction("TransitionEditorBarItem::commitPosition", [this] {
                     qreal scaleFactor = rect().width() / m_oldRect.width();
                     qreal moved = (rect().topLeft().x() - m_oldRect.topLeft().x()) / rulerScaling();
                     qreal supposedFirstFrame = qRound(moved);

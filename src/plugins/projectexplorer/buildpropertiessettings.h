@@ -5,8 +5,6 @@
 
 #include "projectexplorer_export.h"
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
 namespace ProjectExplorer {
@@ -19,28 +17,17 @@ public:
     class BuildTriStateAspect : public Utils::TriStateAspect
     {
     public:
-        BuildTriStateAspect();
+        explicit BuildTriStateAspect(AspectContainer *container);
     };
 
-    Utils::StringAspect buildDirectoryTemplate;
-    Utils::StringAspect buildDirectoryTemplateOld; // TODO: Remove in ~4.16
-    BuildTriStateAspect separateDebugInfo;
-    BuildTriStateAspect qmlDebugging;
-    BuildTriStateAspect qtQuickCompiler;
-    Utils::BoolAspect showQtSettings;
+    Utils::StringAspect buildDirectoryTemplate{this};
+    BuildTriStateAspect separateDebugInfo{this};
+    BuildTriStateAspect qmlDebugging{this};
+    BuildTriStateAspect qtQuickCompiler{this};
 
-    void readSettings(QSettings *settings);
-
-    QString defaultBuildDirectoryTemplate();
+    static void showQtSettings(); // Called by the Qt support plugin
 };
 
-namespace Internal {
+PROJECTEXPLORER_EXPORT BuildPropertiesSettings &buildPropertiesSettings();
 
-class BuildPropertiesSettingsPage final : public Core::IOptionsPage
-{
-public:
-    explicit BuildPropertiesSettingsPage(BuildPropertiesSettings *settings);
-};
-
-} // namespace Internal
 } // namespace ProjectExplorer

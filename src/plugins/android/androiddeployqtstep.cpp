@@ -30,16 +30,16 @@
 #include <projectexplorer/toolchain.h>
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/commandline.h>
 #include <utils/environment.h>
 #include <utils/futuresynchronizer.h>
 #include <utils/layoutbuilder.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QCheckBox>
 #include <QFileDialog>
@@ -57,7 +57,8 @@ namespace Android::Internal {
 
 static Q_LOGGING_CATEGORY(deployStepLog, "qtc.android.build.androiddeployqtstep", QtWarningMsg)
 
-const QLatin1String UninstallPreviousPackageKey("UninstallPreviousPackage");
+const char UninstallPreviousPackageKey[] = "UninstallPreviousPackage";
+
 const QLatin1String InstallFailedInconsistentCertificatesString("INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES");
 const QLatin1String InstallFailedUpdateIncompatible("INSTALL_FAILED_UPDATE_INCOMPATIBLE");
 const QLatin1String InstallFailedPermissionModelDowngrade("INSTALL_FAILED_PERMISSION_MODEL_DOWNGRADE");
@@ -89,13 +90,12 @@ private:
     void runCommand(const CommandLine &command);
 
     bool init() override;
-    void doRun() override;
-    void doCancel() override;
+    Tasking::GroupItem runRecipe() final;
     void gatherFilesToPull();
-    DeployErrorCode runDeploy();
+    DeployErrorCode runDeploy(QPromise<void> &promise);
     void slotAskForUninstall(DeployErrorCode errorCode);
 
-    void runImpl(QPromise<bool> &promise);
+    void runImpl(QPromise<void> &promise);
 
     QWidget *createConfigWidget() override;
 
@@ -122,7 +122,7 @@ private:
     QMap<QString, FilePath> m_filesToPull;
 
     QStringList m_androidABIs;
-    BoolAspect *m_uninstallPreviousPackage = nullptr;
+    BoolAspect m_uninstallPreviousPackage{this};
     bool m_uninstallPreviousPackageRun = false;
     bool m_useAndroiddeployqt = false;
     bool m_askForUninstall = false;
@@ -132,7 +132,6 @@ private:
     FilePath m_workingDirectory;
     Environment m_environment;
     AndroidDeviceInfo m_deviceInfo;
-
     FutureSynchronizer m_synchronizer;
 };
 
@@ -142,17 +141,16 @@ AndroidDeployQtStep::AndroidDeployQtStep(BuildStepList *parent, Id id)
     setImmutable(true);
     setUserExpanded(true);
 
-    m_uninstallPreviousPackage = addAspect<BoolAspect>();
-    m_uninstallPreviousPackage->setSettingsKey(UninstallPreviousPackageKey);
-    m_uninstallPreviousPackage->setLabel(Tr::tr("Uninstall the existing app before deployment"),
+    m_uninstallPreviousPackage.setSettingsKey(UninstallPreviousPackageKey);
+    m_uninstallPreviousPackage.setLabel(Tr::tr("Uninstall the existing app before deployment"),
                                          BoolAspect::LabelPlacement::AtCheckBox);
-    m_uninstallPreviousPackage->setValue(false);
+    m_uninstallPreviousPackage.setValue(false);
 
     const QtSupport::QtVersion * const qt = QtSupport::QtKitAspect::qtVersion(kit());
     const bool forced = qt && qt->qtVersion() < QVersionNumber(5, 4, 0);
     if (forced) {
-        m_uninstallPreviousPackage->setValue(true);
-        m_uninstallPreviousPackage->setEnabled(false);
+        m_uninstallPreviousPackage.setValue(true);
+        m_uninstallPreviousPackage.setEnabled(false);
     }
 
     connect(this, &AndroidDeployQtStep::askForUninstall,
@@ -234,8 +232,7 @@ bool AndroidDeployQtStep::init()
             return false;
         }
 
-        const bool abiListNotEmpty = !selectedAbis.isEmpty() && !dev->supportedAbis().isEmpty();
-        if (abiListNotEmpty && !dev->canSupportAbis(selectedAbis)) {
+        if (!dev->canSupportAbis(selectedAbis)) {
             const QString error = Tr::tr("The deployment device \"%1\" does not support the "
                                          "architectures used by the kit.\n"
                                          "The kit supports \"%2\", but the device uses \"%3\".")
@@ -274,7 +271,7 @@ bool AndroidDeployQtStep::init()
 
     emit addOutput(Tr::tr("Deploying to %1").arg(m_serialNumber), OutputFormat::NormalMessage);
 
-    m_uninstallPreviousPackageRun = m_uninstallPreviousPackage->value();
+    m_uninstallPreviousPackageRun = m_uninstallPreviousPackage();
     if (m_uninstallPreviousPackageRun)
         m_manifestName = AndroidManager::manifestPath(target());
 
@@ -342,7 +339,7 @@ bool AndroidDeployQtStep::init()
     return true;
 }
 
-AndroidDeployQtStep::DeployErrorCode AndroidDeployQtStep::runDeploy()
+AndroidDeployQtStep::DeployErrorCode AndroidDeployQtStep::runDeploy(QPromise<void> &promise)
 {
     CommandLine cmd(m_command);
     if (m_useAndroiddeployqt && m_apkPath.isEmpty()) {
@@ -380,7 +377,7 @@ AndroidDeployQtStep::DeployErrorCode AndroidDeployQtStep::runDeploy()
         cmd.addArgs({"install", "-r", m_apkPath.toString()});
     }
 
-    QtcProcess process;
+    Process process;
     process.setCommand(cmd);
     process.setWorkingDirectory(m_workingDirectory);
     process.setEnvironment(m_environment);
@@ -405,7 +402,7 @@ AndroidDeployQtStep::DeployErrorCode AndroidDeployQtStep::runDeploy()
         if (process.state() == QProcess::NotRunning)
             break;
 
-        if (isCanceled()) {
+        if (promise.isCanceled()) {
             process.kill();
             process.waitForFinished();
         }
@@ -478,16 +475,16 @@ void AndroidDeployQtStep::slotAskForUninstall(DeployErrorCode errorCode)
     m_askForUninstall = button == QMessageBox::Yes;
 }
 
-void AndroidDeployQtStep::runImpl(QPromise<bool> &promise)
+// TODO: This implementation is not thread safe.
+void AndroidDeployQtStep::runImpl(QPromise<void> &promise)
 {
     if (!m_avdName.isEmpty()) {
-        const QString serialNumber = AndroidAvdManager().waitForAvd(m_avdName,
-                                                         QFuture<void>(promise.future()));
+        const QString serialNumber = AndroidAvdManager().waitForAvd(m_avdName, promise.future());
         qCDebug(deployStepLog) << "Deploying to AVD:" << m_avdName << serialNumber;
         if (serialNumber.isEmpty()) {
             reportWarningOrError(Tr::tr("The deployment AVD \"%1\" cannot be started.")
                                  .arg(m_avdName), Task::Error);
-            promise.addResult(false);
+            promise.future().cancel();
             return;
         }
         m_serialNumber = serialNumber;
@@ -495,12 +492,12 @@ void AndroidDeployQtStep::runImpl(QPromise<bool> &promise)
         AndroidManager::setDeviceSerialNumber(target(), serialNumber);
     }
 
-    DeployErrorCode returnValue = runDeploy();
+    DeployErrorCode returnValue = runDeploy(promise);
     if (returnValue > DeployErrorCode::NoError && returnValue < DeployErrorCode::Failure) {
         emit askForUninstall(returnValue);
         if (m_askForUninstall) {
             m_uninstallPreviousPackageRun = true;
-            returnValue = runDeploy();
+            returnValue = runDeploy(promise);
         }
     }
 
@@ -513,6 +510,13 @@ void AndroidDeployQtStep::runImpl(QPromise<bool> &promise)
         itr.value().removeFile();
 
     for (auto itr = m_filesToPull.constBegin(); itr != m_filesToPull.constEnd(); ++itr) {
+        const FilePath parentDir = itr.value().parentDir();
+        if (!parentDir.ensureWritableDir()) {
+            const QString error = QString("Package deploy: Unable to create directory %1.")
+                                      .arg(parentDir.nativePath());
+            reportWarningOrError(error, Task::Error);
+        }
+
         runCommand({m_adbPath,
                    AndroidDeviceInfo::adbSelector(m_serialNumber)
                    << "pull" << itr.key() << itr.value().nativePath()});
@@ -523,13 +527,14 @@ void AndroidDeployQtStep::runImpl(QPromise<bool> &promise)
             reportWarningOrError(error, Task::Error);
         }
     }
-    promise.addResult(returnValue == NoError);
+    if (returnValue != NoError)
+        promise.future().cancel();
 }
 
 void AndroidDeployQtStep::gatherFilesToPull()
 {
     m_filesToPull.clear();
-    const FilePath buildDir = AndroidManager::buildDirectory(target());
+    const FilePath appProcessDir = AndroidManager::androidAppProcessDir(target());
 
     if (!m_deviceInfo.isValid())
         return;
@@ -539,43 +544,34 @@ void AndroidDeployQtStep::gatherFilesToPull()
     const QString preferredAbi = AndroidManager::apkDevicePreferredAbi(target());
     if (preferredAbi == ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A
             || preferredAbi == ProjectExplorer::Constants::ANDROID_ABI_X86_64) {
-        m_filesToPull["/system/bin/app_process64"] = buildDir / "app_process";
+        m_filesToPull["/system/bin/app_process64"] = appProcessDir / "app_process";
         libDirName = "lib64";
         linkerName = "linker64";
     } else {
-        m_filesToPull["/system/bin/app_process32"] = buildDir / "app_process";
-        m_filesToPull["/system/bin/app_process"] = buildDir / "app_process";
+        m_filesToPull["/system/bin/app_process32"] = appProcessDir / "app_process";
+        m_filesToPull["/system/bin/app_process"] = appProcessDir / "app_process";
     }
 
-    m_filesToPull["/system/bin/" + linkerName] = buildDir / linkerName;
-    m_filesToPull["/system/" + libDirName + "/libc.so"] = buildDir / "libc.so";
+    m_filesToPull["/system/bin/" + linkerName] = appProcessDir / linkerName;
+    m_filesToPull["/system/" + libDirName + "/libc.so"] = appProcessDir / "libc.so";
 
     for (auto itr = m_filesToPull.constBegin(); itr != m_filesToPull.constEnd(); ++itr)
         qCDebug(deployStepLog).noquote() << "Pulling file from device:" << itr.key()
                                          << "to:" << itr.value();
 }
 
-void AndroidDeployQtStep::doRun()
+Tasking::GroupItem AndroidDeployQtStep::runRecipe()
 {
-    auto * const watcher = new QFutureWatcher<bool>(this);
-    connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher] {
-        const bool success = !watcher->isCanceled() && watcher->result();
-        emit finished(success);
-        watcher->deleteLater();
-    });
-    auto future = Utils::asyncRun(&AndroidDeployQtStep::runImpl, this);
-    watcher->setFuture(future);
-    m_synchronizer.addFuture(future);
-}
-
-void AndroidDeployQtStep::doCancel()
-{
-    m_synchronizer.cancelAllFutures();
+    const auto onSetup = [this](Async<void> &async) {
+        async.setConcurrentCallData(&AndroidDeployQtStep::runImpl, this);
+        async.setFutureSynchronizer(&m_synchronizer);
+    };
+    return AsyncTask<void>(onSetup);
 }
 
 void AndroidDeployQtStep::runCommand(const CommandLine &command)
 {
-    QtcProcess buildProc;
+    Process buildProc;
     buildProc.setTimeoutS(2 * 60);
     emit addOutput(Tr::tr("Package deploy: Running command \"%1\".").arg(command.toUserOutput()),
                    OutputFormat::NormalMessage);
@@ -602,10 +598,13 @@ QWidget *AndroidDeployQtStep::createConfigWidget()
             AndroidManager::installQASIPackage(target(), packagePath);
     });
 
-    Layouting::Form builder;
-    builder.addRow(m_uninstallPreviousPackage);
-    builder.addRow(installCustomApkButton);
-    builder.attachTo(widget, Layouting::WithoutMargins);
+    using namespace Layouting;
+
+    Form {
+        m_uninstallPreviousPackage, br,
+        installCustomApkButton,
+        noMargin
+    }.attachTo(widget);
 
     return widget;
 }
@@ -661,13 +660,22 @@ void AndroidDeployQtStep::reportWarningOrError(const QString &message, Task::Tas
 
 // AndroidDeployQtStepFactory
 
-AndroidDeployQtStepFactory::AndroidDeployQtStepFactory()
+class AndroidDeployQtStepFactory final : public BuildStepFactory
 {
-    registerStep<AndroidDeployQtStep>(Constants::ANDROID_DEPLOY_QT_ID);
-    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
-    setSupportedDeviceType(Constants::ANDROID_DEVICE_TYPE);
-    setRepeatable(false);
-    setDisplayName(Tr::tr("Deploy to Android device"));
+public:
+    AndroidDeployQtStepFactory()
+    {
+        registerStep<AndroidDeployQtStep>(Constants::ANDROID_DEPLOY_QT_ID);
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+        setSupportedDeviceType(Constants::ANDROID_DEVICE_TYPE);
+        setRepeatable(false);
+        setDisplayName(Tr::tr("Deploy to Android device"));
+    }
+};
+
+void setupAndroidDeployQtStep()
+{
+    static AndroidDeployQtStepFactory theAndroidDeployQtStepFactory;
 }
 
 } // Android::Internal

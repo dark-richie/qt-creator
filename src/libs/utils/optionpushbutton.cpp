@@ -11,6 +11,7 @@ namespace Utils {
 
 /*!
     \class Utils::OptionPushButton
+    \inmodule QtCreator
 
     \brief The OptionPushButton class implements a QPushButton for which the menu is only opened
     if the user presses the menu indicator.
@@ -44,13 +45,16 @@ OptionPushButton::OptionPushButton(const QString &text, QWidget *parent)
     This menu is shown if the user clicks on the menu indicator that is shown.
     If the user clicks anywhere else on the button, QAbstractButton::clicked() is sent instead.
 
+    \note Calling this method removes all connections to the QAbstractButton::pressed() signal.
+
     Ownership of the menu is not transferred to the push button.
 */
 void OptionPushButton::setOptionalMenu(QMenu *menu)
 {
     setMenu(menu);
-    // hack away that QPushButton opens the menu on "pressed"
-    disconnect(this, SIGNAL(pressed()), this, SLOT(_q_popupPressed()));
+    // Hack away that QPushButton opens the menu on "pressed".
+    // Also removes all other connections to "pressed".
+    disconnect(this, &QPushButton::pressed, 0, 0);
 }
 
 /*!

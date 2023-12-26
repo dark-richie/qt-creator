@@ -17,8 +17,9 @@
 
 namespace TextEditor {
 
-struct TEXTEDITOR_EXPORT Parenthesis
+class TEXTEDITOR_EXPORT Parenthesis
 {
+public:
     enum Type : char { Opened, Closed };
 
     Parenthesis() = default;
@@ -245,7 +246,7 @@ public:
     QRectF blockBoundingRect(const QTextBlock &block) const override;
 
     TextMarks documentClosing();
-    void documentAboutToReload();
+    void documentAboutToReload(TextDocument *baseTextDocument);
     void documentReloaded(TextDocument *baseextDocument);
     void updateMarksLineNumber();
     void updateMarksBlock(const QTextBlock &block);

@@ -4,13 +4,13 @@
 #include "linuxdevice.h"
 
 #include "genericlinuxdeviceconfigurationwidget.h"
-#include "genericlinuxdeviceconfigurationwizard.h"
 #include "linuxdevicetester.h"
 #include "linuxprocessinterface.h"
 #include "publickeydeploymentdialog.h"
 #include "remotelinux_constants.h"
 #include "remotelinuxsignaloperation.h"
 #include "remotelinuxtr.h"
+#include "sshdevicewizard.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
@@ -29,18 +29,18 @@
 #include <utils/hostosinfo.h>
 #include <utils/port.h>
 #include <utils/portlist.h>
+#include <utils/process.h>
 #include <utils/processinfo.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 #include <utils/temporaryfile.h>
 
 #include <QDateTime>
 #include <QLoggingCategory>
+#include <QMessageBox>
 #include <QMutex>
 #include <QReadWriteLock>
 #include <QRegularExpression>
-#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
@@ -92,7 +92,7 @@ private:
     QStringList connectionArgs(const FilePath &binary) const;
 
     const SshParameters m_sshParameters;
-    std::unique_ptr<QtcProcess> m_masterProcess;
+    std::unique_ptr<Process> m_masterProcess;
     std::unique_ptr<QTemporaryDir> m_masterSocketDir;
     QTimer m_timer;
     int m_ref = 0;
@@ -158,11 +158,11 @@ void SshSharedConnection::connectToHost()
         return;
     }
 
-    m_masterProcess.reset(new QtcProcess);
+    m_masterProcess.reset(new Process);
     SshParameters::setupSshEnvironment(m_masterProcess.get());
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, &SshSharedConnection::autoDestructRequested);
-    connect(m_masterProcess.get(), &QtcProcess::readyReadStandardOutput, this, [this] {
+    connect(m_masterProcess.get(), &Process::readyReadStandardOutput, this, [this] {
         const QByteArray reply = m_masterProcess->readAllRawStandardOutput();
         if (reply == "\n")
             emitConnected();
@@ -170,7 +170,7 @@ void SshSharedConnection::connectToHost()
     });
     // TODO: in case of refused connection we are getting the following on stdErr:
     // ssh: connect to host 127.0.0.1 port 22: Connection refused\r\n
-    connect(m_masterProcess.get(), &QtcProcess::done, this, [this] {
+    connect(m_masterProcess.get(), &Process::done, this, [this] {
         const ProcessResult result = m_masterProcess->result();
         const ProcessResultData resultData = m_masterProcess->resultData();
         if (result == ProcessResult::StartFailed) {
@@ -185,6 +185,7 @@ void SshSharedConnection::connectToHost()
     });
 
     QStringList args = QStringList{"-M", "-N", "-o", "ControlPersist=no",
+            "-o", "ServerAliveInterval=10", // TODO: Make configurable?
             "-o", "PermitLocalCommand=yes", // Enable local command
             "-o", "LocalCommand=echo"}      // Local command is executed after successfully
                                             // connecting to the server. "echo" will print "\n"
@@ -294,6 +295,12 @@ public:
     LinuxDevicePrivate *m_dev;
 };
 
+class LinuxDeviceSettings : public DeviceSettings
+{
+public:
+    LinuxDeviceSettings() { displayName.setDefaultValue(Tr::tr("Remote Linux Device")); }
+};
+
 class LinuxDevicePrivate
 {
 public:
@@ -316,7 +323,6 @@ public:
     QThread m_shellThread;
     ShellThreadHandler *m_handler = nullptr;
     mutable QMutex m_shellMutex;
-    QList<QtcProcess *> m_terminals;
     LinuxDeviceFileAccess m_fileAccess{this};
 
     QReadWriteLock m_environmentCacheLock;
@@ -340,7 +346,7 @@ Environment LinuxDevicePrivate::getEnvironment()
     if (m_environmentCache.has_value())
         return m_environmentCache.value();
 
-    QtcProcess getEnvProc;
+    Process getEnvProc;
     getEnvProc.setCommand({q->filePath("env"), {}});
     getEnvProc.runBlocking();
 
@@ -388,7 +394,7 @@ public:
     // as this object is alive.
     IDevice::ConstPtr m_device;
     std::unique_ptr<SshConnectionHandle> m_connectionHandle;
-    QtcProcess m_process;
+    Process m_process;
 
     QString m_socketFilePath;
     SshParameters m_sshParameters;
@@ -422,7 +428,7 @@ void SshProcessInterface::emitStarted(qint64 processId)
 
 void SshProcessInterface::killIfRunning()
 {
-    if (d->m_killed || d->m_process.state() != QProcess::Running)
+    if (d->m_killed || d->m_process.state() != QProcess::Running || d->m_processId == 0)
         return;
     sendControlSignal(ControlSignal::Kill);
     d->m_killed = true;
@@ -435,7 +441,7 @@ qint64 SshProcessInterface::processId() const
 
 bool SshProcessInterface::runInShell(const CommandLine &command, const QByteArray &data)
 {
-    QtcProcess process;
+    Process process;
     CommandLine cmd = {d->m_device->filePath("/bin/sh"), {"-c"}};
     QString tmp;
     ProcessArgs::addArg(&tmp, command.executable().path());
@@ -444,9 +450,12 @@ bool SshProcessInterface::runInShell(const CommandLine &command, const QByteArra
     process.setCommand(cmd);
     process.setWriteData(data);
     process.start();
-    bool isFinished = process.waitForFinished(2000); // TODO: it may freeze on some devices
-    // otherwise we may start producing killers for killers
-    QTC_CHECK(isFinished);
+    bool isFinished = process.waitForFinished(2000); // It may freeze on some devices
+    if (!isFinished) {
+        Core::MessageManager::writeFlashing(tr("Can't send control signal to the %1 device. "
+                                               "The device might have been disconnected.")
+                                                .arg(d->m_device->displayName()));
+    }
     return isFinished;
 }
 
@@ -584,11 +593,11 @@ SshProcessInterfacePrivate::SshProcessInterfacePrivate(SshProcessInterface *sshI
     , m_device(device)
     , m_process(this)
 {
-    connect(&m_process, &QtcProcess::started, this, &SshProcessInterfacePrivate::handleStarted);
-    connect(&m_process, &QtcProcess::done, this, &SshProcessInterfacePrivate::handleDone);
-    connect(&m_process, &QtcProcess::readyReadStandardOutput,
+    connect(&m_process, &Process::started, this, &SshProcessInterfacePrivate::handleStarted);
+    connect(&m_process, &Process::done, this, &SshProcessInterfacePrivate::handleDone);
+    connect(&m_process, &Process::readyReadStandardOutput,
             this, &SshProcessInterfacePrivate::handleReadyReadStandardOutput);
-    connect(&m_process, &QtcProcess::readyReadStandardError,
+    connect(&m_process, &Process::readyReadStandardError,
             this, &SshProcessInterfacePrivate::handleReadyReadStandardError);
 }
 
@@ -612,13 +621,17 @@ void SshProcessInterfacePrivate::start()
             cmd.addArg("-tt");
 
         const CommandLine full = q->m_setup.m_commandLine;
-        if (!full.isEmpty()) {
+        if (!full.isEmpty()) { // Empty is ok in case of opening a terminal.
+            CommandLine inner;
+            const QString wd = q->m_setup.m_workingDirectory.path();
+            if (!wd.isEmpty())
+                inner.addCommandLineWithAnd({"cd", {wd}});
             if (!useTerminal) {
-                // Empty is ok in case of opening a terminal.
-                cmd.addArgs(QString("echo ") + s_pidMarker + "\\$\\$" + s_pidMarker + " \\&\\& ",
-                            CommandLine::Raw);
+                const QString pidArg = QString("%1\\$\\$%1").arg(QString::fromLatin1(s_pidMarker));
+                inner.addCommandLineWithAnd({"echo", pidArg, CommandLine::Raw});
             }
-            cmd.addCommandLineAsArgs(full, CommandLine::Raw);
+            inner.addCommandLineWithAnd(full);
+            cmd.addCommandLineAsSingleArg(inner);
         }
 
         m_process.setProcessImpl(q->m_setup.m_processImpl);
@@ -756,8 +769,9 @@ CommandLine SshProcessInterfacePrivate::fullLocalCommandLine() const
         inner.addArgs(QString("echo ") + s_pidMarker + "$$" + s_pidMarker + " && ", CommandLine::Raw);
 
     const Environment &env = q->m_setup.m_environment;
-    env.forEachEntry([&](const QString &key, const QString &value, bool) {
-        inner.addArgs(key + "='" + env.expandVariables(value) + '\'', CommandLine::Raw);
+    env.forEachEntry([&](const QString &key, const QString &value, bool enabled) {
+        if (enabled)
+            inner.addArgs(key + "='" + env.expandVariables(value) + '\'', CommandLine::Raw);
     });
 
     if (!useTerminal && !commandLine.isEmpty())
@@ -792,7 +806,7 @@ class ShellThreadHandler : public QObject
         }
 
     private:
-        void setupShellProcess(QtcProcess *shellProcess) override
+        void setupShellProcess(Process *shellProcess) override
         {
             SshParameters::setupSshEnvironment(shellProcess);
             shellProcess->setCommand(m_cmdLine);
@@ -835,11 +849,17 @@ public:
                     << m_displaylessSshParameters.host());
         cmd.addArg("/bin/sh");
 
-        m_shell.reset(new LinuxDeviceShell(cmd, FilePath::fromString(QString("ssh://%1/").arg(parameters.userAtHost()))));
+        m_shell.reset(new LinuxDeviceShell(cmd,
+            FilePath::fromString(QString("ssh://%1/").arg(parameters.userAtHostAndPort()))));
         connect(m_shell.get(), &DeviceShell::done, this, [this] {
             m_shell.release()->deleteLater();
         });
-        return m_shell->start();
+        auto result = m_shell->start();
+        if (!result) {
+            qCWarning(linuxDeviceLog) << "Failed to start shell for:" << parameters.userAtHostAndPort()
+                                      << ", " << result.error();
+        }
+        return result.has_value();
     }
 
     // Call me with shell mutex locked
@@ -935,7 +955,8 @@ private:
 // LinuxDevice
 
 LinuxDevice::LinuxDevice()
-    : d(new LinuxDevicePrivate(this))
+    : IDevice(std::make_unique<LinuxDeviceSettings>())
+    , d(new LinuxDevicePrivate(this))
 {
     setFileAccess(&d->m_fileAccess);
     setDisplayType(Tr::tr("Remote Linux"));
@@ -950,30 +971,15 @@ LinuxDevice::LinuxDevice()
     setSshParameters(sshParams);
 
     addDeviceAction({Tr::tr("Deploy Public Key..."), [](const IDevice::Ptr &device, QWidget *parent) {
-        if (auto d = PublicKeyDeploymentDialog::createDialog(device, parent)) {
+        if (auto d = Internal::PublicKeyDeploymentDialog::createDialog(device, parent)) {
             d->exec();
             delete d;
         }
     }});
 
-    setOpenTerminal([this](const Environment &env, const FilePath &workingDir) {
-        QtcProcess * const proc = new QtcProcess;
-        d->m_terminals.append(proc);
-        QObject::connect(proc, &QtcProcess::done, proc, [this, proc] {
-            if (proc->error() != QProcess::UnknownError) {
-                const QString errorString = proc->errorString();
-                QString message;
-                if (proc->error() == QProcess::FailedToStart)
-                    message = Tr::tr("Error starting remote shell.");
-                else if (errorString.isEmpty())
-                    message = Tr::tr("Error running remote shell.");
-                else
-                    message = Tr::tr("Error running remote shell: %1").arg(errorString);
-                Core::MessageManager::writeDisrupting(message);
-            }
-            proc->deleteLater();
-            d->m_terminals.removeOne(proc);
-        });
+    setOpenTerminal([this](const Environment &env,
+                           const FilePath &workingDir) -> expected_str<void> {
+        Process proc;
 
         // If we will not set any environment variables, we can leave out the shell executable
         // as the "ssh ..." call will automatically launch the default shell if there are
@@ -981,15 +987,20 @@ LinuxDevice::LinuxDevice()
         // specify the shell executable.
         const QString shell = env.hasChanges() ? env.value_or("SHELL", "/bin/sh") : QString();
 
-        proc->setCommand({filePath(shell), {}});
-        proc->setTerminalMode(TerminalMode::On);
-        proc->setEnvironment(env);
-        proc->setWorkingDirectory(workingDir);
-        proc->start();
+        proc.setCommand({filePath(shell), {}});
+        proc.setTerminalMode(TerminalMode::Detached);
+        proc.setEnvironment(env);
+        proc.setWorkingDirectory(workingDir);
+        proc.start();
+
+        return {};
     });
 
     addDeviceAction({Tr::tr("Open Remote Shell"), [](const IDevice::Ptr &device, QWidget *) {
-                         device->openTerminal(Environment(), FilePath());
+                         expected_str<void> result = device->openTerminal(Environment(), FilePath());
+
+                         if (!result)
+                             QMessageBox::warning(nullptr, Tr::tr("Error"), result.error());
                      }});
 }
 
@@ -1007,11 +1018,6 @@ LinuxDevice::~LinuxDevice()
 IDeviceWidget *LinuxDevice::createWidget()
 {
     return new Internal::GenericLinuxDeviceConfigurationWidget(sharedFromThis());
-}
-
-DeviceProcessList *LinuxDevice::createProcessListModel(QObject *parent) const
-{
-    return new ProcessList(sharedFromThis(), parent);
 }
 
 DeviceTester *LinuxDevice::createDeviceTester() const
@@ -1034,16 +1040,21 @@ QString LinuxDevice::userAtHost() const
     return sshParameters().userAtHost();
 }
 
+QString LinuxDevice::userAtHostAndPort() const
+{
+    return sshParameters().userAtHostAndPort();
+}
+
 FilePath LinuxDevice::rootPath() const
 {
-    return FilePath::fromParts(u"ssh", userAtHost(), u"/");
+    return FilePath::fromParts(u"ssh", userAtHostAndPort(), u"/");
 }
 
 bool LinuxDevice::handlesFile(const FilePath &filePath) const
 {
     if (filePath.scheme() == u"device" && filePath.host() == id().toString())
         return true;
-    if (filePath.scheme() == u"ssh" && filePath.host() == userAtHost())
+    if (filePath.scheme() == u"ssh" && filePath.host() == userAtHostAndPort())
         return true;
     return false;
 }
@@ -1065,7 +1076,6 @@ LinuxDevicePrivate::LinuxDevicePrivate(LinuxDevice *parent)
 
 LinuxDevicePrivate::~LinuxDevicePrivate()
 {
-    qDeleteAll(m_terminals);
     auto closeShell = [this] {
         m_shellThread.quit();
         m_shellThread.wait();
@@ -1168,10 +1178,10 @@ protected:
         , m_process(this)
     {
         SshParameters::setupSshEnvironment(&m_process);
-        connect(&m_process, &QtcProcess::readyReadStandardOutput, this, [this] {
+        connect(&m_process, &Process::readyReadStandardOutput, this, [this] {
             emit progress(QString::fromLocal8Bit(m_process.readAllRawStandardOutput()));
         });
-        connect(&m_process, &QtcProcess::done, this, &SshTransferInterface::doneImpl);
+        connect(&m_process, &Process::done, this, &SshTransferInterface::doneImpl);
     }
 
     IDevice::ConstPtr device() const { return m_device; }
@@ -1211,7 +1221,7 @@ protected:
     QString host() const { return m_sshParameters.host(); }
     QString userAtHost() const { return m_sshParameters.userAtHost(); }
 
-    QtcProcess &process() { return m_process; }
+    Process &process() { return m_process; }
 
 private:
     virtual void startImpl() = 0;
@@ -1270,7 +1280,7 @@ private:
     QString m_socketFilePath;
     bool m_connecting = false;
 
-    QtcProcess m_process;
+    Process m_process;
 };
 
 class SftpTransferImpl : public SshTransferInterface
@@ -1299,8 +1309,10 @@ private:
         QByteArray batchData;
 
         const FilePaths dirs = dirsToCreate(m_setup.m_files);
-        for (const FilePath &dir : dirs)
-            batchData += "-mkdir " + ProcessArgs::quoteArgUnix(dir.path()).toLocal8Bit() + '\n';
+        for (const FilePath &dir : dirs) {
+            if (!dir.exists())
+                batchData += "-mkdir " + ProcessArgs::quoteArgUnix(dir.path()).toLocal8Bit() + '\n';
+        }
 
         for (const FileToTransfer &file : m_setup.m_files) {
             FilePath sourceFileOrLinkTarget = file.m_source;
@@ -1316,9 +1328,13 @@ private:
                     sourceFileOrLinkTarget.withNewPath(fi.dir().relativeFilePath(fi.symLinkTarget()));
             }
 
-            batchData += transferCommand(link) + ' '
-                         + ProcessArgs::quoteArgUnix(sourceFileOrLinkTarget.path()).toLocal8Bit() + ' '
-                         + ProcessArgs::quoteArgUnix(file.m_target.path()).toLocal8Bit() + '\n';
+            const QByteArray source = ProcessArgs::quoteArgUnix(sourceFileOrLinkTarget.path())
+                                          .toLocal8Bit();
+            const QByteArray target = ProcessArgs::quoteArgUnix(file.m_target.path()).toLocal8Bit();
+
+            batchData += transferCommand(link) + ' ' + source + ' ' + target + '\n';
+            if (file.m_targetPermissions == FilePermissions::ForceExecutable)
+                batchData += "chmod 1775 " + target + '\n';
         }
         process().setCommand({sftpBinary, fullConnectionOptions() << "-b" << "-" << host()});
         process().setWriteData(batchData);
@@ -1474,6 +1490,11 @@ private:
 FileTransferInterface *LinuxDevice::createFileTransferInterface(
         const FileTransferSetupData &setup) const
 {
+    if (Utils::anyOf(setup.m_files,
+                     [](const FileToTransfer &f) { return f.m_source.needsDevice(); })) {
+        return new GenericTransferImpl(setup);
+    }
+
     switch (setup.m_method) {
     case FileTransferMethod::Sftp:  return new SftpTransferImpl(setup, sharedFromThis());
     case FileTransferMethod::Rsync: return new RsyncTransferImpl(setup, sharedFromThis());
@@ -1495,21 +1516,29 @@ void LinuxDevice::checkOsType()
 
 namespace Internal {
 
-// Factory
-
-LinuxDeviceFactory::LinuxDeviceFactory()
-    : IDeviceFactory(Constants::GenericLinuxOsType)
+class LinuxDeviceFactory final : public IDeviceFactory
 {
-    setDisplayName(Tr::tr("Remote Linux Device"));
-    setIcon(QIcon());
-    setConstructionFunction(&LinuxDevice::create);
-    setQuickCreationAllowed(true);
-    setCreator([] {
-        GenericLinuxDeviceConfigurationWizard wizard(Core::ICore::dialogParent());
-        if (wizard.exec() != QDialog::Accepted)
-            return IDevice::Ptr();
-        return wizard.device();
-    });
+public:
+    LinuxDeviceFactory()
+        : IDeviceFactory(Constants::GenericLinuxOsType)
+    {
+        setDisplayName(Tr::tr("Remote Linux Device"));
+        setIcon(QIcon());
+        setConstructionFunction(&LinuxDevice::create);
+        setQuickCreationAllowed(true);
+        setCreator([]() -> IDevice::Ptr {
+            const IDevice::Ptr device = LinuxDevice::create();
+            SshDeviceWizard wizard(Tr::tr("New Remote Linux Device Configuration Setup"), device);
+            if (wizard.exec() != QDialog::Accepted)
+                return {};
+            return device;
+        });
+    }
+};
+
+void setupLinuxDevice()
+{
+    static LinuxDeviceFactory theLinuxDeviceFactory;
 }
 
 } // namespace Internal

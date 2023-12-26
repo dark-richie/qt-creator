@@ -7,17 +7,17 @@
 #include "qdbtr.h"
 
 #include <projectexplorer/devicesupport/idevice.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
 #include <remotelinux/abstractremotelinuxdeploystep.h>
 
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace Qdb::Internal {
 
@@ -34,30 +34,31 @@ public:
         setInternalInitializer([this] { return isDeploymentPossible(); });
     }
 
-    Group deployRecipe() final;
+    GroupItem deployRecipe() final;
 };
 
-Group QdbStopApplicationStep::deployRecipe()
+GroupItem QdbStopApplicationStep::deployRecipe()
 {
-    const auto setupHandler = [this](QtcProcess &process) {
+    const auto onSetup = [this](Process &process) {
         const auto device = DeviceKitAspect::device(target()->kit());
         if (!device) {
             addErrorMessage(Tr::tr("No device to stop the application on."));
-            return TaskAction::StopWithError;
+            return SetupResult::StopWithError;
         }
         QTC_CHECK(device);
         process.setCommand({device->filePath(Constants::AppcontrollerFilepath), {"--stop"}});
         process.setWorkingDirectory("/usr/bin");
-        QtcProcess *proc = &process;
-        connect(proc, &QtcProcess::readyReadStandardOutput, this, [this, proc] {
+        Process *proc = &process;
+        connect(proc, &Process::readyReadStandardOutput, this, [this, proc] {
             handleStdOutData(proc->readAllStandardOutput());
         });
-        return TaskAction::Continue;
+        return SetupResult::Continue;
     };
-    const auto doneHandler = [this](const QtcProcess &) {
-        addProgressMessage(Tr::tr("Stopped the running application."));
-    };
-    const auto errorHandler = [this](const QtcProcess &process) {
+    const auto onDone = [this](const Process &process, DoneWith result) {
+        if (result == DoneWith::Success) {
+            addProgressMessage(Tr::tr("Stopped the running application."));
+            return;
+        }
         const QString errorOutput = process.cleanedStdErr();
         const QString failureMessage = Tr::tr("Could not check and possibly stop running application.");
         if (process.exitStatus() == QProcess::CrashExit) {
@@ -71,7 +72,7 @@ Group QdbStopApplicationStep::deployRecipe()
             addErrorMessage(failureMessage);
         }
     };
-    return Group { Process(setupHandler, doneHandler, errorHandler) };
+    return ProcessTask(onSetup, onDone);
 }
 
 // QdbStopApplicationStepFactory

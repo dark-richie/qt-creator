@@ -16,6 +16,9 @@ add_qtc_plugin(TextEditor
     behaviorsettingspage.cpp behaviorsettingspage.h
     behaviorsettingswidget.cpp behaviorsettingswidget.h
     blockrange.h
+    bookmark.cpp bookmark.h
+    bookmarkfilter.cpp bookmarkfilter.h
+    bookmarkmanager.cpp bookmarkmanager.h
     circularclipboard.cpp circularclipboard.h
     circularclipboardassist.cpp circularclipboardassist.h
     codeassist/assistenums.h
@@ -62,12 +65,14 @@ add_qtc_plugin(TextEditor
     formatter.h
     formattexteditor.cpp formattexteditor.h
     highlighter.cpp highlighter.h
+    highlighterhelper.cpp highlighterhelper.h
     highlightersettings.cpp highlightersettings.h
     highlightersettingspage.cpp highlightersettingspage.h
     icodestylepreferences.cpp icodestylepreferences.h
     icodestylepreferencesfactory.cpp icodestylepreferencesfactory.h
     indenter.h
     ioutlinewidget.h
+    jsoneditor.cpp jsoneditor.h
     linenumberfilter.cpp linenumberfilter.h
     marginsettings.cpp marginsettings.h
     markdowneditor.cpp markdowneditor.h
@@ -91,6 +96,7 @@ add_qtc_plugin(TextEditor
     snippets/snippetssettingspage.cpp snippets/snippetssettingspage.h
     storagesettings.cpp storagesettings.h
     syntaxhighlighter.cpp syntaxhighlighter.h
+    syntaxhighlighterrunner.cpp syntaxhighlighterrunner.h
     tabsettings.cpp tabsettings.h
     tabsettingswidget.cpp tabsettingswidget.h
     textdocument.cpp textdocument.h
@@ -99,7 +105,6 @@ add_qtc_plugin(TextEditor
     texteditor.qrc
     texteditor_global.h
     texteditortr.h
-    texteditor_p.h
     texteditoractionhandler.cpp texteditoractionhandler.h
     texteditorconstants.cpp texteditorconstants.h
     texteditoroverlay.cpp texteditoroverlay.h
@@ -113,5 +118,8 @@ add_qtc_plugin(TextEditor
 
 extend_qtc_plugin(TextEditor
   CONDITION WITH_TESTS
-  SOURCES texteditor_test.cpp
+  SOURCES
+    codeassist/codeassist_test.cpp codeassist/codeassist_test.h
+    highlighter_test.cpp highlighter_test.h
+    texteditor_test.cpp
 )

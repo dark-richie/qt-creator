@@ -370,30 +370,38 @@ bool QuickTestTreeItem::isGroupable() const
 QSet<QString> internalTargets(const FilePath &proFile)
 {
     QSet<QString> result;
-    const auto cppMM = CppEditor::CppModelManager::instance();
-    const auto projectInfo = cppMM->projectInfo(ProjectExplorer::ProjectManager::startupProject());
+    const auto projectInfo =
+        CppEditor::CppModelManager::projectInfo(ProjectExplorer::ProjectManager::startupProject());
     if (!projectInfo)
         return {};
     for (const CppEditor::ProjectPart::ConstPtr &projectPart : projectInfo->projectParts()) {
         if (projectPart->buildTargetType != ProjectExplorer::BuildTargetType::Executable)
             continue;
-        if (projectPart->projectFile == proFile.toString())
+        if (projectPart->projectFile != proFile.toString())
+            continue;
+        if (Utils::anyOf(projectPart->projectMacros, [](const ProjectExplorer::Macro &macro){
+            return macro.type == ProjectExplorer::MacroType::Define &&
+                       macro.key == "QUICK_TEST_SOURCE_DIR";
+            })) {
             result.insert(projectPart->buildSystemTarget);
+        }
     }
     return result;
 }
 
-void QuickTestTreeItem::markForRemovalRecursively(const FilePath &filePath)
+void QuickTestTreeItem::markForRemovalRecursively(const QSet<FilePath> &filePaths)
 {
-    TestTreeItem::markForRemovalRecursively(filePath);
+    TestTreeItem::markForRemovalRecursively(filePaths);
     auto parser = static_cast<QuickTestParser *>(framework()->testParser());
-    const FilePath proFile = parser->projectFileForMainCppFile(filePath);
-    if (!proFile.isEmpty()) {
-        TestTreeItem *root = framework()->rootNode();
-        root->forAllChildItems([proFile](TestTreeItem *it) {
-            if (it->proFile() == proFile)
-                it->markForRemoval(true);
-        });
+    for (const FilePath &filePath : filePaths) {
+        const FilePath proFile = parser->projectFileForMainCppFile(filePath);
+        if (!proFile.isEmpty()) {
+            TestTreeItem *root = framework()->rootNode();
+            root->forAllChildItems([proFile](TestTreeItem *it) {
+                if (it->proFile() == proFile)
+                    it->markForRemoval(true);
+            });
+        }
     }
 }
 

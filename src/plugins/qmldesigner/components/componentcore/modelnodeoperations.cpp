@@ -12,20 +12,22 @@
 #include "addsignalhandlerdialog.h"
 
 #include <bindingproperty.h>
-#include <nodelistproperty.h>
-#include <nodehints.h>
-#include <nodemetainfo.h>
-#include <modelnode.h>
-#include <qmlitemnode.h>
-#include <variantproperty.h>
-#include <rewritingexception.h>
-#include <rewritertransaction.h>
+#include <choosefrompropertylistdialog.h>
 #include <documentmanager.h>
-#include <qmlanchors.h>
-#include <nodelistproperty.h>
-#include <nodeproperty.h>
-#include <signalhandlerproperty.h>
+#include <itemlibraryentry.h>
+#include <materialutils.h>
+#include <modelnode.h>
+#include <nodehints.h>
 #include <nodeinstanceview.h>
+#include <nodelistproperty.h>
+#include <nodemetainfo.h>
+#include <nodeproperty.h>
+#include <qmlanchors.h>
+#include <qmlitemnode.h>
+#include <rewritertransaction.h>
+#include <rewritingexception.h>
+#include <signalhandlerproperty.h>
+#include <variantproperty.h>
 
 #include <componentcore_constants.h>
 #include <stylesheetmerger.h>
@@ -41,6 +43,9 @@
 #include <coreplugin/modemanager.h>
 #include <coreplugin/icore.h>
 
+#include <extensionsystem/pluginmanager.h>
+#include <extensionsystem/pluginspec.h>
+
 #include <qmljseditor/qmljsfindreferences.h>
 
 #include <annotationeditor/annotationeditor.h>
@@ -51,12 +56,12 @@
 #include "projectexplorer/target.h"
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include "utils/qtcprocess.h"
 #include <utils/smallstring.h>
 
 #include <QComboBox>
@@ -77,6 +82,8 @@
 
 #include <bindingeditor/signallist.h>
 
+using namespace Utils;
+
 namespace QmlDesigner {
 
 namespace {
@@ -88,7 +95,7 @@ Utils::SmallString auxPropertyString(Utils::SmallStringView name)
 }
 } // namespace
 
-static inline void reparentTo(const ModelNode &node, const QmlItemNode &parent)
+inline static void reparentTo(const ModelNode &node, const QmlItemNode &parent)
 {
 
     if (parent.isValid() && node.isValid()) {
@@ -103,7 +110,7 @@ static inline void reparentTo(const ModelNode &node, const QmlItemNode &parent)
     }
 }
 
-static inline QPointF getUpperLeftPosition(const QList<ModelNode> &modelNodeList)
+inline static QPointF getUpperLeftPosition(const QList<ModelNode> &modelNodeList)
 {
     QPointF postion(std::numeric_limits<qreal>::max(), std::numeric_limits<qreal>::max());
     for (const ModelNode &modelNode : modelNodeList) {
@@ -364,7 +371,7 @@ void reverse(const SelectionContext &selectionState)
     });
 }
 
-static inline void backupPropertyAndRemove(const ModelNode &node, const PropertyName &propertyName)
+inline static void backupPropertyAndRemove(const ModelNode &node, const PropertyName &propertyName)
 {
     if (node.hasVariantProperty(propertyName)) {
         node.setAuxiliaryData(AuxiliaryDataType::Document,
@@ -519,13 +526,8 @@ void layoutFlowPositioner(const SelectionContext &selectionContext)
 void layoutRowLayout(const SelectionContext &selectionContext)
 {
     try {
-        if (DesignerMcuManager::instance().isMCUProject()) {
-            layoutHelperFunction(selectionContext, "QtQuick.Row", compareByX);
-        }
-        else {
-            LayoutInGridLayout::ensureLayoutImport(selectionContext);
-            layoutHelperFunction(selectionContext, "QtQuick.Layouts.RowLayout", compareByX);
-        }
+        LayoutInGridLayout::ensureLayoutImport(selectionContext);
+        layoutHelperFunction(selectionContext, "QtQuick.Layouts.RowLayout", compareByX);
     } catch (RewritingException &e) { //better safe than sorry
         e.showException();
     }
@@ -534,13 +536,8 @@ void layoutRowLayout(const SelectionContext &selectionContext)
 void layoutColumnLayout(const SelectionContext &selectionContext)
 {
     try {
-        if (DesignerMcuManager::instance().isMCUProject()) {
-            layoutHelperFunction(selectionContext, "QtQuick.Column", compareByX);
-        }
-        else {
-            LayoutInGridLayout::ensureLayoutImport(selectionContext);
-            layoutHelperFunction(selectionContext, "QtQuick.Layouts.ColumnLayout", compareByY);
-        }
+        LayoutInGridLayout::ensureLayoutImport(selectionContext);
+        layoutHelperFunction(selectionContext, "QtQuick.Layouts.ColumnLayout", compareByY);
     } catch (RewritingException &e) { //better safe than sorry
         e.showException();
     }
@@ -551,13 +548,8 @@ void layoutGridLayout(const SelectionContext &selectionContext)
     try {
         Q_ASSERT(!DesignerMcuManager::instance().isMCUProject()); //remove this line when grids are finally supported
 
-        if (DesignerMcuManager::instance().isMCUProject()) {
-            //qt for mcu doesn't support any grids yet
-        }
-        else {
-            LayoutInGridLayout::ensureLayoutImport(selectionContext);
-            LayoutInGridLayout::layout(selectionContext);
-        }
+        LayoutInGridLayout::ensureLayoutImport(selectionContext);
+        LayoutInGridLayout::layout(selectionContext);
     } catch (RewritingException &e) { //better safe than sorry
         e.showException();
     }
@@ -695,7 +687,8 @@ void addSignalHandlerOrGotoImplementation(const SelectionContext &selectionState
 
     Core::ModeManager::activateMode(Core::Constants::MODE_EDIT);
 
-    if (!usages.isEmpty() && (addAlwaysNewSlot || usages.count() < 2)  && (!isModelNodeRoot  || addAlwaysNewSlot)) {
+    if (!usages.isEmpty() && (addAlwaysNewSlot || usages.size() < 2)
+        && (!isModelNodeRoot || addAlwaysNewSlot)) {
         Core::EditorManager::openEditorAt(
             {usages.constFirst().path, usages.constFirst().line, usages.constFirst().col});
 
@@ -879,7 +872,7 @@ void addItemToStackedContainer(const SelectionContext &selectionContext)
         if (potentialTabBar.isValid()) {// The stacked container is hooked up to a TabBar
             NodeMetaInfo tabButtonMetaInfo = view->model()->metaInfo("QtQuick.Controls.TabButton", -1, -1);
             if (tabButtonMetaInfo.isValid()) {
-                const int buttonIndex = potentialTabBar.directSubModelNodes().count();
+                const int buttonIndex = potentialTabBar.directSubModelNodes().size();
                 ModelNode tabButtonNode =
                         view->createModelNode("QtQuick.Controls.TabButton",
                                               tabButtonMetaInfo.majorVersion(),
@@ -949,7 +942,7 @@ void increaseIndexOfStackedContainer(const SelectionContext &selectionContext)
     int value = containerItemNode.instanceValue(propertyName).toInt();
     ++value;
 
-    const int maxValue = container.directSubModelNodes().count();
+    const int maxValue = container.directSubModelNodes().size();
 
     QTC_ASSERT(value < maxValue, return);
 
@@ -1012,7 +1005,7 @@ void addTabBarToStackedContainer(const SelectionContext &selectionContext)
 
         container.parentProperty().reparentHere(tabBarNode);
 
-        const int maxValue = container.directSubModelNodes().count();
+        const int maxValue = container.directSubModelNodes().size();
 
         QmlItemNode tabBarItem(tabBarNode);
 
@@ -1204,21 +1197,20 @@ void addFlowEffect(const SelectionContext &selectionContext, const TypeName &typ
    NodeMetaInfo effectMetaInfo = view->model()->metaInfo("FlowView." + typeName, -1, -1);
    QTC_ASSERT(typeName == "None" || effectMetaInfo.isValid(), return);
 
-   view->executeInTransaction("DesignerActionManager:addFlowEffect",
-                              [view, container, effectMetaInfo](){
+   view->executeInTransaction("DesignerActionManager:addFlowEffect", [=]() {
+       if (container.hasProperty("effect"))
+           container.removeProperty("effect");
 
-                                  if (container.hasProperty("effect"))
-                                      container.removeProperty("effect");
+       if (effectMetaInfo.isQtObject()) {
+           ModelNode effectNode = view->createModelNode(useProjectStorage()
+                                                            ? typeName
+                                                            : effectMetaInfo.typeName(),
+                                                        effectMetaInfo.majorVersion(),
+                                                        effectMetaInfo.minorVersion());
 
-                                  if (effectMetaInfo.isQtObject()) {
-                                      ModelNode effectNode =
-                                          view->createModelNode(effectMetaInfo.typeName(),
-                                                                effectMetaInfo.majorVersion(),
-                                                                effectMetaInfo.minorVersion());
-
-                                      container.nodeProperty("effect").reparentHere(effectNode);
-                                      view->setSelectedModelNode(effectNode);
-                                  }
+           container.nodeProperty("effect").reparentHere(effectNode);
+           view->setSelectedModelNode(effectNode);
+       }
    });
 }
 
@@ -1239,8 +1231,7 @@ void setFlowStartItem(const SelectionContext &selectionContext)
     });
 }
 
-
-bool static hasStudioComponentsImport(const SelectionContext &context)
+static bool hasStudioComponentsImport(const SelectionContext &context)
 {
     if (context.view() && context.view()->model()) {
         Import import = Import::createLibraryImport("QtQuick.Studio.Components", "1.0");
@@ -1250,7 +1241,7 @@ bool static hasStudioComponentsImport(const SelectionContext &context)
     return false;
 }
 
-static inline void setAdjustedPos(const QmlDesigner::ModelNode &modelNode)
+inline static void setAdjustedPos(const QmlDesigner::ModelNode &modelNode)
 {
     if (modelNode.hasParentProperty()) {
         ModelNode parentNode = modelNode.parentProperty().parentModelNode();
@@ -1404,21 +1395,20 @@ void addCustomFlowEffect(const SelectionContext &selectionContext)
     NodeMetaInfo effectMetaInfo = view->model()->metaInfo(typeName, -1, -1);
     QTC_ASSERT(typeName == "None" || effectMetaInfo.isValid(), return);
 
-    view->executeInTransaction("DesignerActionManager:addFlowEffect",
-                               [view, container, effectMetaInfo](){
+    view->executeInTransaction("DesignerActionManager:addFlowEffect", [=]() {
+        if (container.hasProperty("effect"))
+            container.removeProperty("effect");
 
-                                   if (container.hasProperty("effect"))
-                                       container.removeProperty("effect");
+        if (effectMetaInfo.isValid()) {
+            ModelNode effectNode = view->createModelNode(useProjectStorage()
+                                                             ? typeName
+                                                             : effectMetaInfo.typeName(),
+                                                         effectMetaInfo.majorVersion(),
+                                                         effectMetaInfo.minorVersion());
 
-                                   if (effectMetaInfo.isValid()) {
-                                       ModelNode effectNode =
-                                           view->createModelNode(effectMetaInfo.typeName(),
-                                                                 effectMetaInfo.majorVersion(),
-                                                                 effectMetaInfo.minorVersion());
-
-                                       container.nodeProperty("effect").reparentHere(effectNode);
-                                       view->setSelectedModelNode(effectNode);
-                                   }
+            container.nodeProperty("effect").reparentHere(effectNode);
+            view->setSelectedModelNode(effectNode);
+        }
     });
 }
 
@@ -1633,7 +1623,28 @@ void updateImported3DAsset(const SelectionContext &selectionContext)
     }
 }
 
+bool isNewEffectMakerActivated()
+{
+    const QVector<ExtensionSystem::PluginSpec *> specs = ExtensionSystem::PluginManager::plugins();
+    return std::find_if(specs.begin(), specs.end(),
+                        [](ExtensionSystem::PluginSpec *spec) {
+                            return spec->name() == "EffectMakerNew" && spec->isEffectivelyEnabled();
+                        })
+           != specs.end();
+}
+
 void openEffectMaker(const QString &filePath)
+{
+    if (ModelNodeOperations::isNewEffectMakerActivated()) {
+        QmlDesignerPlugin::instance()->viewManager()
+            .emitCustomNotification("open_effectmaker_composition", {}, {filePath});
+        QmlDesignerPlugin::instance()->mainWidget()->showDockWidget("Effect Maker", true);
+    } else {
+        ModelNodeOperations::openOldEffectMaker(filePath);
+    }
+}
+
+void openOldEffectMaker(const QString &filePath)
 {
     const ProjectExplorer::Target *target = ProjectExplorer::ProjectTree::currentTarget();
     if (!target) {
@@ -1650,7 +1661,11 @@ void openEffectMaker(const QString &filePath)
 
     const QtSupport::QtVersion *baseQtVersion = QtSupport::QtKitAspect::qtVersion(target->kit());
     if (baseQtVersion) {
+        Utils::Environment env = Utils::Environment::systemEnvironment();
+
         auto effectMakerPath = baseQtVersion->binPath().pathAppended("qqem").withExecutableSuffix();
+        if (!effectMakerPath.exists() && env.osType() == Utils::OsTypeMac)
+            effectMakerPath = baseQtVersion->binPath().pathAppended("qqem.app/Contents/MacOS/qqem");
         if (!effectMakerPath.exists()) {
             qWarning() << __FUNCTION__ << "Cannot find EffectMaker app";
             return;
@@ -1663,14 +1678,13 @@ void openEffectMaker(const QString &filePath)
             arguments << "--create";
         arguments << "--exportpath" << effectResPath.toString();
 
-        Utils::Environment env = Utils::Environment::systemEnvironment();
         if (env.osType() == Utils::OsTypeMac)
             env.appendOrSet("QSG_RHI_BACKEND", "metal");
 
-        Utils::QtcProcess *qqemProcess = new Utils::QtcProcess();
+        Utils::Process *qqemProcess = new Utils::Process();
         qqemProcess->setEnvironment(env);
         qqemProcess->setCommand({ effectMakerPath, arguments });
-        QObject::connect(qqemProcess, &Utils::QtcProcess::done, [qqemProcess]() {
+        QObject::connect(qqemProcess, &Utils::Process::done, [qqemProcess]() {
             qqemProcess->deleteLater();
         });
         qqemProcess->start();
@@ -1685,7 +1699,7 @@ Utils::FilePath getEffectsImportDirectory()
 
     if (!effectsPath.exists()) {
         QDir dir(projectPath.toString());
-        dir.mkpath(defaultDir);
+        dir.mkpath(effectsPath.toString());
     }
 
     return effectsPath;
@@ -1693,6 +1707,12 @@ Utils::FilePath getEffectsImportDirectory()
 
 QString getEffectsDefaultDirectory(const QString &defaultDir)
 {
+    if (defaultDir.isEmpty()) {
+        return Utils::FilePath::fromString(getAssetDefaultDirectory(
+            "effects",
+            QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toString())).toString();
+    }
+
     return getAssetDefaultDirectory("effects", defaultDir);
 }
 
@@ -1708,8 +1728,8 @@ QString getEffectIcon(const QString &effectPath)
 
 bool useLayerEffect()
 {
-    QSettings *settings = Core::ICore::settings();
-    const QString layerEffectEntry = "QML/Designer/UseLayerEffect";
+    QtcSettings *settings = Core::ICore::settings();
+    const Key layerEffectEntry = "QML/Designer/UseLayerEffect";
 
     return settings->value(layerEffectEntry, true).toBool();
 }
@@ -1736,9 +1756,422 @@ bool validateEffect(const QString &effectPath)
 
 Utils::FilePath getImagesDefaultDirectory()
 {
-    return Utils::FilePath::fromString(
-                getAssetDefaultDirectory(
-        "images", QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toString()));
+    return Utils::FilePath::fromString(getAssetDefaultDirectory(
+        "images",
+        QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toString()));
+}
+
+void jumpToCode(const ModelNode &modelNode)
+{
+    QmlDesignerPlugin::instance()->viewManager().jumpToCodeInTextEditor(modelNode);
+}
+
+void jumpToCodeOperation(const SelectionContext &selectionState)
+{
+    jumpToCode(selectionState.currentSingleSelectedNode());
+}
+
+static bool moveNodeToParent(const NodeAbstractProperty &targetProperty, const ModelNode &node)
+{
+    NodeAbstractProperty parentProp = targetProperty.parentProperty();
+    if (parentProp.isValid()) {
+        ModelNode targetModel = parentProp.parentModelNode();
+        parentProp.reparentHere(node);
+        return true;
+    }
+    return false;
+}
+
+ModelNode createTextureNode(const NodeAbstractProperty &targetProp, const QString &imagePath)
+{
+    AbstractView *view = targetProp.view();
+    QTC_ASSERT(view, return {});
+
+    if (targetProp.isValid()) {
+        // create a texture item lib
+        ItemLibraryEntry itemLibraryEntry;
+        itemLibraryEntry.setName("Texture");
+        itemLibraryEntry.setType("QtQuick3D.Texture", 1, 0);
+
+        // set texture source
+        PropertyName prop = "source";
+        QString type = "QUrl";
+        QVariant val = imagePath;
+        itemLibraryEntry.addProperty(prop, type, val);
+
+        // create a texture
+        ModelNode newModelNode = QmlItemNode::createQmlObjectNode(view,
+                                                                  itemLibraryEntry,
+                                                                  {},
+                                                                  targetProp,
+                                                                  false);
+
+        // Rename the node based on source image
+        QFileInfo fi(imagePath);
+        newModelNode.setIdWithoutRefactoring(
+            view->model()->generateNewId(fi.baseName(), "textureImage"));
+        return newModelNode;
+    }
+    return {};
+}
+
+bool dropAsImage3dTexture(const ModelNode &targetNode,
+                          const NodeAbstractProperty &targetProp,
+                          const QString &imagePath,
+                          ModelNode &newNode,
+                          bool &outMoveNodesAfter)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    auto bindToProperty = [&](const PropertyName &propName, bool sibling) {
+        view->executeInTransaction("NavigatorTreeModel::dropAsImage3dTexture", [&] {
+            newNode = createTextureNode(targetProp, imagePath);
+            if (newNode.isValid()) {
+                targetNode.bindingProperty(propName).setExpression(newNode.validId());
+
+                // If dropping an image on e.g. TextureInput, create a texture on the same level as
+                // target, as the target doesn't support Texture children (QTBUG-86219)
+                if (sibling)
+                    outMoveNodesAfter = !moveNodeToParent(targetProp, newNode);
+            }
+        });
+    };
+
+    if (targetNode.metaInfo().isQtQuick3DDefaultMaterial()
+        || targetNode.metaInfo().isQtQuick3DPrincipledMaterial()
+        || targetNode.metaInfo().isQtQuick3DSpecularGlossyMaterial()) {
+        // if dropping an image on a material, create a texture instead of image
+        // Show texture property selection dialog
+        auto dialog = ChooseFromPropertyListDialog::createIfNeeded(targetNode,
+                                                                   view->model()->metaInfo(
+                                                                       "QtQuick3D.Texture"),
+                                                                   Core::ICore::dialogParent());
+        if (!dialog)
+            return false;
+
+        dialog->exec();
+
+        if (dialog->result() == QDialog::Accepted) {
+            view->executeInTransaction("NavigatorTreeModel::dropAsImage3dTexture", [&] {
+                newNode = createTextureNode(targetProp, imagePath);
+                if (newNode.isValid()) // Automatically set the texture to selected property
+                    targetNode.bindingProperty(dialog->selectedProperty())
+                        .setExpression(newNode.validId());
+            });
+        }
+
+        delete dialog;
+        return true;
+    } else if (targetNode.metaInfo().isQtQuick3DTextureInput()) {
+        bindToProperty("texture", true);
+        return newNode.isValid();
+    } else if (targetNode.metaInfo().isQtQuick3DParticles3DSpriteParticle3D()) {
+        bindToProperty("sprite", false);
+        return newNode.isValid();
+    } else if (targetNode.metaInfo().isQtQuick3DSceneEnvironment()) {
+        bindToProperty("lightProbe", false);
+        return newNode.isValid();
+    } else if (targetNode.metaInfo().isQtQuick3DTexture()) {
+        // if dropping an image on an existing texture, set the source
+        targetNode.variantProperty("source").setValue(imagePath);
+        return true;
+    } else if (targetNode.metaInfo().isQtQuick3DModel()) {
+        QTimer::singleShot(0, view, [targetNode, imagePath, view]() {
+            if (view && targetNode.isValid()) {
+                // To MaterialBrowserView. Done async to avoid custom notification in transaction
+                view->emitCustomNotification("apply_asset_to_model3D",
+                                             {targetNode},
+                                             {DocumentManager::currentFilePath()
+                                                  .absolutePath()
+                                                  .pathAppended(imagePath)
+                                                  .cleanPath()
+                                                  .toString()});
+            }
+        });
+        return true;
+    }
+
+    return false;
+}
+
+ModelNode handleItemLibraryEffectDrop(const QString &effectPath, const ModelNode &targetNode)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    ModelNode newModelNode;
+
+    if ((targetNode.hasParentProperty() && targetNode.parentProperty().name() == "layer.effect")
+        || !targetNode.metaInfo().isQtQuickItem()) {
+        return newModelNode;
+    }
+
+    if (ModelNodeOperations::validateEffect(effectPath)) {
+        bool layerEffect = ModelNodeOperations::useLayerEffect();
+        newModelNode = QmlItemNode::createQmlItemNodeForEffect(view,
+                                                               targetNode,
+                                                               effectPath,
+                                                               layerEffect);
+    }
+
+    return newModelNode;
+}
+
+void handleTextureDrop(const QMimeData *mimeData, const ModelNode &targetModelNode)
+{
+    AbstractView *view = targetModelNode.view();
+    QTC_ASSERT(view, return );
+
+    QmlObjectNode targetNode(targetModelNode);
+
+    if (!targetNode.isValid())
+        return;
+
+    qint32 internalId = mimeData->data(Constants::MIME_TYPE_TEXTURE).toInt();
+    ModelNode texNode = view->modelNodeForInternalId(internalId);
+    QTC_ASSERT(texNode.isValid(), return );
+
+    if (targetNode.modelNode().metaInfo().isQtQuick3DModel()) {
+        view->emitCustomNotification("apply_texture_to_model3D", {targetNode, texNode});
+    } else {
+        auto *dialog = ChooseFromPropertyListDialog::createIfNeeded(targetNode,
+                                                                    texNode,
+                                                                    Core::ICore::dialogParent());
+        if (dialog) {
+            bool soloProperty = dialog->isSoloProperty();
+            if (!soloProperty)
+                dialog->exec();
+
+            if (soloProperty || dialog->result() == QDialog::Accepted)
+                targetNode.setBindingProperty(dialog->selectedProperty(), texNode.id());
+
+            delete dialog;
+        }
+    }
+}
+
+void handleMaterialDrop(const QMimeData *mimeData, const ModelNode &targetNode)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return );
+
+    if (!targetNode.metaInfo().isQtQuick3DModel())
+        return;
+
+    qint32 internalId = mimeData->data(Constants::MIME_TYPE_MATERIAL).toInt();
+    ModelNode matNode = view->modelNodeForInternalId(internalId);
+
+    view->executeInTransaction(__FUNCTION__, [&] {
+        MaterialUtils::assignMaterialTo3dModel(view, targetNode, matNode);
+    });
+}
+
+ModelNode handleItemLibraryImageDrop(const QString &imagePath,
+                                     NodeAbstractProperty targetProperty,
+                                     const ModelNode &targetNode,
+                                     bool &outMoveNodesAfter)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    const QString imagePathRelative
+        = DocumentManager::currentFilePath().toFileInfo().dir().relativeFilePath(
+            imagePath); // relative to .ui.qml file
+
+    ModelNode newModelNode;
+
+    if (!dropAsImage3dTexture(targetNode,
+                              targetProperty,
+                              imagePathRelative,
+                              newModelNode,
+                              outMoveNodesAfter)) {
+        if (targetNode.metaInfo().isQtQuickImage() || targetNode.metaInfo().isQtQuickBorderImage()) {
+            // if dropping an image on an existing image, set the source
+            targetNode.variantProperty("source").setValue(imagePathRelative);
+        } else {
+            // create an image
+            QmlItemNode newItemNode = QmlItemNode::createQmlItemNodeFromImage(view,
+                                                                              imagePath,
+                                                                              QPointF(),
+                                                                              targetProperty,
+                                                                              false);
+            if (NodeHints::fromModelNode(targetProperty.parentModelNode())
+                    .canBeContainerFor(newItemNode.modelNode())) {
+                newModelNode = newItemNode.modelNode();
+            } else {
+                newItemNode.destroy();
+            }
+        }
+    }
+
+    return newModelNode;
+}
+
+ModelNode handleItemLibraryFontDrop(const QString &fontFamily,
+                                    NodeAbstractProperty targetProperty,
+                                    const ModelNode &targetNode)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    ModelNode newModelNode;
+
+    if (targetNode.metaInfo().isQtQuickText()) {
+        // if dropping into an existing Text, update font
+        targetNode.variantProperty("font.family").setValue(fontFamily);
+    } else {
+        // create a Text node
+        QmlItemNode newItemNode = QmlItemNode::createQmlItemNodeFromFont(view,
+                                                                         fontFamily,
+                                                                         QPointF(),
+                                                                         targetProperty,
+                                                                         false);
+        if (NodeHints::fromModelNode(targetProperty.parentModelNode())
+                .canBeContainerFor(newItemNode.modelNode())) {
+            newModelNode = newItemNode.modelNode();
+        } else {
+            newItemNode.destroy();
+        }
+    }
+
+    return newModelNode;
+}
+
+ModelNode handleItemLibraryShaderDrop(const QString &shaderPath,
+                                      bool isFragShader,
+                                      NodeAbstractProperty targetProperty,
+                                      const ModelNode &targetNode,
+                                      bool &outMoveNodesAfter)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    ModelNode newModelNode;
+
+    const QString relPath = DocumentManager::currentFilePath().toFileInfo().dir().relativeFilePath(
+        shaderPath);
+
+    if (targetNode.metaInfo().isQtQuick3DShader()) {
+        // if dropping into an existing Shader, update
+        targetNode.variantProperty("stage").setEnumeration(isFragShader ? "Shader.Fragment"
+                                                                        : "Shader.Vertex");
+        targetNode.variantProperty("shader").setValue(relPath);
+    } else {
+        view->executeInTransaction("NavigatorTreeModel::handleItemLibraryShaderDrop", [&] {
+            // create a new Shader
+            ItemLibraryEntry itemLibraryEntry;
+            itemLibraryEntry.setName("Shader");
+            itemLibraryEntry.setType("QtQuick3D.Shader", 1, 0);
+
+            // set shader properties
+            PropertyName prop = "shader";
+            QString type = "QUrl";
+            QVariant val = relPath;
+            itemLibraryEntry.addProperty(prop, type, val);
+            prop = "stage";
+            type = "enum";
+            val = isFragShader ? "Shader.Fragment" : "Shader.Vertex";
+            itemLibraryEntry.addProperty(prop, type, val);
+
+            // create a texture
+            newModelNode = QmlItemNode::createQmlObjectNode(view,
+                                                            itemLibraryEntry,
+                                                            {},
+                                                            targetProperty,
+                                                            false);
+
+            // Rename the node based on shader source
+            QFileInfo fi(relPath);
+            newModelNode.setIdWithoutRefactoring(
+                view->model()->generateNewId(fi.baseName(), "shader"));
+            // Passes can't have children, so move shader node under parent
+            if (targetProperty.parentModelNode().metaInfo().isQtQuick3DPass()) {
+                BindingProperty listProp = targetNode.bindingProperty("shaders");
+                listProp.addModelNodeToArray(newModelNode);
+                outMoveNodesAfter = !moveNodeToParent(targetProperty, newModelNode);
+            }
+        });
+    }
+
+    return newModelNode;
+}
+
+ModelNode handleItemLibrarySoundDrop(const QString &soundPath,
+                                     NodeAbstractProperty targetProperty,
+                                     const ModelNode &targetNode)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    ModelNode newModelNode;
+
+    const QString relPath = DocumentManager::currentFilePath().toFileInfo().dir().relativeFilePath(
+        soundPath);
+
+    if (targetNode.metaInfo().isQtMultimediaSoundEffect()) {
+        // if dropping into on an existing SoundEffect, update
+        targetNode.variantProperty("source").setValue(relPath);
+    } else {
+        // create a new SoundEffect
+        ItemLibraryEntry itemLibraryEntry;
+        itemLibraryEntry.setName("SoundEffect");
+        itemLibraryEntry.setType("QtMultimedia.SoundEffect", 1, 0);
+
+        // set source property
+        PropertyName prop = "source";
+        QString type = "QUrl";
+        QVariant val = relPath;
+        itemLibraryEntry.addProperty(prop, type, val);
+
+        // create a texture
+        newModelNode = QmlItemNode::createQmlObjectNode(view,
+                                                        itemLibraryEntry,
+                                                        {},
+                                                        targetProperty,
+                                                        false);
+
+        // Rename the node based on source
+        QFileInfo fi(relPath);
+        newModelNode.setIdWithoutRefactoring(
+            view->model()->generateNewId(fi.baseName(), "soundEffect"));
+    }
+
+    return newModelNode;
+}
+
+ModelNode handleItemLibraryTexture3dDrop(const QString &tex3DPath,
+                                         NodeAbstractProperty targetProperty,
+                                         const ModelNode &targetNode,
+                                         bool &outMoveNodesAfter)
+{
+    AbstractView *view = targetNode.view();
+    QTC_ASSERT(view, return {});
+
+    Import import = Import::createLibraryImport(QStringLiteral("QtQuick3D"));
+    if (!view->model()->hasImport(import, true, true))
+        return {};
+
+    const QString imagePath = DocumentManager::currentFilePath().toFileInfo().dir().relativeFilePath(
+        tex3DPath); // relative to qml file
+
+    ModelNode newModelNode;
+
+    if (!dropAsImage3dTexture(targetNode,
+                              targetProperty,
+                              imagePath,
+                              newModelNode,
+                              outMoveNodesAfter)) {
+        view->executeInTransaction("NavigatorTreeModel::handleItemLibraryTexture3dDrop", [&] {
+            // create a standalone Texture3D at drop location
+            newModelNode = createTextureNode(targetProperty, imagePath);
+            if (!NodeHints::fromModelNode(targetProperty.parentModelNode())
+                     .canBeContainerFor(newModelNode))
+                newModelNode.destroy();
+        });
+    }
+
+    return newModelNode;
 }
 
 } // namespace ModelNodeOperations

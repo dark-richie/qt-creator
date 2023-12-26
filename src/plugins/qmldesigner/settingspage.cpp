@@ -7,8 +7,6 @@
 #include "qmldesignerexternaldependencies.h"
 #include "qmldesignerplugin.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/icore.h>
 
 #include <qmljseditor/qmljseditorconstants.h>
@@ -41,7 +39,7 @@ namespace Internal {
 
 static QStringList puppetModes()
 {
-    static QStringList puppetModeList{"", "all", "editormode", "rendermode", "previewmode"};
+    static QStringList puppetModeList{"", "all", "editormode", "rendermode", "previewmode", "bakelightsmode"};
     return puppetModeList;
 }
 
@@ -83,6 +81,7 @@ private:
     QCheckBox *m_askBeforeDeletingAssetCheckBox;
     QCheckBox *m_alwaysAutoFormatUICheckBox;
     QCheckBox *m_featureTimelineEditorCheckBox;
+    QCheckBox *m_featureDockWidgetContentMinSize;
     QGroupBox *m_debugGroupBox;
     QCheckBox *m_designerShowDebuggerCheckBox;
     QCheckBox *m_showPropertyEditorWarningsCheckBox;
@@ -184,6 +183,7 @@ SettingsPageWidget::SettingsPageWidget(ExternalDependencies &externalDependencie
     m_askBeforeDeletingAssetCheckBox = new QCheckBox(tr("Ask for confirmation before deleting asset"));
     m_alwaysAutoFormatUICheckBox = new QCheckBox(tr("Always auto-format ui.qml files in Design mode"));
     m_featureTimelineEditorCheckBox = new QCheckBox(tr("Enable Timeline editor"));
+    m_featureDockWidgetContentMinSize = new QCheckBox(tr("Enable DockWidget content minimum size"));
 
     m_debugGroupBox = new QGroupBox(tr("Debugging"));
     m_designerShowDebuggerCheckBox = new QCheckBox(tr("Show the debugging view"));
@@ -196,7 +196,7 @@ SettingsPageWidget::SettingsPageWidget(ExternalDependencies &externalDependencie
 
     m_debugPuppetComboBox = new QComboBox;
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     Column {
         m_useDefaultPuppetRadioButton,
@@ -221,71 +221,51 @@ SettingsPageWidget::SettingsPageWidget(ExternalDependencies &externalDependencie
         Form { tr("Debug QML emulation layer:"), m_debugPuppetComboBox }
     }.attachTo(m_debugGroupBox);
 
-    Column {
-        Row {
-            Group {
-                title(tr("Snapping")),
-                Form {
-                    tr("Parent component padding:"), m_spinSnapMargin, br,
-                    tr("Sibling component spacing:"), m_spinItemSpacing
-                }
-            },
-            Group {
-                title(tr("Canvas")),
-                Form {
-                    tr("Width:"), m_spinCanvasWidth, br,
-                    tr("Height:"), m_spinCanvasHeight, br,
-                    tr("Smooth rendering:"), m_smoothRendering
-                }
-            },
-            Group {
-                title(tr("Root Component Init Size")),
-                Form {
-                    tr("Width:"), m_spinRootItemInitWidth, br,
-                    tr("Height:"), m_spinRootItemInitHeight
-                }
-            },
-            Group {
-                title(tr("Styling")),
-                Form {
-                    tr("Controls style:"), m_styleLineEdit, resetStyle, br,
-                    tr("Controls 2 style:"), m_controls2StyleComboBox
-                }
-            }
-        },
-        m_emulationGroupBox,
-        Group {
-           title(tr("Subcomponents")),
-           Column { m_alwaysSaveSubcomponentsCheckBox }
-        },
-        Row {
-            Group {
-                title(tr("Warnings")),
-                Column {
-                    m_designerWarningsCheckBox,
-                    m_designerWarningsInEditorCheckBox,
-                    m_designerWarningsUiQmlfiles
-                }
-            },
-            Group {
-                title(tr("Internationalization")),
-                Column {
-                    m_useQsTrFunctionRadioButton,
-                    m_useQsTrIdFunctionRadioButton,
-                    m_useQsTranslateFunctionRadioButton
-                }
-            }
-        },
-        Group {
-            title(tr("Features")),
-            Grid {
-                m_designerAlwaysDesignModeCheckBox, m_alwaysAutoFormatUICheckBox, br,
-                m_askBeforeDeletingAssetCheckBox, m_featureTimelineEditorCheckBox
-            }
-        },
-        m_debugGroupBox,
-        st
-    }.attachTo(this);
+    Column{Row{Group{title(tr("Snapping")),
+                     Form{tr("Parent component padding:"),
+                          m_spinSnapMargin,
+                          br,
+                          tr("Sibling component spacing:"),
+                          m_spinItemSpacing}},
+               Group{title(tr("Canvas")),
+                     Form{tr("Width:"),
+                          m_spinCanvasWidth,
+                          br,
+                          tr("Height:"),
+                          m_spinCanvasHeight,
+                          br,
+                          tr("Smooth rendering:"),
+                          m_smoothRendering}},
+               Group{title(tr("Root Component Init Size")),
+                     Form{tr("Width:"), m_spinRootItemInitWidth, br, tr("Height:"), m_spinRootItemInitHeight}},
+               Group{title(tr("Styling")),
+                     Form{tr("Controls style:"),
+                          m_styleLineEdit,
+                          resetStyle,
+                          br,
+                          tr("Controls 2 style:"),
+                          m_controls2StyleComboBox}}},
+           m_emulationGroupBox,
+           Group{title(tr("Subcomponents")), Column{m_alwaysSaveSubcomponentsCheckBox}},
+           Row{Group{title(tr("Warnings")),
+                     Column{m_designerWarningsCheckBox,
+                            m_designerWarningsInEditorCheckBox,
+                            m_designerWarningsUiQmlfiles}},
+               Group{title(tr("Internationalization")),
+                     Column{m_useQsTrFunctionRadioButton,
+                            m_useQsTrIdFunctionRadioButton,
+                            m_useQsTranslateFunctionRadioButton}}},
+           Group{title(tr("Features")),
+                 Grid{m_designerAlwaysDesignModeCheckBox,
+                      m_alwaysAutoFormatUICheckBox,
+                      br,
+                      m_askBeforeDeletingAssetCheckBox,
+                      m_featureTimelineEditorCheckBox,
+                      br,
+                      m_featureDockWidgetContentMinSize}},
+           m_debugGroupBox,
+           st}
+        .attachTo(this);
 
     connect(m_designerEnableDebuggerCheckBox, &QCheckBox::toggled, [=](bool checked) {
         if (checked && ! m_designerShowDebuggerCheckBox->isChecked())
@@ -309,9 +289,8 @@ SettingsPageWidget::SettingsPageWidget(ExternalDependencies &externalDependencie
     connect(resetStyle, &QPushButton::clicked,
         m_styleLineEdit, &QLineEdit::clear);
     connect(m_controls2StyleComboBox, &QComboBox::currentTextChanged, [=]() {
-            m_styleLineEdit->setText(m_controls2StyleComboBox->currentText());
-        }
-    );
+        m_styleLineEdit->setText(m_controls2StyleComboBox->currentText());
+    });
 
     m_forwardPuppetOutputComboBox->addItems(puppetModes());
     m_debugPuppetComboBox->addItems(puppetModes());
@@ -391,6 +370,8 @@ QHash<QByteArray, QVariant> SettingsPageWidget::newSettings() const
         m_showWarnExceptionsCheckBox->isChecked());
     settings.insert(DesignerSettingsKey::ENABLE_TIMELINEVIEW,
                     m_featureTimelineEditorCheckBox->isChecked());
+    settings.insert(DesignerSettingsKey::ENABLE_DOCKWIDGET_CONTENT_MIN_SIZE,
+                    m_featureDockWidgetContentMinSize->isChecked());
     settings.insert(DesignerSettingsKey::ALWAYS_DESIGN_MODE,
                     m_designerAlwaysDesignModeCheckBox->isChecked());
     settings.insert(DesignerSettingsKey::ASK_BEFORE_DELETING_ASSET,
@@ -470,19 +451,22 @@ void SettingsPageWidget::setSettings(const DesignerSettings &settings)
         DesignerSettingsKey::ALWAYS_DESIGN_MODE).toBool());
     m_featureTimelineEditorCheckBox->setChecked(settings.value(
         DesignerSettingsKey::ENABLE_TIMELINEVIEW).toBool());
-    m_askBeforeDeletingAssetCheckBox->setChecked(settings.value(
-        DesignerSettingsKey::ASK_BEFORE_DELETING_ASSET).toBool());
+    m_featureDockWidgetContentMinSize->setChecked(
+        settings.value(DesignerSettingsKey::ENABLE_DOCKWIDGET_CONTENT_MIN_SIZE).toBool());
 
-    const bool standaloneMode = QmlProjectManager::QmlProject::isQtDesignStudio();
+    m_askBeforeDeletingAssetCheckBox->setChecked(
+        settings.value(DesignerSettingsKey::ASK_BEFORE_DELETING_ASSET).toBool());
+
 #ifdef QT_DEBUG
     const auto showDebugSettings = true;
 #else
     const auto showDebugSettings = settings.value(DesignerSettingsKey::SHOW_DEBUG_SETTINGS).toBool();
 #endif
-    const bool showAdvancedFeatures = !standaloneMode || showDebugSettings;
+    const bool showAdvancedFeatures = !Core::ICore::isQtDesignStudio() || showDebugSettings;
     m_emulationGroupBox->setVisible(showAdvancedFeatures);
     m_debugGroupBox->setVisible(showAdvancedFeatures);
-    m_featureTimelineEditorCheckBox->setVisible(standaloneMode);
+    m_featureTimelineEditorCheckBox->setVisible(Core::ICore::isQtDesignStudio());
+    m_featureDockWidgetContentMinSize->setVisible(Core::ICore::isQtDesignStudio());
     m_smoothRendering->setChecked(settings.value(DesignerSettingsKey::SMOOTH_RENDERING).toBool());
 
     m_alwaysAutoFormatUICheckBox->setChecked(
@@ -493,23 +477,22 @@ void SettingsPageWidget::apply()
 {
     auto settings = newSettings();
 
-    const auto restartNecessaryKeys = {
-      DesignerSettingsKey::PUPPET_DEFAULT_DIRECTORY,
-      DesignerSettingsKey::PUPPET_TOPLEVEL_BUILD_DIRECTORY,
-      DesignerSettingsKey::ENABLE_MODEL_EXCEPTION_OUTPUT,
-      DesignerSettingsKey::PUPPET_KILL_TIMEOUT,
-      DesignerSettingsKey::FORWARD_PUPPET_OUTPUT,
-      DesignerSettingsKey::DEBUG_PUPPET,
-      DesignerSettingsKey::ENABLE_MODEL_EXCEPTION_OUTPUT,
-      DesignerSettingsKey::ENABLE_TIMELINEVIEW
-    };
+    const auto restartNecessaryKeys = {DesignerSettingsKey::PUPPET_DEFAULT_DIRECTORY,
+                                       DesignerSettingsKey::PUPPET_TOPLEVEL_BUILD_DIRECTORY,
+                                       DesignerSettingsKey::ENABLE_MODEL_EXCEPTION_OUTPUT,
+                                       DesignerSettingsKey::FORWARD_PUPPET_OUTPUT,
+                                       DesignerSettingsKey::DEBUG_PUPPET,
+                                       DesignerSettingsKey::ENABLE_MODEL_EXCEPTION_OUTPUT,
+                                       DesignerSettingsKey::ENABLE_TIMELINEVIEW,
+                                       DesignerSettingsKey::ENABLE_DOCKWIDGET_CONTENT_MIN_SIZE};
 
     for (const char * const key : restartNecessaryKeys) {
         if (QmlDesignerPlugin::settings().value(key) != settings.value(key)) {
-            QMessageBox::information(Core::ICore::dialogParent(), tr("Restart Required"),
-                tr("The made changes will take effect after a "
-                   "restart of the QML Emulation layer or %1.")
-                .arg(Core::Constants::IDE_DISPLAY_NAME));
+            QMessageBox::information(Core::ICore::dialogParent(),
+                                     tr("Restart Required"),
+                                     tr("The made changes will take effect after a "
+                                        "restart of the QML Emulation layer or %1.")
+                                         .arg(QGuiApplication::applicationDisplayName()));
             break;
         }
     }

@@ -46,6 +46,11 @@ const char C_EDITORMANAGER[]       = "Core.EditorManager";
 const char C_NAVIGATION_PANE[]     = "Core.NavigationPane";
 const char C_PROBLEM_PANE[]        = "Core.ProblemPane";
 const char C_GENERAL_OUTPUT_PANE[] = "Core.GeneralOutputPane";
+// Special context that leads to all "more specific" contexts to be ignored.
+// If you use Context(mycontextId, C_GLOBAL_CUTOFF) for a widget that has focus,
+// mycontextId will be enabled but the contexts for all parent widgets, the manually added
+// "additional" contexts, and the global context will be turned off.
+const char C_GLOBAL_CUTOFF[]       = "Global Cutoff";
 
 // Default editor kind
 const char K_DEFAULT_TEXT_EDITOR_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("QtC::Core", "Plain Text Editor");
@@ -81,6 +86,7 @@ const char OPTIONS[]               = "QtCreator.Options";
 const char LOGGER[]                = "QtCreator.Logger";
 const char TOGGLE_LEFT_SIDEBAR[]   = "QtCreator.ToggleLeftSidebar";
 const char TOGGLE_RIGHT_SIDEBAR[]  = "QtCreator.ToggleRightSidebar";
+const char TOGGLE_MENUBAR[]        = "QtCreator.ToggleMenubar";
 const char CYCLE_MODE_SELECTOR_STYLE[] =
                                      "QtCreator.CycleModeSelectorStyle";
 const char TOGGLE_FULLSCREEN[]     = "QtCreator.ToggleFullScreen";
@@ -138,6 +144,7 @@ const char G_HELP[]                = "QtCreator.Group.Help";
 // File menu groups
 const char G_FILE_NEW[]            = "QtCreator.Group.File.New";
 const char G_FILE_OPEN[]           = "QtCreator.Group.File.Open";
+const char G_FILE_SESSION[]         = "QtCreator.Group.File.Recent";
 const char G_FILE_PROJECT[]        = "QtCreator.Group.File.Project";
 const char G_FILE_SAVE[]           = "QtCreator.Group.File.Save";
 const char G_FILE_EXPORT[]         = "QtCreator.Group.File.Export";

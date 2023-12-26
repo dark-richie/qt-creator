@@ -100,8 +100,8 @@ void TestTreeModel::setupParsingConnections()
             m_parser, &TestCodeParser::onCppDocumentUpdated, Qt::QueuedConnection);
     connect(cppMM, &CppEditor::CppModelManager::aboutToRemoveFiles,
             this, [this](const QStringList &files) {
-                const FilePaths filesToRemove = FileUtils::toFilePathList(files);
-                removeFiles(filesToRemove);
+                markForRemoval(transform<QSet>(files, &FilePath::fromString));
+                sweep();
             }, Qt::QueuedConnection);
     connect(cppMM, &CppEditor::CppModelManager::projectPartsUpdated,
             m_parser, &TestCodeParser::onProjectPartsUpdated);
@@ -109,11 +109,11 @@ void TestTreeModel::setupParsingConnections()
     QmlJS::ModelManagerInterface *qmlJsMM = QmlJS::ModelManagerInterface::instance();
     connect(qmlJsMM, &QmlJS::ModelManagerInterface::documentUpdated,
             m_parser, &TestCodeParser::onQmlDocumentUpdated, Qt::QueuedConnection);
-    connect(qmlJsMM,
-            &QmlJS::ModelManagerInterface::aboutToRemoveFiles,
-            this,
-            &TestTreeModel::removeFiles,
-            Qt::QueuedConnection);
+    connect(qmlJsMM, &QmlJS::ModelManagerInterface::aboutToRemoveFiles,
+            this, [this](const FilePaths &filePaths) {
+                markForRemoval(Utils::toSet(filePaths));
+                sweep();
+            }, Qt::QueuedConnection);
     connectionsInitialized = true;
 }
 
@@ -463,13 +463,6 @@ void TestTreeModel::clearFailedMarks()
     m_failedStateCache.clear();
 }
 
-void TestTreeModel::removeFiles(const FilePaths &files)
-{
-    for (const FilePath &file : files)
-        markForRemoval(file);
-    sweep();
-}
-
 void TestTreeModel::markAllFrameworkItemsForRemoval()
 {
     for (TestTreeItem *frameworkRoot : frameworkRootNodes()) {
@@ -479,15 +472,12 @@ void TestTreeModel::markAllFrameworkItemsForRemoval()
     }
 }
 
-void TestTreeModel::markForRemoval(const FilePath &filePath)
+void TestTreeModel::markForRemoval(const QSet<Utils::FilePath> &filePaths)
 {
-    if (filePath.isEmpty())
-        return;
-
     for (TestTreeItem *frameworkRoot : frameworkRootNodes()) {
         for (int childRow = frameworkRoot->childCount() - 1; childRow >= 0; --childRow) {
             TestTreeItem *child = frameworkRoot->childItem(childRow);
-            child->markForRemovalRecursively(filePath);
+            child->markForRemovalRecursively(filePaths);
         }
     }
 }
@@ -495,6 +485,10 @@ void TestTreeModel::markForRemoval(const FilePath &filePath)
 void TestTreeModel::sweep()
 {
     for (TestTreeItem *frameworkRoot : frameworkRootNodes()) {
+        if (frameworkRoot->m_status == TestTreeItem::ForcedRootRemoval) {
+            frameworkRoot->framework()->resetRootNode();
+            continue;
+        }
         sweepChildren(frameworkRoot);
         revalidateCheckState(frameworkRoot);
     }
@@ -504,6 +498,40 @@ void TestTreeModel::sweep()
     if (m_parser->state() == TestCodeParser::Idle && !m_parser->furtherParsingExpected())
         emit sweepingDone();
 #endif
+}
+
+QString TestTreeModel::report(bool full) const
+{
+    QString result;
+    int items = 0;
+    QString tree;
+    for (TestTreeItem *rootNode : frameworkRootNodes()) {
+        int itemsPerRoot = 0;
+        result.append("\n");
+        result += rootNode->name();
+        result.append(" > ");
+
+        if (full) {
+            TestTreeSortFilterModel sortFilterModel(const_cast<TestTreeModel *>(this));
+            sortFilterModel.setDynamicSortFilter(true);
+            sortFilterModel.sort(0);
+            tree = "\n" + sortFilterModel.report();
+            rootNode->forAllChildren([&itemsPerRoot](TreeItem *) {
+                ++itemsPerRoot;
+            });
+
+        } else {
+            rootNode->forAllChildren([&itemsPerRoot](TreeItem *) {
+                ++itemsPerRoot;
+            });
+        }
+        result.append(QString::number(itemsPerRoot));
+        items += itemsPerRoot;
+    }
+    result.append("\nItems: " + QString::number(items));
+    if (full)
+        return tree + '\n' + result;
+    return result;
 }
 
 /**
@@ -583,7 +611,8 @@ void TestTreeModel::insertItemInParent(TestTreeItem *item, TestTreeItem *root, b
         delete item;
     } else {
         // restore former check state if available
-        std::optional<Qt::CheckState> cached = m_checkStateCache->get(item);
+        std::optional<Qt::CheckState> cached = m_checkStateCache ? m_checkStateCache->get(item)
+                                                                 : std::optional<Qt::CheckState>{};
         if (cached.has_value())
             item->setData(0, cached.value(), Qt::CheckStateRole);
         else
@@ -871,12 +900,6 @@ void TestTreeSortFilterModel::setSortMode(ITestTreeItem::SortMode sortMode)
     invalidate();
 }
 
-void TestTreeSortFilterModel::setFilterMode(FilterMode filterMode)
-{
-    m_filterMode = filterMode;
-    invalidateFilter();
-}
-
 void TestTreeSortFilterModel::toggleFilter(FilterMode filterMode)
 {
     m_filterMode = toFilterMode(m_filterMode ^ filterMode);
@@ -895,6 +918,26 @@ TestTreeSortFilterModel::FilterMode TestTreeSortFilterModel::toFilterMode(int f)
     default:
         return TestTreeSortFilterModel::Basic;
     }
+}
+
+static QString dumpIndex(const QModelIndex &idx, int level = 0)
+{
+    QString result;
+    result.append(QString(level, ' '));
+    result.append(idx.data().toString() + '\n');
+    for (int row = 0, end = idx.model()->rowCount(idx); row < end; ++row)
+        result.append(dumpIndex(idx.model()->index(row, 0, idx), level + 1));
+    return result;
+}
+
+QString TestTreeSortFilterModel::report() const
+{
+    QString result;
+    for (int row = 0, end = rowCount(); row < end; ++row) {
+        auto idx = index(row, 0);
+        result.append(dumpIndex(idx));
+    }
+    return result;
 }
 
 bool TestTreeSortFilterModel::lessThan(const QModelIndex &left, const QModelIndex &right) const

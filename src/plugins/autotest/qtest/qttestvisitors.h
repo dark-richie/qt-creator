@@ -16,8 +16,7 @@
 #include <QMap>
 #include <QSet>
 
-namespace Autotest {
-namespace Internal {
+namespace Autotest::Internal {
 
 class TestVisitor : public CPlusPlus::SymbolVisitor
 {
@@ -55,7 +54,7 @@ private:
     QStringList m_classNames;
     CPlusPlus::Scope *m_currentScope = nullptr;
     CPlusPlus::Document::Ptr m_currentDoc;
-    CPlusPlus::Snapshot m_snapshot;
+    const CPlusPlus::Snapshot &m_snapshot;
 };
 
 class TestDataFunctionVisitor : public CPlusPlus::ASTVisitor
@@ -84,5 +83,4 @@ private:
     bool m_insideUsingQTest = false;
 };
 
-} // namespace Internal
-} // namespace Autotest
+} // namespace Autotest::Internal

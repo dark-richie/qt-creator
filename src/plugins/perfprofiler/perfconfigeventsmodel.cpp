@@ -8,18 +8,21 @@
 
 #include <QMetaEnum>
 
+using namespace Utils;
+
 namespace PerfProfiler {
 namespace Internal {
 
 PerfConfigEventsModel::PerfConfigEventsModel(PerfSettings *settings, QObject *parent) :
     QAbstractTableModel(parent), m_settings(settings)
 {
-    connect(m_settings, &PerfSettings::changed, this, &PerfConfigEventsModel::reset);
+    connect(m_settings, &AspectContainer::changed, this, &PerfConfigEventsModel::reset);
+    connect(m_settings, &AspectContainer::fromMapFinished, this, &PerfConfigEventsModel::reset);
 }
 
 int PerfConfigEventsModel::rowCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : m_settings->events.value().length();
+    return parent.isValid() ? 0 : m_settings->events().length();
 }
 
 int PerfConfigEventsModel::columnCount(const QModelIndex &parent) const
@@ -37,7 +40,7 @@ QVariant PerfConfigEventsModel::data(const QModelIndex &index, int role) const
         return QVariant(); // ignore
     }
 
-    QString event = m_settings->events.value().value(index.row());
+    QString event = m_settings->events().value(index.row());
     const EventDescription description = parseEvent(event);
     switch (index.column()) {
     case ColumnEventType: {
@@ -121,7 +124,7 @@ bool PerfConfigEventsModel::setData(const QModelIndex &dataIndex, const QVariant
     const int row = dataIndex.row();
     const int column = dataIndex.column();
 
-    QStringList events = m_settings->events.value();
+    QStringList events = m_settings->events();
     EventDescription description = parseEvent(events[row]);
     switch (column) {
     case ColumnEventType:
@@ -180,7 +183,7 @@ bool PerfConfigEventsModel::insertRows(int row, int count, const QModelIndex &pa
     if (parent.isValid())
         return false;
 
-    QStringList events = m_settings->events.value();
+    QStringList events = m_settings->events();
     for (int i = 0; i < count; ++i)
         events.insert(row, "dummy");
     beginInsertRows(parent, row, row + count - 1);
@@ -194,7 +197,7 @@ bool PerfConfigEventsModel::removeRows(int row, int count, const QModelIndex &pa
     if (parent.isValid())
         return false;
 
-    QStringList events = m_settings->events.value();
+    QStringList events = m_settings->events();
     for (int i = 0; i < count; ++i)
         events.removeAt(row);
     beginRemoveRows(parent, row, row + count - 1);

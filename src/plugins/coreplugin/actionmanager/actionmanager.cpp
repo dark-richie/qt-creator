@@ -5,20 +5,20 @@
 #include "actionmanager_p.h"
 #include "actioncontainer_p.h"
 #include "command_p.h"
-
-#include <coreplugin/icore.h>
+#include "../icore.h"
 
 #include <utils/algorithm.h>
 #include <utils/fadingindicator.h>
+#include <utils/parameteraction.h>
 #include <utils/qtcassert.h>
 
-#include <QAction>
+#include <nanotrace/nanotrace.h>
+
 #include <QApplication>
 #include <QDebug>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
-#include <QSettings>
 
 namespace {
     enum { warnAboutFindFailures = 0 };
@@ -66,6 +66,294 @@ void PresentationModeHandler::showShortcutPopup(const QString &shortcut)
     Utils::FadingIndicator::showText(window, shortcut);
 }
 
+} // Core::Internal
+
+
+namespace Core {
+
+class ActionBuilderPrivate
+{
+public:
+    ActionBuilderPrivate(QObject *contextActionParent, const Id actionId)
+        : contextAction(new ParameterAction({}, {}, ParameterAction::AlwaysEnabled, contextActionParent))
+        , actionId(actionId)
+    {
+        command = ActionManager::createCommand(actionId);
+    }
+
+    void registerAction()
+    {
+        QTC_ASSERT(actionId.isValid(), return);
+        ActionManager::registerAction(contextAction, actionId, context, scriptable);
+    }
+
+    ParameterAction *contextAction = nullptr;
+    Command *command = nullptr;
+
+    Id actionId;
+    Context context{Constants::C_GLOBAL};
+    bool scriptable = false;
+};
+
+ActionBuilder::ActionBuilder(QObject *contextActionParent, const Id actionId)
+    : d(new ActionBuilderPrivate(contextActionParent, actionId))
+{
+}
+
+ActionBuilder::~ActionBuilder()
+{
+    d->registerAction();
+    delete d;
+}
+
+ActionBuilder &ActionBuilder::setText(const QString &text)
+{
+    d->contextAction->setText(text);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setIconText(const QString &text)
+{
+    d->contextAction->setIconText(text);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setToolTip(const QString &toolTip)
+{
+    d->contextAction->setToolTip(toolTip);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setCommandAttribute(Command::CommandAttribute attr)
+{
+    d->command->setAttribute(attr);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setCommandDescription(const QString &desc)
+{
+    d->command->setDescription(desc);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::addToContainer(Id containerId, Id groupId, bool needsToExist)
+{
+    QTC_ASSERT(containerId.isValid(), return *this);
+    if (ActionContainer *container = ActionManager::actionContainer(containerId)) {
+        container->addAction(d->command, groupId);
+        return *this;
+    }
+    QTC_CHECK(!needsToExist);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::addToContainers(QList<Id> containerIds, Id groupId, bool needsToExist)
+{
+    for (const Id &containerId : containerIds)
+        addToContainer(containerId, groupId, needsToExist);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::addOnTriggered(const std::function<void()> &func)
+{
+    QObject::connect(d->contextAction, &QAction::triggered, d->contextAction, func);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setDefaultKeySequence(const QKeySequence &seq)
+{
+    d->command->setDefaultKeySequence(seq);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setDefaultKeySequences(const QList<QKeySequence> &seqs)
+{
+    d->command->setDefaultKeySequences(seqs);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setDefaultKeySequence(const QString &mac, const QString &nonMac)
+{
+    d->command->setDefaultKeySequence(QKeySequence(useMacShortcuts ? mac : nonMac));
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setIcon(const QIcon &icon)
+{
+    d->contextAction->setIcon(icon);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setIconVisibleInMenu(bool on)
+{
+    d->contextAction->setIconVisibleInMenu(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setTouchBarIcon(const QIcon &icon)
+{
+    d->command->setTouchBarIcon(icon);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setTouchBarText(const QString &text)
+{
+    d->command->setTouchBarText(text);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setEnabled(bool on)
+{
+    d->contextAction->setEnabled(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setChecked(bool on)
+{
+    d->contextAction->setChecked(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setVisible(bool on)
+{
+    d->contextAction->setVisible(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setCheckable(bool on)
+{
+    d->contextAction->setCheckable(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setSeperator(bool on)
+{
+    d->contextAction->setSeparator(on);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setScriptable(bool on)
+{
+    d->scriptable = on;
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setMenuRole(QAction::MenuRole role)
+{
+    d->contextAction->setMenuRole(role);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setParameterText(const QString &parameterText,
+                                     const QString &emptyText,
+                                     EnablingMode mode)
+{
+    QTC_CHECK(parameterText.contains("%1"));
+    QTC_CHECK(!emptyText.contains("%1"));
+
+    d->contextAction->setEmptyText(emptyText);
+    d->contextAction->setParameterText(parameterText);
+    d->contextAction->setEnablingMode(mode == AlwaysEnabled
+                                   ? ParameterAction::AlwaysEnabled
+                                   : ParameterAction::EnabledWithParameter);
+    d->contextAction->setText(emptyText);
+    return *this;
+}
+
+Id ActionBuilder::id() const
+{
+    return d->actionId;
+}
+
+Command *ActionBuilder::command() const
+{
+    return d->command;
+}
+
+QAction *ActionBuilder::commandAction() const
+{
+    return d->command->action();
+}
+
+QAction *ActionBuilder::contextAction() const
+{
+    return d->contextAction;
+}
+
+ParameterAction *ActionBuilder::contextParameterAction() const
+{
+    return d->contextAction;
+}
+
+ActionBuilder &ActionBuilder::bindContextAction(QAction **dest)
+{
+    QTC_ASSERT(dest, return *this);
+    *dest = d->contextAction;
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::bindContextAction(Utils::ParameterAction **dest)
+{
+    QTC_ASSERT(dest, return *this);
+    *dest = d->contextAction;
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::augmentActionWithShortcutToolTip()
+{
+    d->command->augmentActionWithShortcutToolTip(d->contextAction);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setContext(Id id)
+{
+    d->context = Context(id);
+    return *this;
+}
+
+ActionBuilder &ActionBuilder::setContext(const Context &context)
+{
+    QTC_ASSERT(!context.isEmpty(), return *this);
+    d->context = context;
+    return *this;
+}
+
+// Separator
+
+ActionSeparator::ActionSeparator(Id id)
+{
+    ActionContainer *container = ActionManager::actionContainer(id);
+    QTC_ASSERT(container, return);
+    container->addSeparator();
+}
+
+// Menu
+
+Menu::Menu() = default;
+
+void Menu::setId(Id id)
+{
+    QTC_ASSERT(!m_menu, return);
+    m_menu = ActionManager::createMenu(id);
+}
+
+void Menu::setTitle(const QString &title)
+{
+    QTC_ASSERT(m_menu, return);
+    m_menu->menu()->setTitle(title);
+}
+
+void Menu::setContainer(Id containerId, Id groupId)
+{
+    QTC_ASSERT(m_menu, return);
+    ActionContainer *container = ActionManager::actionContainer(containerId);
+    container->addMenu(m_menu, groupId);
+}
+
+void Menu::addSeparator()
+{
+    QTC_ASSERT(m_menu, return);
+    m_menu->addSeparator();
 }
 
 /*!
@@ -188,7 +476,7 @@ ActionContainer *ActionManager::createMenu(Id id)
     if (it !=  d->m_idContainerMap.constEnd())
         return it.value();
 
-    auto mc = new MenuActionContainer(id);
+    auto mc = new MenuActionContainer(id, d);
 
     d->m_idContainerMap.insert(id, mc);
     connect(mc, &QObject::destroyed, d, &ActionManagerPrivate::containerDestroyed);
@@ -213,7 +501,7 @@ ActionContainer *ActionManager::createMenuBar(Id id)
     auto mb = new QMenuBar; // No parent (System menu bar on macOS)
     mb->setObjectName(id.toString());
 
-    auto mbc = new MenuBarActionContainer(id);
+    auto mbc = new MenuBarActionContainer(id, d);
     mbc->setMenuBar(mb);
 
     d->m_idContainerMap.insert(id, mbc);
@@ -241,7 +529,7 @@ ActionContainer *ActionManager::createTouchBar(Id id, const QIcon &icon, const Q
     ActionContainer * const c = d->m_idContainerMap.value(id);
     if (c)
         return c;
-    auto ac = new TouchBarActionContainer(id, icon, text);
+    auto ac = new TouchBarActionContainer(id, d, icon, text);
     d->m_idContainerMap.insert(id, ac);
     connect(ac, &QObject::destroyed, d, &ActionManagerPrivate::containerDestroyed);
     return ac;
@@ -267,6 +555,21 @@ Command *ActionManager::registerAction(QAction *action, Id id, const Context &co
         emit m_instance->commandAdded(id);
     }
     return cmd;
+}
+
+/*!
+    Creates a Command or returns an existing Command with the specified \a id.
+
+    The created command doesn't have any actions associated with it yet, so
+    it cannot actually be triggered.
+    But the system is aware of it, it appears in the keyboard shortcut
+    settings, and QActions can later be registered for it.
+    If you already have a QAction, ID and Context that you want to register,
+    there is no need to call this. Just directly call registerAction().
+*/
+Command *ActionManager::createCommand(Utils::Id id)
+{
+    return d->overridableAction(id);
 }
 
 /*!
@@ -449,6 +752,7 @@ void ActionManagerPrivate::containerDestroyed(QObject *sender)
 {
     auto container = static_cast<ActionContainerPrivate *>(sender);
     m_idContainerMap.remove(m_idContainerMap.key(container));
+    m_scheduledContainerUpdates.remove(container);
 }
 
 Command *ActionManagerPrivate::overridableAction(Id id)
@@ -473,10 +777,10 @@ Command *ActionManagerPrivate::overridableAction(Id id)
 
 void ActionManagerPrivate::readUserSettings(Id id, Command *cmd)
 {
-    QSettings *settings = ICore::settings();
+    QtcSettings *settings = ICore::settings();
     settings->beginGroup(kKeyboardSettingsKeyV2);
-    if (settings->contains(id.toString())) {
-        const QVariant v = settings->value(id.toString());
+    if (settings->contains(id.toKey())) {
+        const QVariant v = settings->value(id.toKey());
         if (QMetaType::Type(v.type()) == QMetaType::QStringList) {
             cmd->setKeySequences(Utils::transform<QList>(v.toStringList(), [](const QString &s) {
                 return QKeySequence::fromString(s);
@@ -488,10 +792,27 @@ void ActionManagerPrivate::readUserSettings(Id id, Command *cmd)
     settings->endGroup();
 }
 
+void ActionManagerPrivate::scheduleContainerUpdate(ActionContainerPrivate *actionContainer)
+{
+    const bool needsSchedule = m_scheduledContainerUpdates.isEmpty();
+    m_scheduledContainerUpdates.insert(actionContainer);
+    if (needsSchedule)
+        QMetaObject::invokeMethod(this,
+                                  &ActionManagerPrivate::updateContainer,
+                                  Qt::QueuedConnection);
+}
+
+void ActionManagerPrivate::updateContainer()
+{
+    for (ActionContainerPrivate *c : std::as_const(m_scheduledContainerUpdates))
+        c->update();
+    m_scheduledContainerUpdates.clear();
+}
+
 void ActionManagerPrivate::saveSettings(Command *cmd)
 {
-    const QString id = cmd->id().toString();
-    const QString settingsKey = QLatin1String(kKeyboardSettingsKeyV2) + '/' + id;
+    const Key id = cmd->id().toKey();
+    const Key settingsKey = Key(kKeyboardSettingsKeyV2) + '/' + id;
     const QList<QKeySequence> keys = cmd->keySequences();
     const QList<QKeySequence> defaultKeys = cmd->defaultKeySequences();
     if (keys != defaultKeys) {
@@ -518,3 +839,5 @@ void ActionManagerPrivate::saveSettings()
         saveSettings(j.value());
     }
 }
+
+} // Core

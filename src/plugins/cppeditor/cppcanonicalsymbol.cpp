@@ -51,10 +51,10 @@ Scope *CanonicalSymbol::getScopeAndExpression(const QTextCursor &cursor, QString
 
     ExpressionUnderCursor expressionUnderCursor(m_document->languageFeatures());
     *code = expressionUnderCursor(tc);
-    return m_document->scopeAt(line, column - 1);
+    return m_document->scopeAt(line, column);
 }
 
-Symbol *CanonicalSymbol::operator()(const QTextCursor &cursor)
+Symbol *CanonicalSymbol::operator()(const QTextCursor &cursor) &
 {
     QString code;
 

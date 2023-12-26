@@ -49,7 +49,7 @@ public:
         emailLineEdit = new QLineEdit;
         fixedBugsLineEdit = new QLineEdit;
 
-        using namespace Utils::Layouting;
+        using namespace Layouting;
         Column {
             Group {
                 title(Tr::tr("General Information")),
@@ -65,8 +65,9 @@ public:
                     Tr::tr("Email:"), emailLineEdit, br,
                     Tr::tr("Fixed bugs:"), fixedBugsLineEdit
                 }
-            }
-        }.attachTo(this, WithoutMargins);
+            },
+            noMargin
+        }.attachTo(this);
     }
 
     QLineEdit *branchLineEdit;
@@ -158,7 +159,7 @@ QString BazaarCommitWidget::committer() const
     const QString author = m_bazaarCommitPanel->authorLineEdit->text();
     const QString email = m_bazaarCommitPanel->emailLineEdit->text();
     if (author.isEmpty())
-        return QString();
+        return {};
 
     QString user = author;
     if (!email.isEmpty()) {

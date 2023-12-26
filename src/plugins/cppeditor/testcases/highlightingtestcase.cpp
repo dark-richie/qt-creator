@@ -1,7 +1,7 @@
 auto func()
 {
     return R"(foo
-    foobar
+
         R"notaprefix!(
     barfoobar)" R"(second)" /* comment */ R"(third)";
 }
@@ -37,3 +37,13 @@ const auto s5 = uR"("o
      ne")"_w;
 const auto s6 = u"o\
 ne"_w;
+
+static void parenTest()
+{
+    do {
+        /* comment */ \
+    } while (false);
+}
+
+const char* s7 = R"(
+))";

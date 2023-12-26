@@ -6,6 +6,7 @@
 
 #include "selectionboxgeometry.h"
 
+#include <QGuiApplication>
 #include <QtQuick3D/qquick3dobject.h>
 #include <QtQuick3D/private/qquick3dorthographiccamera_p.h>
 #include <QtQuick3D/private/qquick3dperspectivecamera_p.h>
@@ -15,15 +16,19 @@
 #include <QtQuick3D/private/qquick3dviewport_p.h>
 #include <QtQuick3D/private/qquick3ddefaultmaterial_p.h>
 #include <QtQuick3D/private/qquick3dscenemanager_p.h>
-#include <QtQuick3DRuntimeRender/private/qssgrendercontextcore_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderbuffermanager_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendermodel_p.h>
 #include <QtQuick3DUtils/private/qssgbounds3_p.h>
-#include <QtQuick3DUtils/private/qssgutils_p.h>
 #include <QtQml/qqml.h>
 #include <QtQuick/qquickwindow.h>
 #include <QtQuick/qquickitem.h>
 #include <QtCore/qmath.h>
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 7, 0)
+#include <QtQuick3DRuntimeRender/private/qssgrendercontextcore_p.h>
+#else
+#include <QtQuick3DRuntimeRender/ssg/qssgrendercontextcore.h>
+#endif
 
 #ifdef QUICK3D_PARTICLES_MODULE
 #include <QtQuick3DParticles/private/qquick3dparticlemodelshape_p.h>
@@ -57,6 +62,10 @@ GeneralHelper::GeneralHelper()
     m_toolStateUpdateTimer.setSingleShot(true);
     QObject::connect(&m_toolStateUpdateTimer, &QTimer::timeout,
                      this, &GeneralHelper::handlePendingToolStateUpdate);
+
+    QList<QColor> defaultBg;
+    defaultBg.append(QColor());
+    m_bgColor = QVariant::fromValue(defaultBg);
 }
 
 void GeneralHelper::requestOverlayUpdate()
@@ -154,16 +163,16 @@ float GeneralHelper::zoomCamera([[maybe_unused]] QQuick3DViewport *viewPort,
     float newZoomFactor = relative ? qBound(.01f, zoomFactor * multiplier, 100.f)
                                    : zoomFactor;
 
-    if (qobject_cast<QQuick3DOrthographicCamera *>(camera)) {
-        // Ortho camera we can simply scale
-        float orthoFactor = newZoomFactor;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-        if (viewPort) {
-            if (const QQuickWindow *w = viewPort->window())
-                orthoFactor *= w->devicePixelRatio();
+    if (auto orthoCamera = qobject_cast<QQuick3DOrthographicCamera *>(camera)) {
+        // Ortho camera we can simply magnify
+        if (newZoomFactor != 0.f) {
+            orthoCamera->setHorizontalMagnification(1.f / newZoomFactor);
+            orthoCamera->setVerticalMagnification(1.f / newZoomFactor);
+            // Force update on transform, so gizmos get correctly scaled and positioned
+            float x = orthoCamera->x();
+            orthoCamera->setX(x + 1.f);
+            orthoCamera->setX(x);
         }
-#endif
-        camera->setScale(QVector3D(orthoFactor, orthoFactor, orthoFactor));
     } else if (qobject_cast<QQuick3DPerspectiveCamera *>(camera)) {
         // Perspective camera is zoomed by moving camera forward or backward while keeping the
         // look-at point the same
@@ -215,24 +224,22 @@ QVector4D GeneralHelper::focusNodesToCamera(QQuick3DCamera *camera, float defaul
             if (auto renderModel = static_cast<QSSGRenderModel *>(targetPriv->spatialNode)) {
                 QWindow *window = static_cast<QWindow *>(viewPort->window());
                 if (window) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 1)
                     QSSGRef<QSSGRenderContextInterface> context;
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-                    context = QSSGRenderContextInterface::getRenderContextInterface(quintptr(window));
-#else
                     context = targetPriv->sceneManager->rci;
-#endif
                     if (!context.isNull()) {
+#else
+                    const auto &sm = targetPriv->sceneManager;
+                    auto context = sm->wattached ? sm->wattached->rci().get() : nullptr;
+                    if (context) {
+#endif
                         QSSGBounds3 bounds;
                         auto geometry = qobject_cast<SelectionBoxGeometry *>(model->geometry());
                         if (geometry) {
                             bounds = geometry->bounds();
                         } else {
-                            auto bufferManager = context->bufferManager();
-#if QT_VERSION < QT_VERSION_CHECK(6, 3, 0)
-                            bounds = renderModel->getModelBounds(bufferManager);
-#else
+                            const auto &bufferManager(context->bufferManager());
                             bounds = bufferManager->getModelBounds(renderModel);
-#endif
                         }
 
                         center = renderModel->globalTransform.map(bounds.center());
@@ -346,8 +353,32 @@ void GeneralHelper::alignCameras(QQuick3DCamera *camera, const QVariant &nodes)
     }
 
     for (QQuick3DCamera *node : std::as_const(nodeList)) {
-        node->setPosition(camera->position());
-        node->setRotation(camera->rotation());
+        QMatrix4x4 parentTransform;
+        QMatrix4x4 parentRotationTransform;
+        if (node->parentNode()) {
+            QMatrix4x4 rotMat;
+            rotMat.rotate(node->parentNode()->sceneRotation());
+            parentRotationTransform = rotMat.inverted();
+            parentTransform = node->parentNode()->sceneTransform().inverted();
+        }
+
+        QMatrix4x4 localTransform;
+        localTransform.translate(camera->position());
+        localTransform.rotate(camera->rotation());
+
+        QMatrix4x4 finalTransform = parentTransform * localTransform;
+        QVector3D newPos = QVector3D(finalTransform.column(3).x(),
+                                     finalTransform.column(3).y(),
+                                     finalTransform.column(3).z());
+
+        // Rotation must be calculated with sanitized transform that only contains rotation so
+        // that the scaling of ancestor nodes won't distort it
+        QMatrix4x4 finalRotTransform = parentRotationTransform * localTransform;
+        QMatrix3x3 rotationMatrix = finalRotTransform.toGenericMatrix<3, 3>();
+        QQuaternion newRot = QQuaternion::fromRotationMatrix(rotationMatrix).normalized();
+
+        node->setPosition(newPos);
+        node->setRotation(newRot);
     }
 }
 
@@ -369,8 +400,8 @@ QVector3D GeneralHelper::alignView(QQuick3DCamera *camera, const QVariant &nodes
     }
 
     if (cameraNode) {
-        camera->setPosition(cameraNode->position());
-        QVector3D newRotation = cameraNode->eulerRotation();
+        camera->setPosition(cameraNode->scenePosition());
+        QVector3D newRotation = cameraNode->sceneRotation().toEulerAngles();
         newRotation.setZ(0.f);
         camera->setEulerRotation(newRotation);
     }
@@ -399,7 +430,6 @@ QQuick3DPickResult GeneralHelper::pickViewAt(QQuick3DViewport *view, float posX,
     if (!view)
         return QQuick3DPickResult();
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 1)
     // Make sure global picking is on
     view->setGlobalPickingEnabled(true);
 
@@ -409,12 +439,6 @@ QQuick3DPickResult GeneralHelper::pickViewAt(QQuick3DViewport *view, float posX,
         if (isPickable(pickResult.objectHit()))
             return pickResult;
     }
-#else
-    // With older Qt version we'll just pick the single object
-    auto pickResult = view->pick(posX, posY);
-    if (isPickable(pickResult.objectHit()))
-        return pickResult;
-#endif
     return QQuick3DPickResult();
 }
 
@@ -455,13 +479,11 @@ bool GeneralHelper::isPickable(QQuick3DNode *node) const
     if (!node)
         return false;
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
     // Instancing doesn't hide child nodes, so only check for instancing on the requested node
     if (auto model = qobject_cast<QQuick3DModel *>(node)) {
         if (model->instancing())
             return false;
     }
-#endif
 
     QQuick3DNode *n = node;
     while (n) {
@@ -514,8 +536,8 @@ void GeneralHelper::storeToolState(const QString &sceneId, const QString &tool, 
             handlePendingToolStateUpdate();
         QVariant theState;
         // Convert JS arrays to QVariantLists for easier handling down the line
-        // metaType().id() which only exist in Qt6 is the same as userType()
-        if (state.userType() != QMetaType::QString && state.canConvert(QMetaType::QVariantList))
+        // metaType().id() which only exist in Qt6 is the same as typeId()
+        if (state.typeId() != QMetaType::QString && state.canConvert(QMetaType::QVariantList))
             theState = state.value<QVariantList>();
         else
             theState = state;
@@ -527,14 +549,62 @@ void GeneralHelper::storeToolState(const QString &sceneId, const QString &tool, 
     }
 }
 
-void GeneralHelper::setSceneEnvironmentColor(const QString &sceneId, const QColor &color)
+void GeneralHelper::setSceneEnvironmentData(const QString &sceneId,
+                                            QQuick3DSceneEnvironment *env)
 {
-    m_sceneEnvironmentColor[sceneId] = color;
+    if (env) {
+        SceneEnvData &data = m_sceneEnvironmentData[sceneId];
+        data.backgroundMode = env->backgroundMode();
+        data.clearColor = env->clearColor();
+
+        if (data.lightProbe)
+            disconnect(data.lightProbe, &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged);
+        data.lightProbe = env->lightProbe();
+        if (env->lightProbe())
+            connect(env->lightProbe(), &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged, Qt::DirectConnection);
+
+        if (data.skyBoxCubeMap)
+            disconnect(data.skyBoxCubeMap, &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged);
+        data.skyBoxCubeMap = env->skyBoxCubeMap();
+        if (env->skyBoxCubeMap())
+            connect(env->skyBoxCubeMap(), &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged, Qt::DirectConnection);
+
+        emit sceneEnvDataChanged();
+    }
+}
+
+QQuick3DSceneEnvironment::QQuick3DEnvironmentBackgroundTypes GeneralHelper::sceneEnvironmentBgMode(
+    const QString &sceneId) const
+{
+    return m_sceneEnvironmentData[sceneId].backgroundMode;
 }
 
 QColor GeneralHelper::sceneEnvironmentColor(const QString &sceneId) const
 {
-    return m_sceneEnvironmentColor[sceneId];
+    return m_sceneEnvironmentData[sceneId].clearColor;
+}
+
+QQuick3DTexture *GeneralHelper::sceneEnvironmentLightProbe(const QString &sceneId) const
+{
+    return m_sceneEnvironmentData[sceneId].lightProbe.data();
+}
+
+QQuick3DCubeMapTexture *GeneralHelper::sceneEnvironmentSkyBoxCubeMap(const QString &sceneId) const
+{
+    return m_sceneEnvironmentData[sceneId].skyBoxCubeMap.data();
+}
+
+void GeneralHelper::clearSceneEnvironmentData()
+{
+    for (const SceneEnvData &data : std::as_const(m_sceneEnvironmentData)) {
+        if (data.lightProbe)
+            disconnect(data.lightProbe, &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged);
+        if (data.skyBoxCubeMap)
+            disconnect(data.skyBoxCubeMap, &QObject::destroyed, this, &GeneralHelper::sceneEnvDataChanged);
+    }
+
+    m_sceneEnvironmentData.clear();
+    emit sceneEnvDataChanged();
 }
 
 void GeneralHelper::initToolStates(const QString &sceneId, const QVariantMap &toolStates)
@@ -571,16 +641,6 @@ QString GeneralHelper::rootSizeKey() const
     return _rootSizeKey;
 }
 
-double GeneralHelper::brightnessScaler() const
-{
-    // Light brightness was rescaled in Qt6 from 100 -> 1.
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    return 100.;
-#else
-    return 1.;
-#endif
-}
-
 void GeneralHelper::setMultiSelectionTargets(QQuick3DNode *multiSelectRootNode,
                                              const QVariantList &selectedList)
 {
@@ -612,7 +672,7 @@ void GeneralHelper::setMultiSelectionTargets(QQuick3DNode *multiSelectRootNode,
         if (!found) {
             m_multiSelDataMap.insert(selNode, {});
             m_multiSelNodes.append(QVariant::fromValue(selNode));
-            m_multiSelectConnections.append(connect(selNode, &QObject::destroyed, [this]() {
+            m_multiSelectConnections.append(connect(selNode, &QObject::destroyed, [this] {
                 // If any multiselected node is destroyed, assume the entire selection is invalid.
                 // The new selection should be notified by creator immediately after anyway.
                 m_multiSelDataMap.clear();
@@ -622,7 +682,7 @@ void GeneralHelper::setMultiSelectionTargets(QQuick3DNode *multiSelectRootNode,
                 m_multiSelectConnections.clear();
             }));
             m_multiSelectConnections.append(connect(selNode, &QQuick3DNode::sceneTransformChanged,
-                                                    [this]() {
+                                                    [this] {
                 // Reposition the multiselection root node if scene transform of any multiselected
                 // node changes outside of drag (i.e. changes originating from creator side)
                 if (!m_blockMultiSelectionNodePositioning)
@@ -764,6 +824,254 @@ bool GeneralHelper::isRotationBlocked(QQuick3DNode *node) const
     return m_rotationBlockedNodes.contains(node);
 }
 
+// false is returned when keyboard modifiers result in no snapping.
+// increment is adjusted according to keyboard modifiers
+static bool queryKeyboardForSnapping(bool enabled, double &increment)
+{
+    if (increment <= 0.)
+        return false;
+
+    // Need to do a hard query for key mods as puppet is not handling real events
+    Qt::KeyboardModifiers mods = QGuiApplication::queryKeyboardModifiers();
+    const bool shiftMod = mods & Qt::ShiftModifier;
+    const bool ctrlMod = mods & Qt::ControlModifier;
+
+    if ((!ctrlMod && !enabled) || (ctrlMod && enabled))
+        return false;
+
+    if (shiftMod)
+        increment *= 0.1;
+
+    return true;
+}
+
+QVector3D GeneralHelper::adjustTranslationForSnap(const QVector3D &newPos,
+                                                  const QVector3D &startPos,
+                                                  const QVector3D &snapAxes,
+                                                  bool globalOrientation,
+                                                  QQuick3DNode *node)
+{
+    bool snapPos = m_snapPosition;
+    bool snapAbs = m_snapAbsolute;
+    double increment = m_snapPositionInterval;
+
+    if (!node || snapAxes.isNull() || qFuzzyIsNull((newPos - startPos).length())
+        || !queryKeyboardForSnapping(snapPos, increment)) {
+        return newPos;
+    }
+
+    // The node is aligned if there is only 0/90/180/270 degree sceneRotation on the node
+    // on the drag axis, or the drag plane normal for plane drags
+    QVector3D mappedSnapAxes = snapAxes;
+    bool isAligned = globalOrientation;
+    if (!isAligned) {
+        isAligned = true;
+        int axisCount = 0;
+        QVector3D planeNormal(1.f, 1.f, 1.f);
+        QVector3D checkAxis;
+        for (int i = 0; i < 3; ++i) {
+            if (snapAxes[i] != 0) {
+                ++axisCount;
+                checkAxis[i] = snapAxes[i];
+                planeNormal[i] = 0.f;
+            }
+        }
+
+        // If all 3 axes are snapped, we always use aligned snapping, and we also so not need
+        // snapAxes remapping
+        if (axisCount == 1 || axisCount == 2) {
+            if (axisCount == 2)
+                checkAxis = planeNormal;
+
+            QMatrix4x4 m;
+            m.rotate(node->sceneRotation());
+            QVector3D rotatedAxis = m.mapVector(checkAxis);
+
+            // If the axis vector is still aligned with any global axis after rotate,
+            // we can use the aligned math
+            int ones = 0;
+            int zeros = 0;
+            for (int j = 0; j < 3; ++j) {
+                if (qFuzzyIsNull(rotatedAxis[j])) {
+                    ++zeros;
+                    if (axisCount == 2)
+                        mappedSnapAxes[j] = 1.f;
+                    else
+                        mappedSnapAxes[j] = 0.f;
+                } else if (qFuzzyCompare(qAbs(rotatedAxis[j]), 1.f)) {
+                    ++ones;
+                    if (axisCount == 1)
+                        mappedSnapAxes[j] = 1.f;
+                    else
+                        mappedSnapAxes[j] = 0.f;
+                }
+            }
+            if (ones != 1 || zeros != 2)
+                isAligned = false;
+        }
+    }
+
+    if (isAligned) {
+        // When dragging along the global axes, we can snap to grid
+        auto snapAxis = [&](int axis) -> float {
+            if (mappedSnapAxes[axis] != 0.f) {
+                double c = newPos[axis];
+
+                if (!snapAbs)
+                    c -= startPos[axis];
+
+                const double snapMult = double(int(c / increment));
+                const double comp1 = snapMult * increment;
+                const double comp2 = c < 0 ? comp1 - increment : comp1 + increment;
+                c = qAbs(c - comp1) < qAbs(comp2 - c) ? comp1 : comp2;
+
+                if (!snapAbs)
+                    c += startPos[axis];
+
+                return float(c);
+            } else {
+                return newPos[axis];
+            }
+        };
+        return QVector3D(snapAxis(0), snapAxis(1), snapAxis(2));
+    } else {
+        // When drag is not aligned along global axes, just snap to interval along the drag vector
+        QVector3D dragVector = newPos - startPos;
+        float len = dragVector.length();
+        float comp1 = double(int(len / increment)) * increment;
+        float comp2 = comp1 + increment;
+        float snapLen = len - comp1 > comp2 - len ? comp2 : comp1;
+        dragVector.normalize();
+        dragVector *= snapLen;
+
+        return startPos + dragVector;
+    }
+    return newPos;
+}
+
+// newAngle and return are radians
+double GeneralHelper::adjustRotationForSnap(double newAngle)
+{
+    bool snapRot = m_snapRotation;
+    double increment = m_snapRotationInterval;
+
+    if (qFuzzyIsNull(newAngle) || !queryKeyboardForSnapping(snapRot, increment))
+        return newAngle;
+
+    double angleDeg = qRadiansToDegrees(newAngle);
+
+    double comp1 = double(int(angleDeg / increment)) * increment;
+    double comp2 = angleDeg > 0 ? comp1 + increment : comp1 - increment;
+
+    return qAbs(angleDeg - comp1) > qAbs(angleDeg - comp2) ?
+               qDegreesToRadians(comp2) : qDegreesToRadians(comp1);
+}
+
+static double adjustScaler(double newScale, double increment)
+{
+    double absScale = qAbs(newScale);
+    double comp1 = 1. + double(int(int(absScale / increment) - (1. / increment))) * increment;
+    double comp2 = comp1 + increment;
+    double retVal = absScale - comp1 > comp2 - absScale ? comp2 : comp1;
+    if (newScale < 0)
+        retVal *= -1.;
+    return retVal;
+}
+
+double GeneralHelper::adjustScalerForSnap(double newScale)
+{
+    bool snapScale = m_snapScale;
+    double increment = m_snapScaleInterval;
+
+    if (!queryKeyboardForSnapping(snapScale, increment))
+        return newScale;
+
+    return adjustScaler(newScale, increment);
+}
+
+QVector3D GeneralHelper::adjustScaleForSnap(const QVector3D &newScale)
+{
+    bool snapScale = m_snapScale;
+    double increment = m_snapScaleInterval;
+
+    if (qFuzzyIsNull(newScale.length()) || !queryKeyboardForSnapping(snapScale, increment))
+        return newScale;
+
+    QVector3D adjScale = newScale;
+    for (int i = 0; i < 3; ++i) {
+        if (!qFuzzyCompare(newScale[i], 1.f))
+            adjScale[i] = adjustScaler(newScale[i], increment);
+    }
+
+    return adjScale;
+}
+
+void GeneralHelper::setSnapPositionInterval(double interval)
+{
+    if (m_snapPositionInterval != interval) {
+        m_snapPositionInterval = interval;
+        emit minGridStepChanged();
+    }
+}
+
+QString GeneralHelper::formatVectorDragTooltip(const QVector3D &vec, const QString &suffix) const
+{
+    return QObject::tr("x:%L1 y:%L2 z:%L3%L4")
+        .arg(vec.x(), 0, 'f', 1).arg(vec.y(), 0, 'f', 1)
+        .arg(vec.z(), 0, 'f', 1).arg(suffix);
+}
+
+QString GeneralHelper::formatSnapStr(bool snapEnabled, double increment, const QString &suffix) const
+{
+    double inc = increment;
+    QString snapStr;
+    if (queryKeyboardForSnapping(snapEnabled, inc)) {
+        int precision = 0;
+        // We can have fractional snap if shift is pressed, so adjust precision in those cases
+        if (qRound(inc * 10.) != qRound(inc) * 10)
+            precision = 1;
+        snapStr = QObject::tr(" (Snap: %1%2)").arg(inc, 0, 'f', precision).arg(suffix);
+    }
+    return snapStr;
+}
+
+QString GeneralHelper::snapPositionDragTooltip(const QVector3D &pos) const
+{
+    return formatVectorDragTooltip(pos, formatSnapStr(m_snapPosition, m_snapPositionInterval, {}));
+}
+
+QString GeneralHelper::snapRotationDragTooltip(double angle) const
+{
+    return tr("%L1%L2").arg(angle, 0, 'f', 1).arg(formatSnapStr(m_snapRotation, m_snapRotationInterval, {}));
+}
+
+QString GeneralHelper::snapScaleDragTooltip(const QVector3D &scale) const
+{
+    return formatVectorDragTooltip(scale, formatSnapStr(m_snapScale, m_snapScaleInterval * 100., tr("%")));
+}
+
+double GeneralHelper::minGridStep() const
+{
+    // Minimum grid step is a multiple of snap interval, as the last step is divided to subgrid
+    return 2. * m_snapPositionInterval;
+}
+
+void GeneralHelper::setBgColor(const QVariant &colors)
+{
+    if (m_bgColor != colors) {
+        m_bgColor = colors;
+        emit bgColorChanged();
+    }
+}
+
+QVector3D GeneralHelper::dirForRotation(const QQuaternion &rotation) const
+{
+    QMatrix4x4 m;
+    m.rotate(rotation);
+    const float *dataPtr(m.data());
+    return QVector3D(dataPtr[8], dataPtr[9], dataPtr[10]).normalized();
+}
+
 void GeneralHelper::handlePendingToolStateUpdate()
 {
     m_toolStateUpdateTimer.stop();
@@ -794,9 +1102,8 @@ QVector3D GeneralHelper::pivotScenePosition(QQuick3DNode *node) const
     QMatrix4x4 localTransform;
     localTransform.translate(node->position());
 
-    const QMatrix4x4 sceneTransform = parent->sceneTransform() * localTransform;
-
-    return mat44::getPosition(sceneTransform);
+    const QMatrix4x4 m = parent->sceneTransform() * localTransform;
+    return QVector3D(m(0, 3), m(1, 3), m(2, 3));
 }
 
 // Calculate bounds for given node, including all child nodes.
@@ -816,15 +1123,10 @@ bool GeneralHelper::getBounds(QQuick3DViewport *view3D, QQuick3DNode *node, QVec
     auto renderNode = static_cast<QSSGRenderNode *>(nodePriv->spatialNode);
 
     if (renderNode) {
-#if QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
-        if (renderNode->flags.testFlag(QSSGRenderNode::Flag::TransformDirty))
-            renderNode->calculateLocalTransform();
-#else
         if (renderNode->isDirty(QSSGRenderNode::DirtyFlag::TransformDirty)) {
             renderNode->localTransform = QSSGRenderNode::calculateTransformMatrix(
                         node->position(), node->scale(), node->pivot(), node->rotation());
         }
-#endif
         localTransform = renderNode->localTransform;
     }
 
@@ -889,19 +1191,17 @@ bool GeneralHelper::getBounds(QQuick3DViewport *view3D, QQuick3DNode *node, QVec
         if (auto renderModel = static_cast<QSSGRenderModel *>(renderNode)) {
             QWindow *window = static_cast<QWindow *>(view3D->window());
             if (window) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 1)
                 QSSGRef<QSSGRenderContextInterface> context;
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-                context = QSSGRenderContextInterface::getRenderContextInterface(quintptr(window));
-#else
                 context = QQuick3DObjectPrivate::get(node)->sceneManager->rci;
-#endif
                 if (!context.isNull()) {
-                    auto bufferManager = context->bufferManager();
-#if QT_VERSION < QT_VERSION_CHECK(6, 3, 0)
-                    QSSGBounds3 bounds = renderModel->getModelBounds(bufferManager);
 #else
-                    QSSGBounds3 bounds = bufferManager->getModelBounds(renderModel);
+                const auto &sm = QQuick3DObjectPrivate::get(node)->sceneManager;
+                auto context = sm->wattached ? sm->wattached->rci().get() : nullptr;
+                if (context) {
 #endif
+                    const auto &bufferManager(context->bufferManager());
+                    QSSGBounds3 bounds = bufferManager->getModelBounds(renderModel);
                     QVector3D center = bounds.center();
                     QVector3D extents = bounds.extents();
                     QVector3D localMin = center - extents;
@@ -928,6 +1228,17 @@ bool GeneralHelper::getBounds(QQuick3DViewport *view3D, QQuick3DNode *node, QVec
     transformCorners(localTransform, minBounds, maxBounds, localMinBounds, localMaxBounds);
 
     return hasModel;
+}
+
+bool GeneralHelper::compareVectors(const QVector3D &v1, const QVector3D &v2) const
+{
+    return qFuzzyCompare(v1[0], v2[0]) && qFuzzyCompare(v1[1], v2[1]) && qFuzzyCompare(v1[2], v2[2]);
+}
+
+bool GeneralHelper::compareQuaternions(const QQuaternion &q1, const QQuaternion &q2) const
+{
+    return qFuzzyCompare(q1.x(), q2.x()) && qFuzzyCompare(q1.y(), q2.y())
+           && qFuzzyCompare(q1.z(), q2.z()) && qFuzzyCompare(q1.scalar(), q2.scalar());
 }
 
 }

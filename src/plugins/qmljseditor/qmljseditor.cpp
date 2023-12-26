@@ -55,14 +55,18 @@
 #include <texteditor/textmark.h>
 
 #include <utils/algorithm.h>
-#include <utils/delegates.h>
 #include <utils/changeset.h>
+#include <utils/delegates.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/uncommentselection.h>
 
+#include <languageclient/languageclientmanager.h>
+#include <languageclient/locatorfilter.h>
+#include <languageclient/languageclientsymbolsupport.h>
+
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QFileInfo>
 #include <QHeaderView>
 #include <QMenu>
 #include <QMetaMethod>
@@ -90,6 +94,18 @@ using namespace Utils;
 
 namespace QmlJSEditor {
 
+static LanguageClient::Client *getQmllsClient(const Utils::FilePath &fileName)
+{
+    // the value in disableBuiltinCodemodel is only valid when useQmlls is enabled
+    if (QmlJsEditingSettings::get().qmllsSettings().useQmlls
+        && !QmlJsEditingSettings::get().qmllsSettings().disableBuiltinCodemodel)
+        return nullptr;
+
+    auto client = LanguageClient::LanguageClientManager::clientForFilePath(fileName);
+    return client;
+}
+
+
 //
 // QmlJSEditorWidget
 //
@@ -116,7 +132,7 @@ void QmlJSEditorWidget::finalizeInitialization()
             this, &QmlJSEditorWidget::updateOutlineIndexNow);
 
     m_modelManager = ModelManagerInterface::instance();
-    m_contextPane = Internal::QmlJSEditorPlugin::quickToolBar();
+    m_contextPane = QuickToolBar::instance();
 
     m_modelManager->activateScan();
 
@@ -126,7 +142,7 @@ void QmlJSEditorWidget::finalizeInitialization()
     if (m_contextPane) {
         connect(this, &QmlJSEditorWidget::cursorPositionChanged,
                 &m_contextPaneTimer, QOverload<>::of(&QTimer::start));
-        connect(m_contextPane, &IContextPane::closed, this, &QmlJSEditorWidget::showTextMarker);
+        connect(m_contextPane, &QuickToolBar::closed, this, &QmlJSEditorWidget::showTextMarker);
     }
 
     connect(this->document(), &QTextDocument::modificationChanged,
@@ -144,10 +160,8 @@ void QmlJSEditorWidget::finalizeInitialization()
 
 void QmlJSEditorWidget::restoreState(const QByteArray &state)
 {
-    QStringList qmlTypes { QmlJSTools::Constants::QML_MIMETYPE,
-                QmlJSTools::Constants::QBS_MIMETYPE,
-                QmlJSTools::Constants::QMLTYPES_MIMETYPE,
-                QmlJSTools::Constants::QMLUI_MIMETYPE };
+    using namespace Utils::Constants;
+    QStringList qmlTypes = {QML_MIMETYPE, QBS_MIMETYPE, QMLTYPES_MIMETYPE, QMLUI_MIMETYPE};
 
     if (QmlJsEditingSettings::get().foldAuxData() && qmlTypes.contains(textDocument()->mimeType())) {
         int version = 0;
@@ -311,8 +325,7 @@ void QmlJSEditorWidget::updateContextPane()
 
         if (m_contextPane->isAvailable(this, info.document, newNode) &&
             !m_contextPane->widget()->isVisible()) {
-            QList<RefactorMarker> markers
-                = RefactorMarker::filterOutType(refactorMarkers(), QT_QUICK_TOOLBAR_MARKER_ID);
+            RefactorMarkers markers;
             if (UiObjectMember *m = newNode->uiObjectMemberCast()) {
                 const int start = qualifiedTypeNameId(m)->identifierToken.begin();
                 for (UiQualifiedId *q = qualifiedTypeNameId(m); q; q = q->next) {
@@ -333,10 +346,9 @@ void QmlJSEditorWidget::updateContextPane()
                     }
                 }
             }
-            setRefactorMarkers(markers);
+            setRefactorMarkers(markers, QT_QUICK_TOOLBAR_MARKER_ID);
         } else if (oldNode != newNode) {
-            setRefactorMarkers(
-                RefactorMarker::filterOutType(refactorMarkers(), QT_QUICK_TOOLBAR_MARKER_ID));
+            clearRefactorMarkers(QT_QUICK_TOOLBAR_MARKER_ID);
         }
         m_oldCursorPosition = position();
 
@@ -731,7 +743,7 @@ void QmlJSEditorWidget::inspectElementUnderCursor() const
 
     widget->setReadOnly(true);
     widget->textDocument()->setTemporary(true);
-    widget->textDocument()->setSyntaxHighlighter(new QmlJSHighlighter(widget->document()));
+    widget->textDocument()->resetSyntaxHighlighter([] { return new QmlJSHighlighter(); });
 
     const QString buf = inspectCppComponent(cppValue);
     widget->textDocument()->setPlainText(buf);
@@ -739,9 +751,18 @@ void QmlJSEditorWidget::inspectElementUnderCursor() const
 
 void QmlJSEditorWidget::findLinkAt(const QTextCursor &cursor,
                                    const Utils::LinkHandler &processLinkCallback,
-                                   bool /*resolveTarget*/,
+                                   bool resolveTarget,
                                    bool /*inNextSplit*/)
 {
+    if (auto client = getQmllsClient(textDocument()->filePath())) {
+        client->findLinkAt(textDocument(),
+                           cursor,
+                           processLinkCallback,
+                           resolveTarget,
+                           LanguageClient::LinkTarget::SymbolDef);
+        return;
+    }
+
     const SemanticInfo semanticInfo = m_qmlJsEditorDocument->semanticInfo();
     if (! semanticInfo.isValid())
         return processLinkCallback(Utils::Link());
@@ -768,13 +789,18 @@ void QmlJSEditorWidget::findLinkAt(const QTextCursor &cursor,
         return;
     }
 
+    const ProjectExplorer::Project * const project = ProjectExplorer::ProjectTree::currentProject();
+    ProjectExplorer::ProjectNode* projectRootNode = nullptr;
+    if (project) {
+        projectRootNode = project->rootProjectNode();
+    }
+
     // string literals that could refer to a file link to them
     if (auto literal = cast<const StringLiteral *>(node)) {
         const QString &text = literal->value.toString();
         if (text.startsWith("qrc:/")) {
-            const ProjectExplorer::Project * const project = ProjectExplorer::ProjectTree::currentProject();
-            if (project && project->rootProjectNode()) {
-                const ProjectExplorer::Node * const nodeForPath = project->rootProjectNode()->findNode(
+            if (projectRootNode) {
+                const ProjectExplorer::Node * const nodeForPath = projectRootNode->findNode(
                             [qrcPath = text.mid(text.indexOf(':') + 1)](ProjectExplorer::Node *n) {
                     if (!n->asFileNode())
                         return false;
@@ -833,14 +859,33 @@ void QmlJSEditorWidget::findLinkAt(const QTextCursor &cursor,
 
     if (auto q = AST::cast<const AST::UiQualifiedId *>(node)) {
         for (const AST::UiQualifiedId *tail = q; tail; tail = tail->next) {
-            if (! tail->next && cursorPosition <= tail->identifierToken.end()) {
-                link.linkTextStart = tail->identifierToken.begin();
-                link.linkTextEnd = tail->identifierToken.end();
+            if (tail->next || !(cursorPosition <= tail->identifierToken.end())) {
+                continue;
+            }
+
+            link.linkTextStart = tail->identifierToken.begin();
+            link.linkTextEnd = tail->identifierToken.end();
+
+            if (!value->asCppComponentValue() || !projectRootNode) {
                 processLinkCallback(link);
                 return;
             }
-        }
 
+            const ProjectExplorer::Node * const nodeForPath = projectRootNode->findNode(
+                [&fileName](ProjectExplorer::Node *n) {
+                    const auto fileNode = n->asFileNode();
+                    if (!fileNode)
+                        return false;
+                    Utils::FilePath filePath = n->filePath();
+                    return filePath.endsWith(fileName.toUserOutput());
+                });
+            if (nodeForPath) {
+                link.targetFilePath = nodeForPath->filePath();
+                processLinkCallback(link);
+                return;
+            }
+            // else we will process an empty link below to avoid an error dialog
+        }
     } else if (auto id = AST::cast<const AST::IdentifierExpression *>(node)) {
         link.linkTextStart = id->firstSourceLocation().begin();
         link.linkTextEnd = id->lastSourceLocation().end();
@@ -859,12 +904,26 @@ void QmlJSEditorWidget::findLinkAt(const QTextCursor &cursor,
 
 void QmlJSEditorWidget::findUsages()
 {
-    m_findReferences->findUsages(textDocument()->filePath(), textCursor().position());
+    const Utils::FilePath fileName = textDocument()->filePath();
+
+    if (auto client = getQmllsClient(fileName)) {
+        client->symbolSupport().findUsages(textDocument(), textCursor());
+    } else {
+        const int offset = textCursor().position();
+        m_findReferences->findUsages(fileName, offset);
+    }
 }
 
 void QmlJSEditorWidget::renameSymbolUnderCursor()
 {
-    m_findReferences->renameUsages(textDocument()->filePath(), textCursor().position());
+    const Utils::FilePath fileName = textDocument()->filePath();
+
+    if (auto client = getQmllsClient(fileName)) {
+        client->symbolSupport().renameSymbol(textDocument(), textCursor(), QString());
+    } else {
+        const int offset = textCursor().position();
+        m_findReferences->renameUsages(fileName, offset);
+    }
 }
 
 void QmlJSEditorWidget::showContextPane()
@@ -877,8 +936,7 @@ void QmlJSEditorWidget::showContextPane()
                              &scopeChain,
                              newNode, false, true);
         m_oldCursorPosition = position();
-        setRefactorMarkers(
-            RefactorMarker::filterOutType(refactorMarkers(), QT_QUICK_TOOLBAR_MARKER_ID));
+        clearRefactorMarkers(QT_QUICK_TOOLBAR_MARKER_ID);
     }
 }
 
@@ -1042,7 +1100,7 @@ std::unique_ptr<AssistInterface> QmlJSEditorWidget::createAssistInterface(
         return std::make_unique<Internal::QmlJSQuickFixAssistInterface>(
             const_cast<QmlJSEditorWidget *>(this), reason);
     }
-    return nullptr;
+    return TextEditorWidget::createAssistInterface(assistKind, reason);
 }
 
 QString QmlJSEditorWidget::foldReplacementText(const QTextBlock &block) const
@@ -1097,11 +1155,11 @@ QmlJSEditorFactory::QmlJSEditorFactory(Utils::Id _id)
     setId(_id);
     setDisplayName(::Core::Tr::tr("QMLJS Editor"));
 
-    addMimeType(QmlJSTools::Constants::QML_MIMETYPE);
-    addMimeType(QmlJSTools::Constants::QMLPROJECT_MIMETYPE);
-    addMimeType(QmlJSTools::Constants::QBS_MIMETYPE);
-    addMimeType(QmlJSTools::Constants::QMLTYPES_MIMETYPE);
-    addMimeType(QmlJSTools::Constants::JS_MIMETYPE);
+    using namespace Utils::Constants;
+    addMimeType(QML_MIMETYPE);
+    addMimeType(QMLPROJECT_MIMETYPE);
+    addMimeType(QMLTYPES_MIMETYPE);
+    addMimeType(JS_MIMETYPE);
 
     setDocumentCreator([this]() { return new QmlJSEditorDocument(id()); });
     setEditorWidgetCreator([]() { return new QmlJSEditorWidget; });
@@ -1125,7 +1183,7 @@ QmlJSEditorFactory::QmlJSEditorFactory(Utils::Id _id)
 
 void QmlJSEditorFactory::decorateEditor(TextEditorWidget *editor)
 {
-    editor->textDocument()->setSyntaxHighlighter(new QmlJSHighlighter);
+    editor->textDocument()->resetSyntaxHighlighter([] { return new QmlJSHighlighter(); });
     editor->textDocument()->setIndenter(new Internal::Indenter(editor->textDocument()->document()));
     editor->setAutoCompleter(new AutoCompleter);
 }

@@ -1,6 +1,8 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
+#pragma once
+
 #include "cppquickfix.h"
 #include "cpptoolstestcase.h"
 
@@ -26,8 +28,8 @@ public:
     /// Exactly one QuickFixTestDocument must contain the cursor position marker '@'
     /// or "@{start}" and "@{end}"
     BaseQuickFixTestCase(const QList<TestDocumentPtr> &testDocuments,
-                         const ProjectExplorer::HeaderPaths &headerPaths
-                            = ProjectExplorer::HeaderPaths());
+                         const ProjectExplorer::HeaderPaths &headerPaths,
+                         const QByteArray &clangFormatSettings = {});
 
     ~BaseQuickFixTestCase();
 
@@ -54,7 +56,8 @@ public:
                           const ProjectExplorer::HeaderPaths &headerPaths
                             = ProjectExplorer::HeaderPaths(),
                           int operationIndex = 0,
-                          const QByteArray &expectedFailMessage = QByteArray());
+                          const QByteArray &expectedFailMessage = {},
+                          const QByteArray &clangFormatSettings = {});
 
     static void run(const QList<TestDocumentPtr> &testDocuments,
                     CppQuickFixFactory *factory,
@@ -101,8 +104,8 @@ private slots:
     void testInsertQtPropertyMembers_data();
     void testInsertQtPropertyMembers();
 
-    void testInsertMemberFromInitialization_data();
-    void testInsertMemberFromInitialization();
+    void testInsertMemberFromUse_data();
+    void testInsertMemberFromUse();
 
     void testConvertQt4ConnectConnectOutOfClass();
     void testConvertQt4ConnectConnectWithinClass_data();
@@ -133,12 +136,19 @@ private slots:
     void testInsertDefFromDeclTemplateClass();
     void testInsertDefFromDeclTemplateClassWithValueParam();
     void testInsertDefFromDeclTemplateFunction();
+    void testInsertDefFromDeclTemplateClassAndTemplateFunction();
     void testInsertDefFromDeclFunctionWithSignedUnsignedArgument();
     void testInsertDefFromDeclNotTriggeredForFriendFunc();
     void testInsertDefFromDeclMinimalFunctionParameterType();
     void testInsertDefFromDeclAliasTemplateAsReturnType();
     void testInsertDefsFromDecls_data();
     void testInsertDefsFromDecls();
+    void testInsertAndFormatDefsFromDecls();
+
+    void testInsertDefOutsideFromDeclTemplateClassAndTemplateFunction();
+    void testInsertDefOutsideFromDeclTemplateClass();
+    void testInsertDefOutsideFromDeclTemplateFunction();
+    void testInsertDefOutsideFromDeclFunction();
 
     void testInsertDeclFromDef();
     void testInsertDeclFromDefTemplateFuncTypename();
@@ -182,19 +192,10 @@ private slots:
     void testMoveAllFuncDefOutsideClassWithBaseClass();
     void testMoveAllFuncDefOutsideIgnoreMacroCode();
 
-    void testMoveFuncDefToDeclMemberFunc();
-    void testMoveFuncDefToDeclMemberFuncOutside();
-    void testMoveFuncDefToDeclMemberFuncToCppNS();
-    void testMoveFuncDefToDeclMemberFuncToCppNSUsing();
-    void testMoveFuncDefToDeclMemberFuncOutsideWithNs();
-    void testMoveFuncDefToDeclFreeFuncToCpp();
-    void testMoveFuncDefToDeclFreeFuncToCppNS();
-    void testMoveFuncDefToDeclCtorWithInitialization();
-    void testMoveFuncDefToDeclStructWithAssignedVariable();
+    void testMoveFuncDefToDecl_data();
+    void testMoveFuncDefToDecl();
+
     void testMoveFuncDefToDeclMacroUses();
-    void testMoveFuncDefToDeclOverride();
-    void testMoveFuncDefToDeclTemplate();
-    void testMoveFuncDefToDeclTemplateFunction();
 
     void testAssignToLocalVariableTemplates();
 
@@ -217,6 +218,12 @@ private slots:
 
     void testGenerateConstructor_data();
     void testGenerateConstructor();
+
+    void testChangeCommentType_data();
+    void testChangeCommentType();
+
+    void testMoveComments_data();
+    void testMoveComments();
 };
 
 } // namespace Tests

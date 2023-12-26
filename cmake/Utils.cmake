@@ -22,6 +22,9 @@ function(setup_dependencies_component)
       set(_elfutils_arg "--elfutils \"${_elfutils_path}\"")
     endif()
     install(CODE "
+        if (CMAKE_VERSION GREATER_EQUAL 3.19)
+          set(QTC_COMMAND_ERROR_IS_FATAL COMMAND_ERROR_IS_FATAL ANY)
+        endif()
         # DESTDIR is set for e.g. the cpack DEB generator, but is empty in other situations
         if(DEFINED ENV{DESTDIR})
           set(DESTDIR_WITH_SEP \"\$ENV{DESTDIR}/\")
@@ -32,7 +35,7 @@ function(setup_dependencies_component)
         set(_ide_app_target \"\${_default_app_target}\")
         if (NOT EXISTS \"\${_ide_app_target}\")
           # The component CPack generators (WIX, NSIS64, IFW) install every component with their own CMAKE_INSTALL_PREFIX
-          # directory and since deployqt.py needs the path to IDE_APP_TARGET the line below is needeed
+          # directory and since deploy.py needs the path to IDE_APP_TARGET the line below is needeed
           string(REPLACE \"Dependencies\" \"${CMAKE_INSTALL_DEFAULT_COMPONENT_NAME}\" _ide_app_target \"\${_ide_app_target}\")
         endif()
         if (NOT EXISTS \"\${_ide_app_target}\")
@@ -41,13 +44,14 @@ function(setup_dependencies_component)
         endif()
         execute_process(COMMAND
           \"${Python3_EXECUTABLE}\"
-          \"${CMAKE_CURRENT_LIST_DIR}/scripts/deployqt.py\"
+          \"-u\"
+          \"${CMAKE_CURRENT_LIST_DIR}/scripts/deploy.py\"
           ${_llvm_arg}
           ${_elfutils_arg}
           \"\${_ide_app_target}\"
           \"${_qmake_binary}\"
           COMMAND_ECHO STDOUT
-          \${QTC_COMMAND_ERROR_IS_FATAL}
+          ${QTC_COMMAND_ERROR_IS_FATAL}
           )
       "
       COMPONENT Dependencies

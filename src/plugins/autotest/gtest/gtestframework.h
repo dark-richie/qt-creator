@@ -4,33 +4,38 @@
 #pragma once
 
 #include "../itestframework.h"
-#include "gtestconstants.h"
-#include "gtestsettings.h"
 
-namespace Autotest {
-namespace Internal {
+#include "gtestconstants.h"
+
+namespace Autotest::Internal {
 
 class GTestFramework : public ITestFramework
 {
 public:
     GTestFramework();
 
-    static GTest::Constants::GroupMode groupMode();
+    Utils::IntegerAspect iterations{this};
+    Utils::IntegerAspect seed{this};
+    Utils::BoolAspect runDisabled{this};
+    Utils::BoolAspect shuffle{this};
+    Utils::BoolAspect repeat{this};
+    Utils::BoolAspect throwOnFailure{this};
+    Utils::BoolAspect breakOnFailure{this};
+    Utils::SelectionAspect groupMode{this};
+    Utils::StringAspect gtestFilter{this};
+
+    static GTest::Constants::GroupMode staticGroupMode();
     static QString currentGTestFilter();
 
     QStringList testNameForSymbolName(const QString &symbolName) const override;
-private:
-    const char *name() const override;
-    QString displayName() const override;
-    unsigned priority() const override;
+
     QString groupingToolTip() const override;
-    ITestSettings *testSettings() override { return &m_settings; }
     ITestParser *createTestParser() override;
     ITestTreeItem *createRootNode() override;
 
-    GTestSettings m_settings;
-    GTestSettingsPage m_settingsPage{&m_settings, settingsId()};
+    void readSettings() final;
 };
 
-} // namespace Internal
-} // namespace Autotest
+GTestFramework &theGTestFramework();
+
+} // Autotest::Internal

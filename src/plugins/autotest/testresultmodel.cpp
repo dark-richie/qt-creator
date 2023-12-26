@@ -4,17 +4,19 @@
 #include "testresultmodel.h"
 
 #include "autotesticons.h"
-#include "autotestplugin.h"
+#include "testresultspane.h"
 #include "testrunner.h"
 #include "testsettings.h"
 #include "testtreeitem.h"
 #include "testtreemodel.h"
 
 #include <projectexplorer/projectexplorericons.h>
+#include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
 #include <QFontMetrics>
 #include <QIcon>
+#include <QToolButton>
 
 using namespace Utils;
 
@@ -138,6 +140,7 @@ void TestResultItem::updateResult(bool &changed, ResultType addedChildType,
         break;
     case ResultType::ExpectedFail:
     case ResultType::MessageWarn:
+    case ResultType::MessageError:
     case ResultType::MessageSystem:
     case ResultType::Skip:
     case ResultType::BlacklistedFail:
@@ -185,6 +188,17 @@ TestResultItem *TestResultItem::createAndAddIntermediateFor(const TestResultItem
     result.setResult(ResultType::TestStart);
     TestResultItem *intermediate = new TestResultItem(result);
     appendChild(intermediate);
+    // FIXME: make the expand button's state easier accessible
+    auto widgets = TestResultsPane::instance()->toolBarWidgets();
+    if (!widgets.empty()) {
+        if (QToolButton *expand = qobject_cast<QToolButton *>(widgets.at(0))) {
+            if (expand->isChecked()) {
+                QMetaObject::invokeMethod(TestResultsPane::instance(),
+                                          [intermediate] { intermediate->expand(); },
+                                          Qt::QueuedConnection);
+            }
+        }
+    }
     return intermediate;
 }
 
@@ -203,10 +217,7 @@ bool TestResultItem::updateDescendantTypes(ResultType t)
     if (t == ResultType::TestStart || t == ResultType::TestEnd) // these are special
         return false;
 
-    if (m_descendantsTypes.contains(t))
-        return false;
-    m_descendantsTypes.insert(t);
-    return true;
+    return Utils::insert(m_descendantsTypes, t);
 }
 
 bool TestResultItem::descendantTypesContainsAnyOf(const QSet<ResultType> &types) const
@@ -274,7 +285,7 @@ void TestResultModel::addTestResult(const TestResult &testResult, bool autoExpan
 
     TestResultItem *newItem = new TestResultItem(testResult);
     TestResultItem *root = nullptr;
-    if (AutotestPlugin::settings()->displayApplication) {
+    if (testSettings().displayApplication()) {
         const QString application = testResult.id();
         if (!application.isEmpty()) {
             root = rootItem()->findFirstLevelChild([&application](TestResultItem *child) {
@@ -299,9 +310,8 @@ void TestResultModel::addTestResult(const TestResult &testResult, bool autoExpan
     if (parentItem) {
         parentItem->appendChild(newItem);
         if (autoExpand) {
-            parentItem->expand();
-            newItem->expand();
-            newItem->forAllChildren([](TreeItem *it) { it->expand(); });
+            QMetaObject::invokeMethod(this, [parentItem]{ parentItem->expand(); },
+                                      Qt::QueuedConnection);
         }
         updateParent(newItem);
     } else {
@@ -468,8 +478,7 @@ void TestResultFilterModel::enableAllResultTypes(bool enabled)
 
 void TestResultFilterModel::toggleTestResultType(ResultType type)
 {
-    if (m_enabled.contains(type)) {
-        m_enabled.remove(type);
+    if (m_enabled.remove(type)) {
         if (type == ResultType::MessageInternal)
             m_enabled.remove(ResultType::TestEnd);
         if (type == ResultType::MessageDebug)

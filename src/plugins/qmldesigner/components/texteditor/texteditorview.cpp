@@ -16,27 +16,30 @@
 #include <nodelistproperty.h>
 #include <qmldesignerplugin.h>
 
-#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
+#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
+#include <coreplugin/modemanager.h>
 
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorconstants.h>
 #include <qmljseditor/qmljseditordocument.h>
 
-#include <qmljs/qmljsmodelmanagerinterface.h>
-#include <qmljs/qmljsreformatter.h>
 #include <utils/changeset.h>
 #include <utils/qtcassert.h>
+#include <utils/uniqueobjectptr.h>
+#include <qmljs/qmljsmodelmanagerinterface.h>
+#include <qmljs/qmljsreformatter.h>
 
+#include <qwindow.h>
 #include <QDebug>
 #include <QPair>
+#include <QPointer>
 #include <QString>
 #include <QTimer>
-#include <QPointer>
 
 namespace QmlDesigner {
 
@@ -78,15 +81,15 @@ void TextEditorView::modelAttached(Model *model)
 
     AbstractView::modelAttached(model);
 
-    auto textEditor = qobject_cast<TextEditor::BaseTextEditor *>(
-                QmlDesignerPlugin::instance()->currentDesignDocument()->textEditor()->duplicate());
+    auto textEditor = Utils::UniqueObjectLatePtr<TextEditor::BaseTextEditor>(
+        QmlDesignerPlugin::instance()->currentDesignDocument()->textEditor()->duplicate());
 
     // Set the context of the text editor, but we add another special context to override shortcuts.
     Core::Context context = textEditor->context();
     context.prepend(TEXTEDITOR_CONTEXT_ID);
     m_textEditorContext->setContext(context);
 
-    m_widget->setTextEditor(textEditor);
+    m_widget->setTextEditor(std::move(textEditor));
 }
 
 void TextEditorView::modelAboutToBeDetached(Model *model)
@@ -96,13 +99,16 @@ void TextEditorView::modelAboutToBeDetached(Model *model)
     m_widget->setTextEditor(nullptr);
 
     // in case the user closed it explicit we do not want to do anything with the editor
-    if (TextEditor::BaseTextEditor *textEditor =
-            QmlDesignerPlugin::instance()->currentDesignDocument()->textEditor()) {
-        QmlDesignerPlugin::instance()->emitCurrentTextEditorChanged(textEditor);
+    if (Core::ModeManager::currentModeId() == Core::Constants::MODE_DESIGN) {
+        if (TextEditor::BaseTextEditor *textEditor = QmlDesignerPlugin::instance()
+                                                         ->currentDesignDocument()
+                                                         ->textEditor()) {
+            QmlDesignerPlugin::instance()->emitCurrentTextEditorChanged(textEditor);
+        }
     }
 }
 
-void TextEditorView::importsChanged(const QList<Import> &/*addedImports*/, const QList<Import> &/*removedImports*/)
+void TextEditorView::importsChanged(const Imports &/*addedImports*/, const Imports &/*removedImports*/)
 {
 }
 
@@ -285,6 +291,14 @@ void TextEditorView::reformatFile()
 
         m_widget->textEditor()->setTextCursor(tc);
     }
+}
+
+void TextEditorView::jumpToModelNode(const ModelNode &modelNode)
+{
+    m_widget->jumpToModelNode(modelNode);
+
+    m_widget->window()->windowHandle()->requestActivate();
+    m_widget->textEditor()->widget()->setFocus();
 }
 
 void TextEditorView::instancePropertyChanged(const QList<QPair<ModelNode, PropertyName> > &/*propertyList*/)

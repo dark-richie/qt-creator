@@ -14,11 +14,11 @@
 #include <remotelinux/abstractremotelinuxdeploystep.h>
 
 #include <utils/commandline.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace Qdb::Internal {
 
@@ -28,50 +28,45 @@ public:
     QdbMakeDefaultAppStep(BuildStepList *bsl, Id id)
         : AbstractRemoteLinuxDeployStep(bsl, id)
     {
-        auto selection = addAspect<SelectionAspect>();
-        selection->setSettingsKey("QdbMakeDefaultDeployStep.MakeDefault");
-        selection->addOption(Tr::tr("Set this application to start by default"));
-        selection->addOption(Tr::tr("Reset default application"));
+        selection.setSettingsKey("QdbMakeDefaultDeployStep.MakeDefault");
+        selection.addOption(Tr::tr("Set this application to start by default"));
+        selection.addOption(Tr::tr("Reset default application"));
 
-        setInternalInitializer([this, selection] {
-            m_makeDefault = selection->value() == 0;
-            return isDeploymentPossible();
-        });
+        setInternalInitializer([this] { return isDeploymentPossible(); });
     }
 
 private:
-    Group deployRecipe() final
+    GroupItem deployRecipe() final
     {
-        const auto setupHandler = [this](QtcProcess &process) {
+        const auto onSetup = [this](Process &process) {
             QString remoteExe;
             if (RunConfiguration *rc = target()->activeRunConfiguration()) {
                 if (auto exeAspect = rc->aspect<ExecutableAspect>())
                     remoteExe = exeAspect->executable().nativePath();
             }
             CommandLine cmd{deviceConfiguration()->filePath(Constants::AppcontrollerFilepath)};
-            if (m_makeDefault && !remoteExe.isEmpty())
+            if (selection() == 0 && !remoteExe.isEmpty())
                 cmd.addArgs({"--make-default", remoteExe});
             else
                 cmd.addArg("--remove-default");
             process.setCommand(cmd);
-            QtcProcess *proc = &process;
-            connect(proc, &QtcProcess::readyReadStandardError, this, [this, proc] {
+            Process *proc = &process;
+            connect(proc, &Process::readyReadStandardError, this, [this, proc] {
                 handleStdErrData(proc->readAllStandardError());
             });
         };
-        const auto doneHandler = [this](const QtcProcess &) {
-            if (m_makeDefault)
+        const auto onDone = [this](const Process &process, DoneWith result) {
+            if (result != DoneWith::Success)
+                addErrorMessage(Tr::tr("Remote process failed: %1").arg(process.errorString()));
+            else if (selection() == 0)
                 addProgressMessage(Tr::tr("Application set as the default one."));
             else
                 addProgressMessage(Tr::tr("Reset the default application."));
         };
-        const auto errorHandler = [this](const QtcProcess &process) {
-            addErrorMessage(Tr::tr("Remote process failed: %1").arg(process.errorString()));
-        };
-        return Group { Process(setupHandler, doneHandler, errorHandler) };
+        return ProcessTask(onSetup, onDone);
     }
 
-    bool m_makeDefault = true;
+    SelectionAspect selection{this};
 };
 
 // QdbMakeDefaultAppStepFactory

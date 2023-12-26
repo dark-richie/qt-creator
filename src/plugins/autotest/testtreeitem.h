@@ -55,9 +55,9 @@ public:
                            const Utils::FilePath &filePath = {},
                            Type type = Root);
 
-    virtual QVariant data(int column, int role) const override;
-    virtual bool setData(int column, const QVariant &data, int role) override;
-    virtual Qt::ItemFlags flags(int column) const override;
+    QVariant data(int column, int role) const override;
+    bool setData(int column, const QVariant &data, int role) override;
+    Qt::ItemFlags flags(int column) const override;
 
     virtual Qt::CheckState checked() const;
     virtual bool canProvideTestConfiguration() const { return false; }
@@ -102,7 +102,7 @@ public:
                           Type type = Root);
 
     virtual TestTreeItem *copyWithoutChildren() = 0;
-    virtual QVariant data(int column, int role) const override;
+    QVariant data(int column, int role) const override;
     bool modifyTestCaseOrSuiteContent(const TestParseResult *result);
     bool modifyTestFunctionContent(const TestParseResult *result);
     bool modifyDataTagContent(const TestParseResult *result);
@@ -115,7 +115,7 @@ public:
     void setProFile(const Utils::FilePath &proFile) { m_proFile = proFile; }
     void markForRemoval(bool mark);
     void markForRemovalRecursively(bool mark);
-    virtual void markForRemovalRecursively(const Utils::FilePath &filepath);
+    virtual void markForRemovalRecursively(const QSet<Utils::FilePath> &filePaths);
     virtual bool removeOnSweepIfEmpty() const { return type() == GroupNode; }
     bool markedForRemoval() const { return m_status == MarkedForRemoval; }
     bool newlyAdded() const { return m_status == NewlyAdded; }
@@ -167,6 +167,7 @@ private:
     {
         NewlyAdded,
         MarkedForRemoval,
+        ForcedRootRemoval,      // only valid on rootNode
         Cleared
     };
 

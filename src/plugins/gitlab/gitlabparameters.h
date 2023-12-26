@@ -7,9 +7,10 @@
 #include <utils/id.h>
 
 QT_BEGIN_NAMESPACE
-class QSettings;
 class QJsonObject;
 QT_END_NAMESPACE
+
+namespace Utils { class QtcSettings; }
 
 namespace GitLab {
 
@@ -38,20 +39,27 @@ public:
     bool validateCert = true;
 };
 
-class GitLabParameters
+class GitLabParameters : public QObject
 {
+    Q_OBJECT
+
 public:
     GitLabParameters();
 
+    void assign(const GitLabParameters &other);
     bool equals(const GitLabParameters &other) const;
     bool isValid() const;
 
-    void toSettings(QSettings *s) const;
-    void fromSettings(const QSettings *s);
+    void toSettings(Utils::QtcSettings *s) const;
+    void fromSettings(const Utils::QtcSettings *s);
 
     GitLabServer currentDefaultServer() const;
     GitLabServer serverForId(const Utils::Id &id) const;
 
+signals:
+    void changed();
+
+public:
     friend bool operator==(const GitLabParameters &p1, const GitLabParameters &p2)
     {
         return p1.equals(p2);
@@ -65,6 +73,8 @@ public:
     QList<GitLabServer> gitLabServers;
     Utils::FilePath curl;
 };
+
+GitLabParameters &gitLabParameters();
 
 } // namespace GitLab
 

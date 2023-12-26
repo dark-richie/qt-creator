@@ -10,8 +10,10 @@
 #include "cpptoolsreuse.h"
 
 #include <coreplugin/icore.h>
+#include <coreplugin/session.h>
 
-#include <projectexplorer/session.h>
+#include <projectexplorer/projectpanelfactory.h>
+#include <projectexplorer/projectsettingswidget.h>
 
 #include <utils/algorithm.h>
 #include <utils/infolabel.h>
@@ -25,16 +27,19 @@
 #include <QDesktopServices>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QGuiApplication>
 #include <QInputDialog>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringListModel>
+#include <QTextBlock>
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <QVersionNumber>
-#include <QTextBlock>
 
 #include <limits>
+
+using namespace ProjectExplorer;
 
 namespace CppEditor::Internal {
 
@@ -73,15 +78,17 @@ CppCodeModelSettingsWidget::CppCodeModelSettingsWidget(CppCodeModelSettings *s)
     m_bigFilesLimitSpinBox->setValue(m_settings->indexerFileSizeLimitInMb());
 
     m_ignoreFilesCheckBox = new QCheckBox(Tr::tr("Ignore files"));
-    m_ignoreFilesCheckBox->setToolTip(Tr::tr(
-        "<html><head/><body><p>Ignore files that match these wildcard patterns, one wildcard per line.</p></body></html>"));
+    m_ignoreFilesCheckBox->setToolTip(
+        "<html><head/><body><p>"
+        + Tr::tr("Ignore files that match these wildcard patterns, one wildcard per line.")
+        + "</p></body></html>");
 
     m_ignoreFilesCheckBox->setChecked(m_settings->ignoreFiles());
     m_ignorePatternTextEdit = new QPlainTextEdit(m_settings->ignorePattern());
     m_ignorePatternTextEdit->setToolTip(m_ignoreFilesCheckBox->toolTip());
     m_ignorePatternTextEdit->setEnabled(m_ignoreFilesCheckBox->isChecked());
 
-    connect(m_ignoreFilesCheckBox, &QCheckBox::stateChanged, [this] {
+    connect(m_ignoreFilesCheckBox, &QCheckBox::stateChanged, this, [this] {
        m_ignorePatternTextEdit->setEnabled(m_ignoreFilesCheckBox->isChecked());
     });
 
@@ -103,7 +110,7 @@ CppCodeModelSettingsWidget::CppCodeModelSettingsWidget(CppCodeModelSettings *s)
     m_ignorePchCheckBox->setChecked(m_settings->pchUsage() == CppCodeModelSettings::PchUse_None);
     m_useBuiltinPreprocessorCheckBox->setChecked(m_settings->useBuiltinPreprocessor());
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     Column {
         Group {
@@ -192,6 +199,8 @@ class ClangdSettingsWidget::Private
 public:
     QCheckBox useClangdCheckBox;
     QComboBox indexingComboBox;
+    QComboBox headerSourceSwitchComboBox;
+    QComboBox completionRankingModelComboBox;
     QCheckBox autoIncludeHeadersCheckBox;
     QCheckBox sizeThresholdCheckBox;
     QSpinBox threadLimitSpinBox;
@@ -219,16 +228,34 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
         "<p>Background Priority: Minimum priority, runs on idle CPUs. May leave 'performance' "
         "cores unused.</p>"
         "<p>Normal Priority: Reduced priority compared to interactive work.</p>"
-        "Low Priority: Same priority as other clangd work.");
+        "<p>Low Priority: Same priority as other clangd work.</p>");
+    const QString headerSourceSwitchToolTip = Tr::tr(
+        "<p>The C/C++ backend to use for switching between header and source files.</p>"
+        "<p>While the clangd implementation has more capabilities than the built-in "
+        "code model, it tends to find false positives.</p>"
+        "<p>When \"Try Both\" is selected, clangd is used only if the built-in variant "
+        "does not find anything.</p>");
+    using RankingModel = ClangdSettings::CompletionRankingModel;
+    const QString completionRankingModelToolTip = Tr::tr(
+        "<p>Which model clangd should use to rank possible completions.</p>"
+        "<p>This determines the order of candidates in the combo box when doing code completion.</p>"
+        "<p>The \"%1\" model used by default results from (pre-trained) machine learning and "
+        "provides superior results on average.</p>"
+        "<p>If you feel that its suggestions stray too much from your expectations for your "
+        "code base, you can try switching to the hand-crafted \"%2\" model.</p>").arg(
+            ClangdSettings::rankingModelToDisplayString(RankingModel::DecisionForest),
+            ClangdSettings::rankingModelToDisplayString(RankingModel::Heuristics));
     const QString workerThreadsToolTip = Tr::tr(
         "Number of worker threads used by clangd. Background indexing also uses this many "
         "worker threads.");
     const QString autoIncludeToolTip = Tr::tr(
         "Controls whether clangd may insert header files as part of symbol completion.");
-    const QString documentUpdateToolTip = Tr::tr(
-        "Defines the amount of time Qt Creator waits before sending document changes to the "
-        "server.\n"
-        "If the document changes again while waiting, this timeout resets.");
+    const QString documentUpdateToolTip
+        //: %1 is the application name (Qt Creator)
+        = Tr::tr("Defines the amount of time %1 waits before sending document changes to the "
+                 "server.\n"
+                 "If the document changes again while waiting, this timeout resets.")
+              .arg(QGuiApplication::applicationDisplayName());
     const QString sizeThresholdToolTip = Tr::tr(
         "Files greater than this will not be opened as documents in clangd.\n"
         "The built-in code model will handle highlighting, completion and so on.");
@@ -249,11 +276,30 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
             d->indexingComboBox.setCurrentIndex(d->indexingComboBox.count() - 1);
     }
     d->indexingComboBox.setToolTip(indexingToolTip);
+    using SwitchMode = ClangdSettings::HeaderSourceSwitchMode;
+    for (SwitchMode mode : {SwitchMode::BuiltinOnly, SwitchMode::ClangdOnly, SwitchMode::Both}) {
+        d->headerSourceSwitchComboBox.addItem(
+            ClangdSettings::headerSourceSwitchModeToDisplayString(mode), int(mode));
+        if (mode == settings.headerSourceSwitchMode())
+            d->headerSourceSwitchComboBox.setCurrentIndex(
+                d->headerSourceSwitchComboBox.count() - 1);
+    }
+    d->headerSourceSwitchComboBox.setToolTip(headerSourceSwitchToolTip);
+    for (RankingModel model : {RankingModel::Default, RankingModel::DecisionForest,
+                               RankingModel::Heuristics}) {
+        d->completionRankingModelComboBox.addItem(
+            ClangdSettings::rankingModelToDisplayString(model), int(model));
+        if (model == settings.completionRankingModel())
+            d->completionRankingModelComboBox.setCurrentIndex(
+                d->completionRankingModelComboBox.count() - 1);
+    }
+    d->completionRankingModelComboBox.setToolTip(completionRankingModelToolTip);
+
     d->autoIncludeHeadersCheckBox.setText(Tr::tr("Insert header files on completion"));
     d->autoIncludeHeadersCheckBox.setChecked(settings.autoIncludeHeaders());
     d->autoIncludeHeadersCheckBox.setToolTip(autoIncludeToolTip);
     d->threadLimitSpinBox.setValue(settings.workerThreadLimit());
-    d->threadLimitSpinBox.setSpecialValueText("Automatic");
+    d->threadLimitSpinBox.setSpecialValueText(Tr::tr("Automatic"));
     d->threadLimitSpinBox.setToolTip(workerThreadsToolTip);
     d->documentUpdateThreshold.setMinimum(50);
     d->documentUpdateThreshold.setMaximum(10000);
@@ -294,6 +340,13 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
     indexingPriorityLabel->setToolTip(indexingToolTip);
     formLayout->addRow(indexingPriorityLabel, indexingPriorityLayout);
 
+    const auto headerSourceSwitchLayout = new QHBoxLayout;
+    headerSourceSwitchLayout->addWidget(&d->headerSourceSwitchComboBox);
+    headerSourceSwitchLayout->addStretch(1);
+    const auto headerSourceSwitchLabel = new QLabel(Tr::tr("Header/source switch mode:"));
+    headerSourceSwitchLabel->setToolTip(headerSourceSwitchToolTip);
+    formLayout->addRow(headerSourceSwitchLabel, headerSourceSwitchLayout);
+
     const auto threadLimitLayout = new QHBoxLayout;
     threadLimitLayout->addWidget(&d->threadLimitSpinBox);
     threadLimitLayout->addStretch(1);
@@ -306,6 +359,13 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
     limitResultsLayout->addWidget(&d->completionResults);
     limitResultsLayout->addStretch(1);
     formLayout->addRow(completionResultsLabel, limitResultsLayout);
+
+    const auto completionRankingModelLayout = new QHBoxLayout;
+    completionRankingModelLayout->addWidget(&d->completionRankingModelComboBox);
+    completionRankingModelLayout->addStretch(1);
+    const auto completionRankingModelLabel = new QLabel(Tr::tr("Completion ranking model:"));
+    completionRankingModelLabel->setToolTip(completionRankingModelToolTip);
+    formLayout->addRow(completionRankingModelLabel, completionRankingModelLayout);
 
     const auto documentUpdateThresholdLayout = new QHBoxLayout;
     documentUpdateThresholdLayout->addWidget(&d->documentUpdateThreshold);
@@ -369,7 +429,7 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
 
         connect(addButton, &QPushButton::clicked, this, [this, sessionsView] {
             QInputDialog dlg(sessionsView);
-            QStringList sessions = ProjectExplorer::SessionManager::sessions();
+            QStringList sessions = Core::SessionManager::sessions();
             QStringList currentSessions = d->sessionsModel.stringList();
             for (const QString &s : std::as_const(currentSessions))
                 sessions.removeOne(s);
@@ -401,7 +461,7 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
         else
             Core::EditorManager::openEditor(Utils::FilePath::fromString(link));
     });
-    layout->addWidget(Utils::Layouting::createHr());
+    layout->addWidget(Layouting::createHr());
     layout->addWidget(configFilesHelpLabel);
 
     layout->addStretch(1);
@@ -443,11 +503,16 @@ ClangdSettingsWidget::ClangdSettingsWidget(const ClangdSettings::Data &settingsD
             labelSetter.setWarning(errorMessage);
     };
     connect(&d->clangdChooser, &Utils::PathChooser::textChanged, this, updateWarningLabel);
+    connect(&d->clangdChooser, &Utils::PathChooser::validChanged, this, updateWarningLabel);
     updateWarningLabel();
 
     connect(&d->useClangdCheckBox, &QCheckBox::toggled,
             this, &ClangdSettingsWidget::settingsDataChanged);
     connect(&d->indexingComboBox, &QComboBox::currentIndexChanged,
+            this, &ClangdSettingsWidget::settingsDataChanged);
+    connect(&d->headerSourceSwitchComboBox, &QComboBox::currentIndexChanged,
+            this, &ClangdSettingsWidget::settingsDataChanged);
+    connect(&d->completionRankingModelComboBox, &QComboBox::currentIndexChanged,
             this, &ClangdSettingsWidget::settingsDataChanged);
     connect(&d->autoIncludeHeadersCheckBox, &QCheckBox::toggled,
             this, &ClangdSettingsWidget::settingsDataChanged);
@@ -479,6 +544,10 @@ ClangdSettings::Data ClangdSettingsWidget::settingsData() const
     data.executableFilePath = d->clangdChooser.filePath();
     data.indexingPriority = ClangdSettings::IndexingPriority(
         d->indexingComboBox.currentData().toInt());
+    data.headerSourceSwitchMode = ClangdSettings::HeaderSourceSwitchMode(
+        d->headerSourceSwitchComboBox.currentData().toInt());
+    data.completionRankingModel = ClangdSettings::CompletionRankingModel(
+        d->completionRankingModelComboBox.currentData().toInt());
     data.autoIncludeHeaders = d->autoIncludeHeadersCheckBox.isChecked();
     data.workerThreadLimit = d->threadLimitSpinBox.value();
     data.documentUpdateThreshold = d->documentUpdateThreshold.value();
@@ -506,64 +575,83 @@ private:
     ClangdSettingsWidget m_widget;
 };
 
-ClangdSettingsPage::ClangdSettingsPage()
-{
-    setId(Constants::CPP_CLANGD_SETTINGS_ID);
-    setDisplayName(Tr::tr("Clangd"));
-    setCategory(Constants::CPP_SETTINGS_CATEGORY);
-    setWidgetCreator([] { return new ClangdSettingsPageWidget; });
-}
-
-
-class ClangdProjectSettingsWidget::Private
+class ClangdSettingsPage final : public Core::IOptionsPage
 {
 public:
-    Private(const ClangdProjectSettings &s) : settings(s), widget(s.settings(), true) {}
-
-    ClangdProjectSettings settings;
-    ClangdSettingsWidget widget;
-    QCheckBox useGlobalSettingsCheckBox;
+    ClangdSettingsPage()
+    {
+        setId(Constants::CPP_CLANGD_SETTINGS_ID);
+        setDisplayName(Tr::tr("Clangd"));
+        setCategory(Constants::CPP_SETTINGS_CATEGORY);
+        setWidgetCreator([] { return new ClangdSettingsPageWidget; });
+    }
 };
 
-ClangdProjectSettingsWidget::ClangdProjectSettingsWidget(const ClangdProjectSettings &settings)
-    : d(new Private(settings))
+void setupClangdSettingsPage()
 {
-    setGlobalSettingsId(Constants::CPP_CLANGD_SETTINGS_ID);
-    const auto layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(&d->widget);
-
-    const auto updateGlobalSettingsCheckBox = [this] {
-        if (ClangdSettings::instance().granularity() == ClangdSettings::Granularity::Session) {
-            setUseGlobalSettingsCheckBoxEnabled(false);
-            setUseGlobalSettings(true);
-        } else {
-            setUseGlobalSettingsCheckBoxEnabled(true);
-            setUseGlobalSettings(d->settings.useGlobalSettings());
-        }
-        d->widget.setEnabled(!useGlobalSettings());
-    };
-
-    updateGlobalSettingsCheckBox();
-    connect(&ClangdSettings::instance(), &ClangdSettings::changed,
-            this, updateGlobalSettingsCheckBox);
-
-    connect(this, &ProjectSettingsWidget::useGlobalSettingsChanged, this,
-            [this](bool checked) {
-                d->widget.setEnabled(!checked);
-                d->settings.setUseGlobalSettings(checked);
-                if (!checked)
-                    d->settings.setSettings(d->widget.settingsData());
-            });
-
-    connect(&d->widget, &ClangdSettingsWidget::settingsDataChanged, this, [this] {
-        d->settings.setSettings(d->widget.settingsData());
-    });
+    static ClangdSettingsPage theClangdSettingsPage;
 }
 
-ClangdProjectSettingsWidget::~ClangdProjectSettingsWidget()
+class ClangdProjectSettingsWidget : public ProjectSettingsWidget
 {
-    delete d;
+public:
+    ClangdProjectSettingsWidget(const ClangdProjectSettings &settings)
+        : m_settings(settings), m_widget(settings.settings(), true)
+    {
+        setGlobalSettingsId(Constants::CPP_CLANGD_SETTINGS_ID);
+        const auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(&m_widget);
+
+        const auto updateGlobalSettingsCheckBox = [this] {
+            if (ClangdSettings::instance().granularity() == ClangdSettings::Granularity::Session) {
+                setUseGlobalSettingsCheckBoxEnabled(false);
+                setUseGlobalSettings(true);
+            } else {
+                setUseGlobalSettingsCheckBoxEnabled(true);
+                setUseGlobalSettings(m_settings.useGlobalSettings());
+            }
+            m_widget.setEnabled(!useGlobalSettings());
+        };
+
+        updateGlobalSettingsCheckBox();
+        connect(&ClangdSettings::instance(), &ClangdSettings::changed,
+                this, updateGlobalSettingsCheckBox);
+
+        connect(this, &ProjectSettingsWidget::useGlobalSettingsChanged, this,
+                [this](bool checked) {
+                    m_widget.setEnabled(!checked);
+                    m_settings.setUseGlobalSettings(checked);
+                    if (!checked)
+                        m_settings.setSettings(m_widget.settingsData());
+                });
+
+        connect(&m_widget, &ClangdSettingsWidget::settingsDataChanged, this, [this] {
+            m_settings.setSettings(m_widget.settingsData());
+        });
+    }
+
+private:
+    ClangdProjectSettings m_settings;
+    ClangdSettingsWidget m_widget;
+};
+
+class ClangdProjectSettingsPanelFactory final : public ProjectPanelFactory
+{
+public:
+    ClangdProjectSettingsPanelFactory()
+    {
+        setPriority(100);
+        setDisplayName(Tr::tr("Clangd"));
+        setCreateWidgetFunction([](Project *project) {
+            return new ClangdProjectSettingsWidget(project);
+        });
+    }
+};
+
+void setupClangdProjectSettingsPanel()
+{
+    static ClangdProjectSettingsPanelFactory theClangdProjectSettingsPanelFactory;
 }
 
 } // CppEditor::Internal

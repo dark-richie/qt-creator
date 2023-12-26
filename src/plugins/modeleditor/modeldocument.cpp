@@ -55,15 +55,14 @@ Core::IDocument::OpenResult ModelDocument::open(QString *errorString,
     return result;
 }
 
-bool ModelDocument::save(QString *errorString, const Utils::FilePath &filePath, bool autoSave)
+bool ModelDocument::saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave)
 {
     if (!d->documentController) {
         *errorString = Tr::tr("No model loaded. Cannot save.");
         return false;
     }
 
-    const Utils::FilePath actualName = filePath.isEmpty() ? this->filePath() : filePath;
-    d->documentController->projectController()->setFileName(actualName.toString());
+    d->documentController->projectController()->setFileName(filePath.toString());
     try {
         d->documentController->projectController()->save();
     } catch (const qmt::Exception &ex) {

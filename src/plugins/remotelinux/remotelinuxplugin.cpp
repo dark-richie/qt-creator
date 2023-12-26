@@ -1,91 +1,63 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "remotelinuxplugin.h"
-
 #include "customcommanddeploystep.h"
-#include "genericdirectuploadstep.h"
 #include "killappstep.h"
 #include "linuxdevice.h"
-#include "makeinstallstep.h"
 #include "remotelinux_constants.h"
-#include "remotelinuxdeployconfiguration.h"
 #include "remotelinuxcustomrunconfiguration.h"
 #include "remotelinuxdebugsupport.h"
-#include "remotelinuxdeployconfiguration.h"
+#include "remotelinuxdeploysupport.h"
 #include "remotelinuxrunconfiguration.h"
-#include "rsyncdeploystep.h"
 #include "tarpackagecreationstep.h"
 #include "tarpackagedeploystep.h"
+
+#include <extensionsystem/iplugin.h>
+
+#include <utils/fsengine/fsengine.h>
 
 #ifdef WITH_TESTS
 #include "filesystemaccess_test.h"
 #endif
 
-#include <projectexplorer/kitinformation.h>
-#include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/target.h>
-
-#include <utils/fsengine/fsengine.h>
-
-using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace RemoteLinux {
-namespace Internal {
+namespace RemoteLinux::Internal {
 
-template <class Factory>
-class RemoteLinuxDeployStepFactory : public Factory
+class RemoteLinuxPlugin final : public ExtensionSystem::IPlugin
 {
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "RemoteLinux.json")
+
 public:
-    RemoteLinuxDeployStepFactory()
+    RemoteLinuxPlugin()
     {
-        Factory::setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
-        Factory::setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+        FSEngine::registerDeviceScheme(u"ssh");
+    }
+
+    ~RemoteLinuxPlugin() final
+    {
+        FSEngine::unregisterDeviceScheme(u"ssh");
+    }
+
+    void initialize() final
+    {
+        setupLinuxDevice();
+        setupRemoteLinuxRunConfiguration();
+        setupRemoteLinuxCustomRunConfiguration();
+        setupRemoteLinuxRunAndDebugSupport();
+        setupRemoteLinuxDeploySupport();
+        setupTarPackageCreationStep();
+        setupTarPackageDeployStep();
+        setupCustomCommandDeployStep();
+        setupKillAppStep();
+
+#ifdef WITH_TESTS
+        addTest<FileSystemAccessTest>();
+#endif
     }
 };
 
-class RemoteLinuxPluginPrivate
-{
-public:
-    LinuxDeviceFactory linuxDeviceFactory;
-    RemoteLinuxRunConfigurationFactory runConfigurationFactory;
-    RemoteLinuxCustomRunConfigurationFactory customRunConfigurationFactory;
-    RemoteLinuxDeployConfigurationFactory deployConfigurationFactory;
-    TarPackageCreationStepFactory tarPackageCreationStepFactory;
-    TarPackageDeployStepFactory tarPackageDeployStepFactory;
-    RemoteLinuxDeployStepFactory<GenericDirectUploadStepFactory> genericDirectUploadStepFactory;
-    RemoteLinuxDeployStepFactory<RsyncDeployStepFactory> rsyncDeployStepFactory;
-    CustomCommandDeployStepFactory customCommandDeployStepFactory;
-    KillAppStepFactory killAppStepFactory;
-    RemoteLinuxDeployStepFactory<MakeInstallStepFactory> makeInstallStepFactory;
-    RemoteLinuxRunWorkerFactory runWorkerFactory;
-    RemoteLinuxDebugWorkerFactory debugWorkerFactory;
-    RemoteLinuxQmlToolingWorkerFactory qmlToolingWorkerFactory;
-};
+} // RemoteLinux::Internal
 
-static RemoteLinuxPluginPrivate *dd = nullptr;
-
-RemoteLinuxPlugin::RemoteLinuxPlugin()
-{
-    setObjectName(QLatin1String("RemoteLinuxPlugin"));
-    FSEngine::registerDeviceScheme(u"ssh");
-}
-
-RemoteLinuxPlugin::~RemoteLinuxPlugin()
-{
-    FSEngine::unregisterDeviceScheme(u"ssh");
-    delete dd;
-}
-
-void RemoteLinuxPlugin::initialize()
-{
-    dd = new RemoteLinuxPluginPrivate;
-
-#ifdef WITH_TESTS
-    addTest<FileSystemAccessTest>();
-#endif
-}
-
-} // namespace Internal
-} // namespace RemoteLinux
+#include "remotelinuxplugin.moc"

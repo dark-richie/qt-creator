@@ -94,7 +94,7 @@ QVariant FilterItem::data(int column, int role) const
             return m_filter->shortcutString();
         break;
     case FilterIncludedByDefault:
-        if (role == Qt::CheckStateRole || role == SortRole || role == Qt::EditRole)
+        if (role == Qt::CheckStateRole || role == SortRole)
             return m_filter->isIncludedByDefault() ? Qt::Checked : Qt::Unchecked;
         break;
     default:
@@ -113,7 +113,7 @@ Qt::ItemFlags FilterItem::flags(int column) const
     if (column == FilterPrefix)
         return Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsEditable;
     if (column == FilterIncludedByDefault)
-        return Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsEditable | Qt::ItemIsUserCheckable;
+        return Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
     return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
 }
 
@@ -277,6 +277,7 @@ public:
         filterEdit->setFiltering(true);
 
         m_filterList = new TreeView;
+        m_filterList->setUniformRowHeights(false);
         m_filterList->setSelectionMode(QAbstractItemView::SingleSelection);
         m_filterList->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_filterList->setSortingEnabled(true);
@@ -341,12 +342,13 @@ public:
 
         auto addMenu = new QMenu(addButton);
         addMenu->addAction(Tr::tr("Files in Directories"), this, [this] {
-            addCustomFilter(new DirectoryFilter(Id(Constants::CUSTOM_DIRECTORY_FILTER_BASEID)
+            addCustomFilter(new DirectoryFilter(Utils::Id(Constants::CUSTOM_DIRECTORY_FILTER_BASEID)
                                                     .withSuffix(m_customFilters.size() + 1)));
         });
         addMenu->addAction(Tr::tr("URL Template"), this, [this] {
             auto filter = new UrlLocatorFilter(
-                Id(Constants::CUSTOM_URL_FILTER_BASEID).withSuffix(m_customFilters.size() + 1));
+                Utils::Id(Constants::CUSTOM_URL_FILTER_BASEID)
+                    .withSuffix(m_customFilters.size() + 1));
             filter->setIsCustomFilter(true);
             addCustomFilter(filter);
         });

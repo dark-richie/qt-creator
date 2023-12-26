@@ -44,7 +44,7 @@
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Add Bookmark</source>
         <translation>Přidat záložku</translation>
@@ -9720,36 +9720,32 @@ se projektu &apos;%2&apos; nepodařilo přidat.</translation>
         <translation type="obsolete">Zdvojit sezení</translation>
     </message>
     <message>
-        <source>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-quick-tour.html#session-management-in-qt-creator&quot;&gt;What is a Session?&lt;/a&gt;</source>
-        <translation type="obsolete">&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-quick-tour.html#session-management-in-qt-creator&quot;&gt;Co je to sezení?&lt;/a&gt;</translation>
-    </message>
-    <message>
         <source>Switch to session</source>
         <translation type="obsolete">Přepnout na sezení</translation>
     </message>
     <message>
-        <source>&amp;New</source>
-        <translation>&amp;Nový</translation>
+        <source>&amp;New...</source>
+        <translation>&amp;Nový...</translation>
     </message>
     <message>
-        <source>&amp;Rename</source>
-        <translation>&amp;Přejmenovat</translation>
+        <source>&amp;Rename...</source>
+        <translation>&amp;Přejmenovat...</translation>
     </message>
     <message>
-        <source>C&amp;lone</source>
-        <translation>Zdvo&amp;jit</translation>
+        <source>C&amp;lone...</source>
+        <translation>Zdvo&amp;jit...</translation>
     </message>
     <message>
-        <source>&amp;Delete</source>
-        <translation>&amp;Smazat</translation>
+        <source>&amp;Delete...</source>
+        <translation>&amp;Smazat...</translation>
     </message>
     <message>
         <source>&amp;Open</source>
         <translation>&amp;Otevřít</translation>
     </message>
     <message>
-        <source>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;What is a Session?&lt;/a&gt;</source>
-        <translation>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;Co je sezení?&lt;/a&gt;</translation>
+        <source>What is a Session?</source>
+        <translation>Co je sezení?</translation>
     </message>
     <message>
         <source>New session name</source>
@@ -10551,8 +10547,8 @@ přidat do správy verzí (%2)?</translation>
         <translation>Při ukládání sezení se vyskytla chyba</translation>
     </message>
     <message>
-        <source>Could not save session to file %1</source>
-        <translation>Sezení se nepodařilo uložit do souboru %1</translation>
+        <source>Could not save session to file &quot;%1&quot;</source>
+        <translation>Sezení se nepodařilo uložit do souboru &quot;%1&quot;</translation>
     </message>
     <message>
         <source>Untitled</source>
@@ -24901,8 +24897,8 @@ Vybere pro napodobovatele a přenosné cíle vhodné verze Qt, jsou-li dostupné
         <translation>&apos;%1&apos; se nepodařilo spustit: %2</translation>
     </message>
     <message>
-        <source>A timeout occurred running &apos;%1&apos;</source>
-        <translation>Překročení času při spuštění &apos;%1&apos;</translation>
+        <source>A timeout occurred running &quot;%1&quot;.</source>
+        <translation>Překročení času při spuštění &quot;%1&quot;.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; crashed.</source>
@@ -28918,8 +28914,8 @@ Server: %2.</translation>
         <translation>Rozdíly pro &quot;%1&quot;</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+D</source>
-        <translation>ALT+Z,Alt+D</translation>
+        <source>Alt+Z,Alt+D</source>
+        <translation>Alt+Z,Alt+D</translation>
     </message>
     <message>
         <source>Meta+Z,Meta+D</source>
@@ -28934,8 +28930,8 @@ Server: %2.</translation>
         <translation>Záznamy pro &quot;%1&quot;</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+L</source>
-        <translation>ALT+Z,Alt+L</translation>
+        <source>Alt+Z,Alt+L</source>
+        <translation>Alt+Z,Alt+L</translation>
     </message>
     <message>
         <source>Meta+Z,Meta+L</source>
@@ -28950,8 +28946,8 @@ Server: %2.</translation>
         <translation>Stav &quot;%1&quot;</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+S</source>
-        <translation>ALT+Z,Alt+S</translation>
+        <source>Alt+Z,Alt+S</source>
+        <translation>Alt+Z,Alt+S</translation>
     </message>
     <message>
         <source>Meta+Z,Meta+S</source>
@@ -29015,8 +29011,8 @@ Server: %2.</translation>
         <translation>Zapsat-odevzdat (commit)...</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+C</source>
-        <translation>ALT+Z,Alt+C</translation>
+        <source>Alt+Z,Alt+C</source>
+        <translation>Alt+Z,Alt+C</translation>
     </message>
     <message>
         <source>Meta+Z,Meta+C</source>
@@ -40286,10 +40282,6 @@ Určuje, jak se chová zpětná klávesa (backspace) co se týče odsazování.
         <translation>Upravit...</translation>
     </message>
     <message>
-        <source>Remove</source>
-        <translation>Odstranit</translation>
-    </message>
-    <message>
         <source>Export...</source>
         <translation>Exportovat...</translation>
     </message>
@@ -40394,10 +40386,6 @@ Určuje, jak se chová zpětná klávesa (backspace) co se týče odsazování.
     <message>
         <source>Group: </source>
         <translation>Skupina: </translation>
-    </message>
-    <message>
-        <source>Add</source>
-        <translation>Přidat</translation>
     </message>
     <message>
         <source>Revert Built-in</source>
@@ -44830,7 +44818,7 @@ Nainstalujte, prosím, alespoň jedno SDK.</translation>
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Alt+Meta+M</source>
         <translation>Alt+Meta+M</translation>
@@ -48374,7 +48362,7 @@ nelze najít v cestě.</translation>
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Note text:</source>
         <translation>Text poznámky:</translation>

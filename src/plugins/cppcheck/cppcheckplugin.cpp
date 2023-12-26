@@ -5,6 +5,7 @@
 
 #include "cppcheckconstants.h"
 #include "cppcheckdiagnosticview.h"
+#include "cppchecksettings.h"
 #include "cppchecktextmarkmanager.h"
 #include "cppchecktool.h"
 #include "cppchecktr.h"
@@ -12,7 +13,7 @@
 #include "cppcheckdiagnosticsmodel.h"
 #include "cppcheckmanualrundialog.h"
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
@@ -25,8 +26,11 @@
 #include <debugger/analyzer/analyzerconstants.h>
 #include <debugger/debuggermainwindow.h>
 
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
+
+using namespace Utils;
 
 namespace Cppcheck::Internal {
 
@@ -38,7 +42,6 @@ public:
     CppcheckTextMarkManager marks;
     CppcheckTool tool{marks, Constants::CHECK_PROGRESS_ID};
     CppcheckTrigger trigger{marks, tool};
-    CppcheckOptionsPage options{tool, trigger};
     DiagnosticsModel manualRunModel;
     CppcheckTool manualRunTool{manualRunModel, Constants::MANUAL_CHECK_PROGRESS_ID};
     Utils::Perspective perspective{Constants::PERSPECTIVE_ID, ::Cppcheck::Tr::tr("Cppcheck")};
@@ -51,7 +54,11 @@ public:
 
 CppcheckPluginPrivate::CppcheckPluginPrivate()
 {
-    manualRunTool.updateOptions(tool.options());
+    tool.updateOptions();
+    connect(&settings(), &AspectContainer::changed, this, [this] {
+        tool.updateOptions();
+        trigger.recheck();
+    });
 
     auto manualRunView = new DiagnosticView;
     manualRunView->setModel(&manualRunModel);
@@ -103,7 +110,9 @@ void CppcheckPluginPrivate::startManualRun()
     if (!project)
         return;
 
-    ManualRunDialog dialog(manualRunTool.options(), project);
+    manualRunTool.updateOptions();
+
+    ManualRunDialog dialog(project);
     if (dialog.exec() == ManualRunDialog::Rejected)
         return;
 
@@ -114,7 +123,7 @@ void CppcheckPluginPrivate::startManualRun()
         return;
 
     manualRunTool.setProject(project);
-    manualRunTool.updateOptions(dialog.options());
+    manualRunTool.updateOptions();
     manualRunTool.check(files);
     perspective.select();
 }
@@ -126,7 +135,7 @@ void CppcheckPluginPrivate::updateManualRunAction()
     const Target *target = ProjectManager::startupTarget();
     const Utils::Id cxx = ProjectExplorer::Constants::CXX_LANGUAGE_ID;
     const bool canRun = target && project->projectLanguages().contains(cxx)
-                  && ToolChainKitAspect::cxxToolChain(target->kit());
+                  && ToolchainKitAspect::cxxToolchain(target->kit());
     manualRunAction->setEnabled(canRun);
 }
 

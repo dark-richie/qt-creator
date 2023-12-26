@@ -251,6 +251,14 @@ const CppComponentValue *CppComponentValue::asCppComponentValue() const
     return this;
 }
 
+bool CppComponentValue::getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const
+{
+    *fileName = Utils::FilePath::fromString(m_metaObject->filePath());
+    *line = 0;
+    *column = 0;
+    return true;
+}
+
 void CppComponentValue::processMembers(MemberProcessor *processor) const
 {
     // process the meta enums
@@ -1321,10 +1329,32 @@ const Function *Function::asFunction() const
 // typing environment
 ////////////////////////////////////////////////////////////////////////////////
 
-CppQmlTypesLoader::BuiltinObjects CppQmlTypesLoader::defaultLibraryObjects;
-CppQmlTypesLoader::BuiltinObjects CppQmlTypesLoader::defaultQtObjects;
+CppQmlTypesLoader::BuiltinObjects sDefaultLibraryObjects;
+CppQmlTypesLoader::BuiltinObjects sDefaultQtObjects;
+std::function<void()> CppQmlTypesLoader::defaultObjectsInitializer;
 
-CppQmlTypesLoader::BuiltinObjects CppQmlTypesLoader::loadQmlTypes(const QFileInfoList &qmlTypeFiles, QStringList *errors, QStringList *warnings)
+CppQmlTypesLoader::BuiltinObjects &CppQmlTypesLoader::defaultQtObjects()
+{
+    if (defaultObjectsInitializer) {
+        const std::function<void()> init = defaultObjectsInitializer;
+        defaultObjectsInitializer = {};
+        init();
+    }
+    return sDefaultLibraryObjects;
+}
+CppQmlTypesLoader::BuiltinObjects &CppQmlTypesLoader::defaultLibraryObjects()
+{
+    if (defaultObjectsInitializer) {
+        const std::function<void()> init = defaultObjectsInitializer;
+        defaultObjectsInitializer = {};
+        init();
+    }
+    return sDefaultQtObjects;
+}
+
+CppQmlTypesLoader::BuiltinObjects CppQmlTypesLoader::loadQmlTypes(const QFileInfoList &qmlTypeFiles,
+                                                                  QStringList *errors,
+                                                                  QStringList *warnings)
 {
     QHash<QString, FakeMetaObject::ConstPtr> newObjects;
     QStringList newDependencies;
@@ -1463,8 +1493,10 @@ QList<const CppComponentValue *> CppQmlTypes::createObjectsForImport(const QStri
 
         // if it already exists, skip
         const QString key = qualifiedName(package, fmo->className(), version);
-        if (m_objectsByQualifiedName.contains(key))
+        if (m_objectsByQualifiedName.contains(key)) {
+            exportedObjects.insert(key, m_objectsByQualifiedName.value(key));
             continue;
+        }
 
         ComponentVersion cppVersion;
         for (const FakeMetaObject::Export &bestExport : std::as_const(bestExports)) {

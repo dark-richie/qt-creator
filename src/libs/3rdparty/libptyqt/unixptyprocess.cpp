@@ -54,6 +54,10 @@ bool UnixPtyProcess::startProcess(const QString &shellPath,
     int rc = 0;
 
     m_shellProcess.m_handleMaster = ::posix_openpt(O_RDWR | O_NOCTTY);
+
+    int flags = fcntl(m_shellProcess.m_handleMaster, F_GETFL, 0);
+    fcntl(m_shellProcess.m_handleMaster, F_SETFL, flags | O_NONBLOCK);
+
     if (m_shellProcess.m_handleMaster <= 0) {
         m_lastError = QString("UnixPty Error: unable to open master -> %1").arg(QLatin1String(strerror(errno)));
         kill();
@@ -168,6 +172,12 @@ bool UnixPtyProcess::startProcess(const QString &shellPath,
         static std::array<char, maxRead> buffer;
 
         int len = ::read(m_shellProcess.m_handleMaster, buffer.data(), buffer.size());
+
+        struct termios termAttributes;
+        tcgetattr(m_shellProcess.m_handleMaster, &termAttributes);
+        const bool isPasswordEntry = !(termAttributes.c_lflag & ECHO) && (termAttributes.c_lflag & ICANON);
+        m_inputFlags.setFlag(PtyInputFlag::InputModeHidden, isPasswordEntry);
+
         if (len > 0) {
             m_shellReadBuffer.append(buffer.data(), len);
             m_shellProcess.emitReadyRead();
@@ -180,34 +190,14 @@ bool UnixPtyProcess::startProcess(const QString &shellPath,
         m_readMasterNotify->disconnect();
     });
 
-    QStringList defaultVars;
-
-    defaultVars.append("TERM=xterm-256color");
-    defaultVars.append("ITERM_PROFILE=Default");
-    defaultVars.append("XPC_FLAGS=0x0");
-    defaultVars.append("XPC_SERVICE_NAME=0");
-    defaultVars.append("LANG=en_US.UTF-8");
-    defaultVars.append("LC_ALL=en_US.UTF-8");
-    defaultVars.append("LC_CTYPE=UTF-8");
-    defaultVars.append("INIT_CWD=" + QCoreApplication::applicationDirPath());
-    defaultVars.append("COMMAND_MODE=unix2003");
-    defaultVars.append("COLORTERM=truecolor");
-
     QStringList varNames;
-    foreach (QString line, environment) {
+    for (const QString &line : std::as_const(environment))
         varNames.append(line.split("=").first());
-    }
-
-    //append default env vars only if they don't exists in current env
-    foreach (QString defVar, defaultVars) {
-        if (!varNames.contains(defVar.split("=").first()))
-            environment.append(defVar);
-    }
 
     QProcessEnvironment envFormat;
-    foreach (QString line, environment) {
+    for (const QString &line : std::as_const(environment))
         envFormat.insert(line.split("=").first(), line.split("=").last());
-    }
+
     m_shellProcess.setWorkingDirectory(workingDir);
     m_shellProcess.setProcessEnvironment(envFormat);
     m_shellProcess.setReadChannel(QProcess::StandardOutput);
@@ -308,10 +298,7 @@ QByteArray UnixPtyProcess::readAll()
 
 qint64 UnixPtyProcess::write(const QByteArray &byteArray)
 {
-    int result = ::write(m_shellProcess.m_handleMaster, byteArray.constData(), byteArray.size());
-    Q_UNUSED(result)
-
-    return byteArray.size();
+    return ::write(m_shellProcess.m_handleMaster, byteArray.constData(), byteArray.size());
 }
 
 bool UnixPtyProcess::isAvailable()

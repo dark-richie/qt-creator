@@ -3,15 +3,16 @@
 
 #include "fileapiparser.h"
 
+#include "cmakeprocess.h"
 #include "cmakeprojectmanagertr.h"
 
-#include <app/app_version.h>
 #include <coreplugin/messagemanager.h>
 #include <projectexplorer/rawprojectpart.h>
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -35,7 +36,7 @@ const QStringList CMAKE_QUERY_FILENAMES = {"cache-v2", "codemodel-v2", "cmakeFil
 // Helper:
 // --------------------------------------------------------------------
 
-static FilePath cmakeReplyDirectory(const FilePath &buildDirectory)
+FilePath FileApiParser::cmakeReplyDirectory(const FilePath &buildDirectory)
 {
     return buildDirectory.pathAppended(CMAKE_RELATIVE_REPLY_PATH);
 }
@@ -43,9 +44,9 @@ static FilePath cmakeReplyDirectory(const FilePath &buildDirectory)
 static void reportFileApiSetupFailure()
 {
     Core::MessageManager::writeFlashing(
-        Tr::tr("Failed to set up CMake file API support. %1 cannot "
-               "extract project information.")
-            .arg(Core::Constants::IDE_DISPLAY_NAME));
+        addCMakePrefix(Tr::tr("Failed to set up CMake file API support. %1 cannot "
+                              "extract project information.")
+                           .arg(QGuiApplication::applicationDisplayName())));
 }
 
 static std::pair<int, int> cmakeVersion(const QJsonObject &obj)
@@ -90,7 +91,7 @@ std::vector<int> indexList(const QJsonValue &v)
     std::vector<int> result;
     result.reserve(static_cast<size_t>(indexList.count()));
 
-    for (const QJsonValue &v : indexList) {
+    for (const auto &v : indexList) {
         result.push_back(v.toInt(-1));
     }
     return result;
@@ -138,7 +139,7 @@ static ReplyFileContents readReplyFile(const FilePath &filePath, QString &errorM
     bool hadInvalidObject = false;
     {
         const QJsonArray objects = rootObject.value("objects").toArray();
-        for (const QJsonValue &v : objects) {
+        for (const auto &v : objects) {
             const QJsonObject object = v.toObject();
             {
                 ReplyObject r;
@@ -177,7 +178,7 @@ static CMakeConfig readCacheFile(const FilePath &cacheFile, QString &errorMessag
     }
 
     const QJsonArray entries = root.value("entries").toArray();
-    for (const QJsonValue &v : entries) {
+    for (const auto &v : entries) {
         CMakeConfigItem item;
 
         const QJsonObject entry = v.toObject();
@@ -189,7 +190,7 @@ static CMakeConfig readCacheFile(const FilePath &cacheFile, QString &errorMessag
 
         {
             const QJsonArray properties = entry.value("properties").toArray();
-            for (const QJsonValue &v : properties) {
+            for (const auto &v : properties) {
                 const QJsonObject prop = v.toObject();
                 auto nv = nameValue(prop);
                 if (nv.first == "ADVANCED") {
@@ -222,7 +223,7 @@ static std::vector<CMakeFileInfo> readCMakeFilesFile(const FilePath &cmakeFilesF
     }
 
     const QJsonArray inputs = root.value("inputs").toArray();
-    for (const QJsonValue &v : inputs) {
+    for (const auto &v : inputs) {
         CMakeFileInfo info;
         const QJsonObject input = v.toObject();
         info.path = cmakeFilesFile.withNewPath(input.value("path").toString());
@@ -252,7 +253,7 @@ std::vector<Directory> extractDirectories(const QJsonArray &directories, QString
     }
 
     std::vector<Directory> result;
-    for (const QJsonValue &v : directories) {
+    for (const auto &v : directories) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
             errorMessage = Tr::tr(
@@ -282,7 +283,7 @@ static std::vector<Project> extractProjects(const QJsonArray &projects, QString 
     }
 
     std::vector<Project> result;
-    for (const QJsonValue &v : projects) {
+    for (const auto &v : projects) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
             qCDebug(cmakeFileApi) << "Empty project skipped!";
@@ -313,7 +314,7 @@ static std::vector<Project> extractProjects(const QJsonArray &projects, QString 
 static std::vector<Target> extractTargets(const QJsonArray &targets, QString &errorMessage)
 {
     std::vector<Target> result;
-    for (const QJsonValue &v : targets) {
+    for (const auto &v : targets) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
             errorMessage = Tr::tr(
@@ -435,7 +436,7 @@ static std::vector<Configuration> extractConfigurations(const QJsonArray &config
     }
 
     std::vector<FileApiDetails::Configuration> result;
-    for (const QJsonValue &v : configs) {
+    for (const auto &v : configs) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
             errorMessage = Tr::tr(
@@ -484,6 +485,26 @@ static std::vector<FileApiDetails::FragmentInfo> extractFragments(const QJsonObj
         return FileApiDetails::FragmentInfo{o.value("fragment").toString(),
                                             o.value("role").toString()};
     });
+}
+
+static void addIncludeInfo(std::vector<IncludeInfo> *includes,
+                           const QJsonObject &compileGroups,
+                           const QString &section)
+{
+    const std::vector<IncludeInfo> add
+        = transform<std::vector>(compileGroups.value(section).toArray(), [](const QJsonValue &v) {
+              const QJsonObject i = v.toObject();
+              const QString path = i.value("path").toString();
+              const bool isSystem = i.value("isSystem").toBool();
+              const ProjectExplorer::HeaderPath hp(path,
+                                                   isSystem
+                                                       ? ProjectExplorer::HeaderPathType::System
+                                                       : ProjectExplorer::HeaderPathType::User);
+
+              return IncludeInfo{ProjectExplorer::RawProjectPart::frameworkDetectionHeuristic(hp),
+                                 i.value("backtrace").toInt(-1)};
+          });
+    std::copy(add.cbegin(), add.cend(), std::back_inserter(*includes));
 }
 
 static TargetDetails extractTargetDetails(const QJsonObject &root, QString &errorMessage)
@@ -581,6 +602,10 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
         const QJsonArray compileGroups = root.value("compileGroups").toArray();
         t.compileGroups = transform<std::vector>(compileGroups, [](const QJsonValue &v) {
             const QJsonObject o = v.toObject();
+            std::vector<IncludeInfo> includes;
+            addIncludeInfo(&includes, o, "includes");
+            // new in CMake 3.27+:
+            addIncludeInfo(&includes, o, "frameworks");
             return CompileInfo{
                 transform<std::vector>(o.value("sourceIndexes").toArray(),
                                        [](const QJsonValue &v) { return v.toInt(-1); }),
@@ -590,21 +615,7 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
                                      const QJsonObject o = v.toObject();
                                      return o.value("fragment").toString();
                                  }),
-                transform<std::vector>(
-                    o.value("includes").toArray(),
-                    [](const QJsonValue &v) {
-                        const QJsonObject i = v.toObject();
-                        const QString path = i.value("path").toString();
-                        const bool isSystem = i.value("isSystem").toBool();
-                        const ProjectExplorer::HeaderPath
-                            hp(path,
-                               isSystem ? ProjectExplorer::HeaderPathType::System
-                                        : ProjectExplorer::HeaderPathType::User);
-
-                        return IncludeInfo{
-                            ProjectExplorer::RawProjectPart::frameworkDetectionHeuristic(hp),
-                            i.value("backtrace").toInt(-1)};
-                    }),
+                includes,
                 transform<std::vector>(o.value("defines").toArray(),
                                        [](const QJsonValue &v) {
                                            const QJsonObject d = v.toObject();
@@ -785,7 +796,7 @@ FilePath FileApiDetails::ReplyFileContents::jsonFile(const QString &kind, const 
 // FileApi:
 // --------------------------------------------------------------------
 
-bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory, Utils::FileSystemWatcher &watcher)
+bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory)
 {
     // So that we have a directory to watch.
     buildDirectory.pathAppended(CMAKE_RELATIVE_REPLY_PATH).ensureWritableDir();
@@ -808,7 +819,6 @@ bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory, Utils::Fil
         }
     }
 
-    watcher.addDirectory(cmakeReplyDirectory(buildDirectory).path(), FileSystemWatcher::WatchAllChanges);
     return true;
 }
 
@@ -832,7 +842,6 @@ FileApiData FileApiParser::parseData(QPromise<std::shared_ptr<FileApiQtcData>> &
                                      QString &errorMessage)
 {
     QTC_CHECK(errorMessage.isEmpty());
-    QTC_CHECK(!replyFilePath.needsDevice());
     const FilePath replyDir = replyFilePath.parentDir();
 
     FileApiData result;
@@ -865,11 +874,11 @@ FileApiData FileApiParser::parseData(QPromise<std::shared_ptr<FileApiQtcData>> &
         return result;
     }
 
-    auto it = std::find_if(codeModels.cbegin(), codeModels.cend(),
+    auto it = std::find_if(codeModels.begin(), codeModels.end(),
                            [cmakeBuildType](const Configuration& cfg) {
                                return QString::compare(cfg.name, cmakeBuildType, Qt::CaseInsensitive) == 0;
                            });
-    if (it == codeModels.cend()) {
+    if (it == codeModels.end()) {
         QStringList buildTypes;
         for (const Configuration &cfg: codeModels)
             buildTypes << cfg.name;

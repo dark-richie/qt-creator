@@ -5,6 +5,7 @@ QtcPlugin {
 
     Depends { name: "Core" }
     Depends { name: "LanguageClient" }
+    Depends { name: "ProjectExplorer" }
     Depends { name: "TextEditor" }
     Depends { name: "Qt"; submodules: ["widgets", "xml", "network"] }
 
@@ -14,12 +15,12 @@ QtcPlugin {
         "copilot.qrc",
         "copilotclient.cpp",
         "copilotclient.h",
+        "copilotconstants.h",
         "copilothoverhandler.cpp",
         "copilothoverhandler.h",
-        "copilotoptionspage.cpp",
-        "copilotoptionspage.h",
         "copilotplugin.cpp",
-        "copilotplugin.h",
+        "copilotprojectpanel.cpp",
+        "copilotprojectpanel.h",
         "copilotsettings.cpp",
         "copilotsettings.h",
         "copilotsuggestion.cpp",

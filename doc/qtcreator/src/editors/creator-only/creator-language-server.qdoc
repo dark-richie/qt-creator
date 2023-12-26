@@ -1,10 +1,10 @@
-// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*!
-    \previouspage creator-editor-fakevim.html
+    \previouspage creator-markdown-editor.html
     \page creator-language-servers.html
-    \nextpage creator-mime-types.html
+    \nextpage creator-copilot.html
 
     \title Using Language Servers
 
@@ -18,10 +18,9 @@
         \li \l{Completing Code}{Code completion}
         \li Sending document formatting requests to the language server to
             automatically format documents using the settings specified in
-            \uicontrol Edit > \uicontrol Preferences > \uicontrol {Text Editor}
-            > \uicontrol Behavior
+            \preferences > \uicontrol {Text Editor} > \uicontrol Behavior
         \li Highlighting the symbol under cursor
-        \li \l{Viewing Function Tooltips}{Viewing function tooltips}
+        \li \l{View function tooltips}
         \li \l{Semantic Highlighting}{Semantic highlighting}, as defined in
             \l{https://github.com/microsoft/vscode-languageserver-node/pull/367}
             {Proposal of the semantic highlighting protocol extension}
@@ -29,11 +28,9 @@
             {locator} or \l{Moving to Symbol Definition or Declaration}
             {moving to the symbol definition}
         \li Inspecting code by viewing the document outline in the
-            \l{Viewing Defined Types and Symbols}{Outline} view or
-            in the \uicontrol Symbols list on the \l{Using the Editor Toolbar}
-            {editor toolbar}
-        \li \l{Viewing Call Hierarchy}
-            {Viewing the callers and callees of a function}
+            \l{Outline} view or in the \uicontrol Symbols list on the
+            \l{Using the Editor Toolbar}{editor toolbar}
+        \li \l{Call Hierarchy}{Viewing the callers and callees of a function}
         \li \l{Finding Symbols}{Finding references to symbols}
         \li \l{Renaming Symbols}{Renaming the symbol under cursor}
         \li Code actions
@@ -64,10 +61,8 @@
     server is added by default and you can edit its preferences.
     For other languages, you can add generic stdIO language servers.
 
-    To add language servers, select \uicontrol Edit > \uicontrol Preferences >
-    \uicontrol {Language Client} > \uicontrol Add (or \uicontrol {Qt Creator} >
-    \uicontrol Preferences > \uicontrol {Language Client} > \uicontrol Add
-    on \macos).
+    To add language servers, select \preferences >
+    \uicontrol {Language Client} > \uicontrol Add.
 
     To enable a language server, select the check box next to the language
     server name and set server preferences.
@@ -79,22 +74,21 @@
     To add a generic language server:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences >
-            \uicontrol {Language Client} > \uicontrol Add >
-            \uicontrol {Generic StdIO Language Server}
+        \li Select \preferences > \uicontrol {Language Client} >
+            \uicontrol Add > \uicontrol {Generic StdIO Language Server}
             to add a generic language server.
             \image qtcreator-language-server-generic-stdio.png
         \li In the \uicontrol Name field, enter a name for the language server.
             Select the \inlineimage icons/replace.png
             (\uicontrol {Variables}) button to use a variable for the server
-            name. For more information, see \l{Using Qt Creator Variables}.
+            name. For more information, see \l{Use Qt Creator variables}.
         \li In the \uicontrol {Language} field, select
             \uicontrol {Set MIME Types} to select the MIME types of the files to
             send to the language server. In the field below, you can enter file
             patterns to extend the MIME types, separated by semicolons.
         \li In the \uicontrol {Startup behavior} field, select whether the
             language server is started when \QC starts or when a project or file
-            with a matching MIME type is opened. \l{Viewing Output}
+            with a matching MIME type is opened. \l{View output}
             {General Messages} displays information about the connection to the
             language server.
         \li In the \uicontrol {Initialization options} field, you can add
@@ -102,7 +96,7 @@
             request.
         \li In the \uicontrol Executable field, enter the path to the language
             server executable.
-        \li In the \uicontrol Arguments field, enter any required command line
+        \li In the \uicontrol Arguments field, enter any required command-line
             arguments. Select \uicontrol Variables to use variables as
             arguments.
     \endlist
@@ -112,14 +106,14 @@
     To add a Java language server:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences >
-            \uicontrol {Language Client} > \uicontrol Add >
-            \uicontrol {Java Language Server} to add a Java language server.
+        \li Select \preferences > \uicontrol {Language Client} >
+            \uicontrol Add > \uicontrol {Java Language Server} to add
+            a Java language server.
             \image qtcreator-language-client-options-java.png "Java language server preferences"
         \li In the \uicontrol Name field, enter a name for the language server.
             Select the \inlineimage icons/replace.png
             (\uicontrol {Variables}) button to use a variable for the server
-            name. For more information, see \l{Using Qt Creator Variables}.
+            name. For more information, see \l{Use Qt Creator variables}.
         \li In the \uicontrol Java field, enter the path to the Java executable.
         \li In the \uicontrol {Java Language Server} field, enter the path to
             the Java language server \c .jar file. You can download the Java
@@ -132,8 +126,8 @@
     To set preferences for Python language servers:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences >
-            \uicontrol Python > \uicontrol {Language Server Configuration} to
+        \li Select \preferences> \uicontrol Python >
+            \uicontrol {Language Server Configuration} to
             select the Python language server plugins to use.
             \image qtcreator-python-plugins.png "Python Language Server Configuration"
         \li Select \uicontrol Advanced to configure the plugins.
@@ -149,14 +143,26 @@
 
     \section2 QML Language Server
 
-    Since Qt 6.4, the \c qmlls language server offers code completion and
-    issues warnings for QML. To enable QML language server support, select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Qt Quick} >
-    \uicontrol {QML/JS Editing} > \uicontrol {Use qmlls (EXPERIMENTAL!)}.
-    To use the latest version of the language server installed on your
-    system, select the \uicontrol {Always use latest qmlls} check box.
+    Since Qt 6.4, the QML language server offers code completion and
+    issues warnings for QML. To use it, select \preferences >
+    \uicontrol {Qt Quick} > \uicontrol {QML/JS Editing} >
+    \uicontrol {Enable QML Language Server}.
+
+    By default, enabling the QML language server will only enable warning messages
+    and code completion, while advanced features such as renaming and finding usages
+    will be handled by the embedded code model.
+    To disable the embedded code model and use the QML language server for everything,
+    select the
+    \uicontrol {Use QML Language Server advanced features} check box.
+
+    Also, Qt Creator will try to use the QML language server shipped with
+    the Qt version in your current kit. To override that behavior and always use the
+    QML language server of the highest registered Qt version, select the
+    \uicontrol {Use QML Language Server from latest Qt version} check box.
 
     \image qtcreator-qml-js-editing.webp {QML/JS Editing preferences}
+
+    \sa {Enabling and Disabling Messages}
 
     \section1 Supported Locator Filters
 

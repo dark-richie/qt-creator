@@ -32,7 +32,6 @@ add_qtc_plugin(CppEditor
     cppcompletionassist.cpp cppcompletionassist.h
     cppcompletionassistprocessor.cpp cppcompletionassistprocessor.h
     cppcompletionassistprovider.cpp cppcompletionassistprovider.h
-    cppcurrentdocumentfilter.cpp cppcurrentdocumentfilter.h
     cppcursorinfo.h
     cppdoxygen.cpp cppdoxygen.h
     cppeditor.qrc
@@ -49,6 +48,7 @@ add_qtc_plugin(CppEditor
     cppfindreferences.cpp cppfindreferences.h
     cppfollowsymbolundercursor.cpp cppfollowsymbolundercursor.h
     cppfunctiondecldeflink.cpp cppfunctiondecldeflink.h
+    cppfunctionparamrenaminghandler.cpp cppfunctionparamrenaminghandler.h
     cpphighlighter.cpp cpphighlighter.h
     cppincludehierarchy.cpp cppincludehierarchy.h
     cppincludesfilter.cpp cppincludesfilter.h
@@ -70,7 +70,6 @@ add_qtc_plugin(CppEditor
     cppprojectinfogenerator.cpp cppprojectinfogenerator.h
     cppprojectpartchooser.cpp cppprojectpartchooser.h
     cppprojectupdater.cpp cppprojectupdater.h
-    cppprojectupdaterinterface.h
     cppqtstyleindenter.cpp cppqtstyleindenter.h
     cppquickfix.cpp cppquickfix.h
     cppquickfixassistant.cpp cppquickfixassistant.h
@@ -107,7 +106,6 @@ add_qtc_plugin(CppEditor
     resourcepreviewhoverhandler.cpp resourcepreviewhoverhandler.h
     searchsymbols.cpp searchsymbols.h
     semantichighlighter.cpp semantichighlighter.h
-    senddocumenttracker.cpp senddocumenttracker.h
     symbolfinder.cpp symbolfinder.h
     symbolsfindfilter.cpp symbolsfindfilter.h
     typehierarchybuilder.cpp typehierarchybuilder.h
@@ -131,6 +129,7 @@ extend_qtc_plugin(CppEditor
     cppmodelmanager_test.cpp cppmodelmanager_test.h
     cpppointerdeclarationformatter_test.cpp cpppointerdeclarationformatter_test.h
     cppquickfix_test.cpp cppquickfix_test.h
+    cpprenaming_test.cpp cpprenaming_test.h
     cppsourceprocessertesthelper.cpp cppsourceprocessertesthelper.h
     cppsourceprocessor_test.cpp cppsourceprocessor_test.h
     cpptoolstestcase.cpp cpptoolstestcase.h

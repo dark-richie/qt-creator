@@ -3,40 +3,22 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
-namespace QmakeProjectManager {
-namespace Internal {
+namespace QmakeProjectManager::Internal {
 
 class QmakeSettings : public Utils::AspectContainer
 {
-    Q_OBJECT
-
 public:
-    static QmakeSettings &instance();
-    static bool warnAgainstUnalignedBuildDir();
-    static bool alwaysRunQmake();
-    static bool runSystemFunction();
-
-signals:
-    void settingsChanged();
-
-private:
     QmakeSettings();
-    friend class SettingsWidget;
 
-    Utils::BoolAspect m_warnAgainstUnalignedBuildDir;
-    Utils::BoolAspect m_alwaysRunQmake;
-    Utils::BoolAspect m_ignoreSystemFunction;
+    bool runSystemFunction() { return !ignoreSystemFunction(); }
+
+    Utils::BoolAspect warnAgainstUnalignedBuildDir{this};
+    Utils::BoolAspect alwaysRunQmake{this};
+    Utils::BoolAspect ignoreSystemFunction{this};
 };
 
-class QmakeSettingsPage final : public Core::IOptionsPage
-{
-public:
-    QmakeSettingsPage();
-};
+QmakeSettings &settings();
 
-} // namespace Internal
-} // namespace QmakeProjectManager
+} // QmakeProjectManager::Internal

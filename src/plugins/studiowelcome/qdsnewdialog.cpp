@@ -88,13 +88,13 @@ QdsNewDialog::QdsNewDialog(QWidget *parent)
 
     m_dialog->installEventFilter(this);
 
-    QObject::connect(&m_wizard, &WizardHandler::wizardCreationFailed, this, [this]() {
+    QObject::connect(&m_wizard, &WizardHandler::wizardCreationFailed, this, [this] {
         QMessageBox::critical(m_dialog, tr("New Project"), tr("Failed to initialize data."));
         reject();
-        delete this;
+        deleteLater();
     });
 
-    QObject::connect(m_styleModel.data(), &StyleModel::modelAboutToBeReset, this, [this]() {
+    QObject::connect(m_styleModel.data(), &StyleModel::modelAboutToBeReset, this, [this] {
         m_qmlStyleIndex = -1;
     });
 }
@@ -183,24 +183,24 @@ void QdsNewDialog::onWizardCreated(QStandardItemModel *screenSizeModel, QStandar
     if (styleModel)
         m_styleModel->setBackendModel(styleModel);
 
+    if (!m_currentPreset) {
+        qWarning() << "Wizard has been created but there is no Preset selected!";
+        return;
+    }
+
     auto userPreset = m_currentPreset->asUserPreset();
 
     if (m_qmlDetailsLoaded) {
-        if (m_currentPreset->isUserPreset()) {
-            if (m_wizard.haveVirtualKeyboard())
-                setUseVirtualKeyboard(userPreset->useQtVirtualKeyboard);
-
-            if (m_wizard.haveTargetQtVersion()) {
-                int index = m_wizard.targetQtVersionIndex(userPreset->qtVersion);
-                if (index != -1)
-                    setTargetQtVersionIndex(index);
-            }
-        } else {
-            if (m_wizard.haveTargetQtVersion()) {
-                int index = m_wizard.targetQtVersionIndex();
-                if (index != -1)
-                    setTargetQtVersionIndex(index);
-            }
+        m_targetQtVersions.clear();
+        if (m_currentPreset->isUserPreset() && m_wizard.haveVirtualKeyboard())
+            setUseVirtualKeyboard(userPreset->useQtVirtualKeyboard);
+        if (m_wizard.haveTargetQtVersion()) {
+            m_targetQtVersions = m_wizard.targetQtVersionNames();
+            int index = m_currentPreset->isUserPreset() ? m_wizard.targetQtVersionIndex(userPreset->qtVersion)
+                                                        : m_wizard.targetQtVersionIndex();
+            emit targetQtVersionsChanged();
+            if (index != -1)
+                setTargetQtVersionIndex(index);
         }
 
         emit haveVirtualKeyboardChanged();

@@ -4,12 +4,11 @@
 #include "qtsupportplugin.h"
 
 #include "codegenerator.h"
-#include "codegensettingspage.h"
 #include "externaleditors.h"
 #include "gettingstartedwelcomepage.h"
 #include "profilereader.h"
 #include "qscxmlcgenerator.h"
-#include "qtkitinformation.h"
+#include "qtkitaspect.h"
 #include "qtoptionspage.h"
 #include "qtoutputformatter.h"
 #include "qtsupporttr.h"
@@ -22,8 +21,8 @@
 #include <coreplugin/jsexpander.h>
 
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
+#include <projectexplorer/buildpropertiessettings.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/target.h>
@@ -33,7 +32,9 @@
 #include <utils/filepath.h>
 #include <utils/infobar.h>
 #include <utils/macroexpander.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
+
+#include <QInputDialog>
 
 using namespace Core;
 using namespace Utils;
@@ -45,18 +46,13 @@ namespace Internal {
 class QtSupportPluginPrivate
 {
 public:
-    QtVersionManager qtVersionManager;
-
     DesktopQtVersionFactory desktopQtVersionFactory;
     EmbeddedLinuxQtVersionFactory embeddedLinuxQtVersionFactory;
 
-    CodeGenSettingsPage codeGenSettingsPage;
     QtOptionsPage qtOptionsPage;
 
     ExamplesWelcomePage examplesPage{true};
     ExamplesWelcomePage tutorialPage{false};
-
-    QtKitAspect qtKiAspect;
 
     QtOutputFormatterFactory qtOutputFormatterFactory;
 
@@ -65,6 +61,8 @@ public:
 
     DesignerExternalEditor designerEditor;
     LinguistEditor linguistEditor;
+
+    TranslationWizardPageFactory translationWizardPageFactory;
 };
 
 QtSupportPlugin::~QtSupportPlugin()
@@ -76,7 +74,7 @@ static void processRunnerCallback(ProcessData *data)
 {
     FilePath rootPath = FilePath::fromString(data->deviceRoot);
 
-    QtcProcess proc;
+    Process proc;
     proc.setProcessChannelMode(data->processChannelMode);
     proc.setCommand({rootPath.withNewPath("/bin/sh"), {QString("-c"), data->command}});
     proc.setWorkingDirectory(FilePath::fromString(data->workingDirectory));
@@ -94,17 +92,53 @@ void QtSupportPlugin::initialize()
 {
     theProcessRunner() = processRunnerCallback;
 
+    thePrompter() = [this](const QString &msg, const QStringList &context) -> std::optional<QString> {
+        std::optional<QString> res;
+        QEventLoop loop;
+
+        QMetaObject::invokeMethod(this, [msg, context, &res, &loop] {
+            QString text;
+            if (!context.isEmpty()) {
+                text = "Preceding lines:<i><br>&nbsp;&nbsp;&nbsp;..."
+                       + context.join("<br>&nbsp;&nbsp;&nbsp;")
+                       + "</i><p>";
+            }
+            text += msg;
+            bool ok = false;
+            const QString line = QInputDialog::getText(
+                ICore::dialogParent(),
+                /*title*/ "QMake Prompt",
+                /*label*/ text,
+                /*echo mode*/ QLineEdit::Normal,
+                /*text*/ QString(),
+                /*ok*/ &ok,
+                /*flags*/ Qt::WindowFlags(),
+                /*QInputMethodHints*/ Qt::ImhNone);
+            if (ok)
+                res = line;
+            loop.quit();
+        }, Qt::QueuedConnection);
+        loop.exec(QEventLoop::ExcludeUserInputEvents);
+        return res;
+    };
+
     QMakeParser::initialize();
     ProFileEvaluator::initialize();
     new ProFileCacheManager(this);
 
     JsExpander::registerGlobalObject<CodeGenerator>("QtSupport");
-    ProjectExplorer::JsonWizardFactory::registerPageFactory(new TranslationWizardPageFactory);
-    ProjectExplorerPlugin::showQtSettings();
+
+    BuildPropertiesSettings::showQtSettings();
 
     d = new QtSupportPluginPrivate;
 
     QtVersionManager::initialized();
+}
+
+ExtensionSystem::IPlugin::ShutdownFlag QtSupportPlugin::aboutToShutdown()
+{
+    QtVersionManager::shutdown();
+    return SynchronousShutdown;
 }
 
 const char kLinkWithQtInstallationSetting[] = "LinkWithQtInstallation";
@@ -113,7 +147,7 @@ static void askAboutQtInstallation()
 {
     // if the install settings exist, the Qt Creator installation is (probably) already linked to
     // a Qt installation, so don't ask
-    if (!QtOptionsPage::canLinkWithQt() || QtOptionsPage::isLinkedWithQt()
+    if (!LinkWithQtSupport::canLinkWithQt() || LinkWithQtSupport::isLinkedWithQt()
         || !ICore::infoBar()->canInfoBeAdded(kLinkWithQtInstallationSetting))
         return;
 
@@ -125,7 +159,7 @@ static void askAboutQtInstallation()
         Utils::InfoBarEntry::GlobalSuppression::Enabled);
     info.addCustomButton(Tr::tr("Link with Qt"), [] {
         ICore::infoBar()->removeInfo(kLinkWithQtInstallationSetting);
-        QTimer::singleShot(0, ICore::dialogParent(), &QtOptionsPage::linkWithQt);
+        QTimer::singleShot(0, ICore::dialogParent(), &LinkWithQtSupport::linkWithQt);
     });
     ICore::infoBar()->addInfo(info);
 }
@@ -197,7 +231,7 @@ void QtSupportPlugin::extensionsInitialized()
 
     expander->registerVariable(
         "ActiveProject::QT_HOST_LIBEXECS",
-        Tr::tr("Full path to the libexec bin directory of the Qt version in the active kit "
+        Tr::tr("Full path to the libexec directory of the Qt version in the active kit "
                "of the active project."),
         []() {
             const QtVersion *const qt = activeQtVersion();

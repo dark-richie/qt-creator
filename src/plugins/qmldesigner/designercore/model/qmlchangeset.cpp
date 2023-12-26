@@ -6,7 +6,6 @@
 #include "rewritertransaction.h"
 #include "variantproperty.h"
 #include "abstractview.h"
-#include <metainfo.h>
 
 #include <utils/algorithm.h>
 
@@ -76,7 +75,7 @@ bool QmlModelStateOperation::isValid() const
 
 bool QmlModelStateOperation::isValidQmlModelStateOperation(const ModelNode &modelNode)
 {
-    return isValidQmlModelNodeFacade(modelNode) && modelNode.metaInfo().isQuickStateOperation();
+    return isValidQmlModelNodeFacade(modelNode) && modelNode.metaInfo().isQtQuickStateOperation();
 }
 
 void QmlPropertyChanges::removeProperty(const PropertyName &name)
@@ -85,7 +84,7 @@ void QmlPropertyChanges::removeProperty(const PropertyName &name)
     if (name == "name")
         return;
     modelNode().removeProperty(name);
-    if (modelNode().variantProperties().isEmpty() && modelNode().bindingProperties().count() < 2)
+    if (modelNode().variantProperties().isEmpty() && modelNode().bindingProperties().size() < 2)
         modelNode().destroy();
 }
 

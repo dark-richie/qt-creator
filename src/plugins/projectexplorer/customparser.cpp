@@ -91,9 +91,9 @@ void CustomParserExpression::setMessageCap(int messageCap)
     m_messageCap = messageCap;
 }
 
-QVariantMap CustomParserExpression::toMap() const
+Store CustomParserExpression::toMap() const
 {
-    QVariantMap map;
+    Store map;
     map.insert(patternKey, pattern());
     map.insert(messageCapKey, messageCap());
     map.insert(fileNameCapKey, fileNameCap());
@@ -103,7 +103,7 @@ QVariantMap CustomParserExpression::toMap() const
     return map;
 }
 
-void CustomParserExpression::fromMap(const QVariantMap &map)
+void CustomParserExpression::fromMap(const Store &map)
 {
     setPattern(map.value(patternKey).toString());
     setMessageCap(map.value(messageCapKey).toInt());
@@ -139,22 +139,22 @@ bool CustomParserSettings::operator ==(const CustomParserSettings &other) const
             && error == other.error && warning == other.warning;
 }
 
-QVariantMap CustomParserSettings::toMap() const
+Store CustomParserSettings::toMap() const
 {
-    QVariantMap map;
+    Store map;
     map.insert(idKey, id.toSetting());
     map.insert(nameKey, displayName);
-    map.insert(errorKey, error.toMap());
-    map.insert(warningKey, warning.toMap());
+    map.insert(errorKey, variantFromStore(error.toMap()));
+    map.insert(warningKey, variantFromStore(warning.toMap()));
     return map;
 }
 
-void CustomParserSettings::fromMap(const QVariantMap &map)
+void CustomParserSettings::fromMap(const Store &map)
 {
-    id = Utils::Id::fromSetting(map.value(idKey));
+    id = Id::fromSetting(map.value(idKey));
     displayName = map.value(nameKey).toString();
-    error.fromMap(map.value(errorKey).toMap());
-    warning.fromMap(map.value(warningKey).toMap());
+    error.fromMap(storeFromVariant(map.value(errorKey)));
+    warning.fromMap(storeFromVariant(map.value(warningKey)));
 }
 
 CustomParsersAspect::CustomParsersAspect(Target *target)
@@ -173,14 +173,23 @@ CustomParsersAspect::CustomParsersAspect(Target *target)
     });
 }
 
-void CustomParsersAspect::fromMap(const QVariantMap &map)
+OutputTaskParser *createCustomParserFromId(Utils::Id id)
 {
-    m_parsers = transform(map.value(settingsKey()).toList(), &Utils::Id::fromSetting);
+    const CustomParserSettings parser = findOrDefault(ProjectExplorerPlugin::customParsers(),
+            [id](const CustomParserSettings &p) { return p.id == id; });
+    if (parser.id.isValid())
+        return new Internal::CustomParser(parser);
+    return nullptr;
 }
 
-void CustomParsersAspect::toMap(QVariantMap &map) const
+void CustomParsersAspect::fromMap(const Store &map)
 {
-    map.insert(settingsKey(), transform(m_parsers, &Utils::Id::toSetting));
+    m_parsers = transform(map.value(settingsKey()).toList(), &Id::fromSetting);
+}
+
+void CustomParsersAspect::toMap(Store &map) const
+{
+    map.insert(settingsKey(), transform(m_parsers, &Id::toSetting));
 }
 
 namespace Internal {
@@ -196,15 +205,6 @@ void CustomParser::setSettings(const CustomParserSettings &settings)
 {
     m_error = settings.error;
     m_warning = settings.warning;
-}
-
-CustomParser *CustomParser::createFromId(Utils::Id id)
-{
-    const CustomParserSettings parser = findOrDefault(ProjectExplorerPlugin::customParsers(),
-            [id](const CustomParserSettings &p) { return p.id == id; });
-    if (parser.id.isValid())
-        return new CustomParser(parser);
-    return nullptr;
 }
 
 OutputLineParser::Result CustomParser::handleLine(const QString &line, OutputFormat type)
@@ -322,7 +322,7 @@ private:
 CustomParsersSelectionWidget::CustomParsersSelectionWidget(QWidget *parent) : DetailsWidget(parent)
 {
     const auto widget = new SelectionWidget(this);
-    connect(widget, &SelectionWidget::selectionChanged, [this] {
+    connect(widget, &SelectionWidget::selectionChanged, this, [this] {
         updateSummary();
         emit selectionChanged();
     });

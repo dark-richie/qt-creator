@@ -10,7 +10,7 @@
 
 #include <sqlitedatabase.h>
 
-#ifdef QDS_HAS_QMLDOM
+#ifdef QDS_BUILD_QMLPARSER
 #include <private/qqmldomtop_p.h>
 #endif
 
@@ -19,22 +19,23 @@
 
 namespace QmlDesigner {
 
-#ifdef QDS_HAS_QMLDOM
+#ifdef QDS_BUILD_QMLPARSER
 
 namespace QmlDom = QQmlJS::Dom;
+namespace Synchronization = Storage::Synchronization;
 
 namespace {
 
-using QualifiedImports = std::map<QString, Storage::Synchronization::Import>;
+using QualifiedImports = std::map<QString, Storage::Import>;
 
 int convertVersionNumber(qint32 versionNumber)
 {
     return versionNumber < 0 ? -1 : versionNumber;
 }
 
-Storage::Synchronization::Version convertVersion(QmlDom::Version version)
+Storage::Version convertVersion(QmlDom::Version version)
 {
-    return Storage::Synchronization::Version{convertVersionNumber(version.majorVersion),
+    return Storage::Version{convertVersionNumber(version.majorVersion),
                                              convertVersionNumber(version.minorVersion)};
 }
 
@@ -54,10 +55,10 @@ Utils::PathString createNormalizedPath(Utils::SmallStringView directoryPath,
     return normalizedPath;
 }
 
-Storage::Synchronization::Import createImport(const QmlDom::Import &qmlImport,
-                                              SourceId sourceId,
-                                              Utils::SmallStringView directoryPath,
-                                              QmlDocumentParser::ProjectStorage &storage)
+Storage::Import createImport(const QmlDom::Import &qmlImport,
+                             SourceId sourceId,
+                             Utils::SmallStringView directoryPath,
+                             QmlDocumentParser::ProjectStorage &storage)
 {
     using QmlUriKind = QQmlJS::Dom::QmlUri::Kind;
 
@@ -66,16 +67,16 @@ Storage::Synchronization::Import createImport(const QmlDom::Import &qmlImport,
     if (uri.kind() == QmlUriKind::RelativePath) {
         auto path = createNormalizedPath(directoryPath, uri.localPath());
         auto moduleId = storage.moduleId(createNormalizedPath(directoryPath, uri.localPath()));
-        return Storage::Synchronization::Import(moduleId, Storage::Synchronization::Version{}, sourceId);
+        return Storage::Import(moduleId, Storage::Version{}, sourceId);
     }
 
     if (uri.kind() == QmlUriKind::ModuleUri) {
         auto moduleId = storage.moduleId(Utils::PathString{uri.moduleUri()});
-        return Storage::Synchronization::Import(moduleId, convertVersion(qmlImport.version), sourceId);
+        return Storage::Import(moduleId, convertVersion(qmlImport.version), sourceId);
     }
 
     auto moduleId = storage.moduleId(Utils::PathString{uri.toString()});
-    return Storage::Synchronization::Import(moduleId, convertVersion(qmlImport.version), sourceId);
+    return Storage::Import(moduleId, convertVersion(qmlImport.version), sourceId);
 }
 
 QualifiedImports createQualifiedImports(const QList<QmlDom::Import> &qmlImports,
@@ -94,7 +95,7 @@ QualifiedImports createQualifiedImports(const QList<QmlDom::Import> &qmlImports,
     return qualifiedImports;
 }
 
-void addImports(Storage::Synchronization::Imports &imports,
+void addImports(Storage::Imports &imports,
                 const QList<QmlDom::Import> &qmlImports,
                 SourceId sourceId,
                 Utils::SmallStringView directoryPath,
@@ -109,11 +110,11 @@ void addImports(Storage::Synchronization::Imports &imports,
     }
 
     auto localDirectoryModuleId = storage.moduleId(directoryPath);
-    imports.emplace_back(localDirectoryModuleId, Storage::Synchronization::Version{}, sourceId);
+    imports.emplace_back(localDirectoryModuleId, Storage::Version{}, sourceId);
     ++importCount;
 
     auto qmlModuleId = storage.moduleId("QML");
-    imports.emplace_back(qmlModuleId, Storage::Synchronization::Version{}, sourceId);
+    imports.emplace_back(qmlModuleId, Storage::Version{}, sourceId);
     ++importCount;
 
     auto end = imports.end();
@@ -123,8 +124,8 @@ void addImports(Storage::Synchronization::Imports &imports,
     imports.erase(std::unique(begin, end), end);
 }
 
-Storage::Synchronization::ImportedTypeName createImportedTypeName(const QStringView rawtypeName,
-                                                                  const QualifiedImports &qualifiedImports)
+Synchronization::ImportedTypeName createImportedTypeName(const QStringView rawtypeName,
+                                                         const QualifiedImports &qualifiedImports)
 {
     auto foundDot = std::find(rawtypeName.begin(), rawtypeName.end(), '.');
 
@@ -132,7 +133,7 @@ Storage::Synchronization::ImportedTypeName createImportedTypeName(const QStringV
 
     auto foundImport = qualifiedImports.find(alias.toString());
     if (foundImport == qualifiedImports.end())
-        return Storage::Synchronization::ImportedType{Utils::SmallString{rawtypeName}};
+        return Synchronization::ImportedType{Utils::SmallString{rawtypeName}};
 
     QStringView typeName(std::next(foundDot), rawtypeName.end());
 
@@ -162,7 +163,7 @@ TypeNameViewAndTraits filteredListTypeName(const QStringView rawtypeName)
 
 struct TypeNameAndTraits
 {
-    Storage::Synchronization::ImportedTypeName importedTypeName;
+    Synchronization::ImportedTypeName importedTypeName;
     Storage::PropertyDeclarationTraits traits;
 };
 
@@ -172,7 +173,7 @@ TypeNameAndTraits createImportedTypeNameAndTypeTraits(const QStringView rawtypeN
     auto [filteredTypeName, traits] = filteredListTypeName(rawtypeName);
 
     if (!filteredTypeName.contains('.'))
-        return {Storage::Synchronization::ImportedType{Utils::SmallString{filteredTypeName}}, traits};
+        return {Synchronization::ImportedType{Utils::SmallString{filteredTypeName}}, traits};
 
     return {createImportedTypeName(filteredTypeName, qualifiedImports), traits};
 }
@@ -275,7 +276,7 @@ void addEnumeraton(Storage::Synchronization::Type &type, const QmlDom::Component
 } // namespace
 
 Storage::Synchronization::Type QmlDocumentParser::parse(const QString &sourceContent,
-                                                        Storage::Synchronization::Imports &imports,
+                                                        Storage::Imports &imports,
                                                         SourceId sourceId,
                                                         Utils::SmallStringView directoryPath)
 {
@@ -342,7 +343,7 @@ Storage::Synchronization::Type QmlDocumentParser::parse(const QString &sourceCon
 
 Storage::Synchronization::Type QmlDocumentParser::parse(
     [[maybe_unused]] const QString &sourceContent,
-    [[maybe_unused]] Storage::Synchronization::Imports &imports,
+    [[maybe_unused]] Storage::Imports &imports,
     [[maybe_unused]] SourceId sourceId,
     [[maybe_unused]] Utils::SmallStringView directoryPath)
 {

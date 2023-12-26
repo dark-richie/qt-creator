@@ -5,9 +5,9 @@
 
 #include <extensionsystem/iplugin.h>
 
-namespace Utils { class FutureSynchronizer; }
-
 namespace Python::Internal {
+
+class PythonBuildConfigurationFactory;
 
 class PythonPlugin final : public ExtensionSystem::IPlugin
 {
@@ -19,7 +19,6 @@ public:
     ~PythonPlugin() final;
 
     static PythonPlugin *instance();
-    static Utils::FutureSynchronizer *futureSynchronizer();
 
 private:
     void initialize() final;

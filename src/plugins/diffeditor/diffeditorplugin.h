@@ -6,10 +6,7 @@
 #include <coreplugin/diffservice.h>
 #include <extensionsystem/iplugin.h>
 
-namespace Utils { class FutureSynchronizer; }
-
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 class DiffEditorServiceImpl : public QObject, public Core::DiffService
 {
@@ -34,8 +31,6 @@ public:
 
     void initialize() final;
 
-    static Utils::FutureSynchronizer *futureSynchronizer();
-
 private:
     class DiffEditorPluginPrivate *d = nullptr;
 
@@ -50,5 +45,4 @@ private slots:
 #endif // WITH_TESTS
 };
 
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal

@@ -8,7 +8,7 @@ source("../../shared/qtcreator.py")
 def main():
     files = map(lambda record: os.path.join(srcPath, testData.field(record, "filename")),
                 testData.dataset("files.tsv"))
-    files = filter(lambda x: not x.endswith(".bin"), files)
+    files = list(filter(lambda x: not x.endswith(".bin"), files))
     for currentFile in files:
         if not neededFilePresent(currentFile):
             return
@@ -18,7 +18,7 @@ def main():
         return
     for currentFile in files:
         test.log("Opening file %s" % currentFile)
-        size = len(readFile(currentFile))
+        size = len(stringify(readFile(currentFile)))
         invokeMenuItem("File", "Open File or Project...")
         selectFromFileDialog(currentFile, True)
         editor = getEditorForFileSuffix(currentFile)

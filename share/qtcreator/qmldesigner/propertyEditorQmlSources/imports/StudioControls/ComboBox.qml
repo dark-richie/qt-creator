@@ -34,6 +34,8 @@ T.ComboBox {
 
     property int maximumPopupHeight: control.style.maxComboBoxPopupHeight
 
+    property string preFocusText: ""
+
     signal compressedActivated(int index, int reason)
 
     enum ActivatedReason { EditingFinished, Other }
@@ -53,7 +55,7 @@ T.ComboBox {
 
     onActiveFocusChanged: {
         if (control.activeFocus)
-            comboBoxInput.preFocusText = control.editText
+            control.preFocusText = control.editText
     }
 
     ActionIndicator {
@@ -68,8 +70,6 @@ T.ComboBox {
 
     contentItem: ComboBoxInput {
         id: comboBoxInput
-
-        property string preFocusText: ""
 
         style: control.style
         __parentControl: control
@@ -130,14 +130,13 @@ T.ComboBox {
         id: itemDelegate
 
         width: comboBoxPopup.width - comboBoxPopup.leftPadding - comboBoxPopup.rightPadding
-               - (comboBoxPopupScrollBar.visible ? comboBoxPopupScrollBar.contentItem.implicitWidth
-                                                   + 2 : 0) // TODO Magic number
         height: control.style.controlSize.height - 2 * control.style.borderWidth
         padding: 0
         enabled: model.enabled === undefined ? true : model.enabled
 
         contentItem: Text {
-            leftPadding: itemDelegateIconArea.width
+            leftPadding: 8
+            rightPadding: verticalScrollBar.style.scrollBarThicknessHover
             text: control.textRole ? (Array.isArray(control.model)
                                       ? modelData[control.textRole]
                                       : model[control.textRole])
@@ -146,32 +145,14 @@ T.ComboBox {
                 if (!itemDelegate.enabled)
                     return control.style.text.disabled
 
-                return itemDelegate.highlighted ? control.style.text.selectedText
-                                                : control.style.text.idle
+                if (control.currentIndex === index)
+                    return control.style.text.selectedText
+
+                return control.style.text.idle
             }
             font: control.font
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
-        }
-
-        Item {
-            id: itemDelegateIconArea
-            width: itemDelegate.height
-            height: itemDelegate.height
-
-            T.Label {
-                id: itemDelegateIcon
-                text: StudioTheme.Constants.tickIcon
-                color: itemDelegate.highlighted ? control.style.text.selectedText
-                                                : control.style.text.idle
-                font.family: StudioTheme.Constants.iconFont.family
-                font.pixelSize: control.style.smallIconFontSize
-                visible: control.currentIndex === index
-                anchors.fill: parent
-                renderType: Text.NativeRendering
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
         }
 
         highlighted: control.highlightedIndex === index
@@ -182,7 +163,21 @@ T.ComboBox {
             y: 0
             width: itemDelegate.width
             height: itemDelegate.height
-            color: itemDelegate.highlighted ? control.style.interaction : "transparent"
+            color: {
+                if (!itemDelegate.enabled)
+                    return "transparent"
+
+                if (itemDelegate.hovered && control.currentIndex === index)
+                    return control.style.interactionHover
+
+                if (control.currentIndex === index)
+                    return control.style.interaction
+
+                if (itemDelegate.hovered)
+                    return control.style.background.hover
+
+                return "transparent"
+            }
         }
     }
 
@@ -211,9 +206,19 @@ T.ComboBox {
             model: control.popup.visible ? control.delegateModel : null
             currentIndex: control.highlightedIndex
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {
-                id: comboBoxPopupScrollBar
-                visible: listView.height < listView.contentHeight
+
+            HoverHandler { id: hoverHandler }
+
+            ScrollBar.vertical: TransientScrollBar {
+                id: verticalScrollBar
+                parent: listView
+                x: listView.width - verticalScrollBar.width
+                y: 0
+                height: listView.availableHeight
+                orientation: Qt.Vertical
+
+                show: (hoverHandler.hovered || verticalScrollBar.inUse)
+                      && verticalScrollBar.isNeeded
             }
         }
 
@@ -332,8 +337,8 @@ T.ComboBox {
 
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) {
-            control.editText = comboBoxInput.preFocusText
-            control.dirty = true
+            control.editText = control.preFocusText
+            control.dirty = false
             control.focus = false
         }
     }

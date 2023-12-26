@@ -114,7 +114,7 @@ int CppSelectionChanger::getTokenStartCursorPosition(
         const QTextCursor &cursor) const
 {
     int startLine, startColumn;
-    m_unit->getTokenStartPosition(tokenIndex, &startLine, &startColumn);
+    m_unit->getTokenPosition(tokenIndex, &startLine, &startColumn);
 
     const QTextDocument *document = cursor.document();
     const int startPosition = document->findBlockByNumber(startLine - 1).position()
@@ -144,7 +144,7 @@ void CppSelectionChanger::printTokenDebugInfo(
 {
     int line, column;
     const Token token = m_unit->tokenAt(tokenIndex);
-    m_unit->getTokenStartPosition(tokenIndex, &line, &column);
+    m_unit->getTokenPosition(tokenIndex, &line, &column);
     const int startPos = getTokenStartCursorPosition(tokenIndex, cursor);
     const int endPos = getTokenEndCursorPosition(tokenIndex, cursor);
 
@@ -546,7 +546,7 @@ void CppSelectionChanger::fineTuneASTNodePositions(ASTNodePositions &positions) 
 
             // Start position will be the end position minus the size of the actual contents of the
             // literal.
-            int newPosStart = newPosEnd - firstToken.string->size();
+            int newPosStart = newPosEnd - QString::fromUtf8(firstToken.string->chars()).size();
 
             // Skip raw literal parentheses.
             if (isRawLiteral)

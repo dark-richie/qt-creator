@@ -27,6 +27,7 @@
 
 #include "bindingproperty.h"
 #include "propertyeditorvalue.h"
+#include "connectioneditorutils.h"
 
 #include <dynamicpropertiesmodel.h>
 
@@ -96,7 +97,7 @@ QHash<int, QByteArray> DynamicPropertiesProxyModel::roleNames() const
 QVariant DynamicPropertiesProxyModel::data(const QModelIndex &index, int role) const
 {
     if (index.isValid() && index.row() < rowCount()) {
-        AbstractProperty property = m_model->abstractPropertyForRow(index.row());
+        AbstractProperty property = m_model->propertyForRow(index.row());
 
         QTC_ASSERT(property.isValid(), return QVariant());
 
@@ -142,7 +143,7 @@ QString DynamicPropertiesProxyModel::newPropertyName() const
 {
     DynamicPropertiesModel *propsModel = dynamicPropertiesModel();
 
-    return QString::fromUtf8(propsModel->unusedProperty(propsModel->singleSelectedNode()));
+    return QString::fromUtf8(uniquePropertyName("property", propsModel->singleSelectedNode()));
 }
 
 void DynamicPropertiesProxyModel::createProperty(const QString &name, const QString &type)
@@ -152,7 +153,7 @@ void DynamicPropertiesProxyModel::createProperty(const QString &name, const QStr
     TypeName typeName = type.toUtf8();
 
     const auto selectedNodes = dynamicPropertiesModel()->selectedNodes();
-    if (selectedNodes.count() == 1) {
+    if (selectedNodes.size() == 1) {
         const ModelNode modelNode = selectedNodes.constFirst();
         if (modelNode.isValid()) {
             if (modelNode.hasProperty(name.toUtf8())) {
@@ -162,12 +163,12 @@ void DynamicPropertiesProxyModel::createProperty(const QString &name, const QStr
                 return;
             }
             try {
-                if (DynamicPropertiesModel::isValueType(typeName)) {
-                    QVariant value = DynamicPropertiesModel::defaultValueForType(typeName);
+                if (isDynamicVariantPropertyType(typeName)) {
+                    QVariant value = defaultValueForType(typeName);
                     VariantProperty variantProp = modelNode.variantProperty(name.toUtf8());
                     variantProp.setDynamicTypeNameAndValue(typeName, value);
                 } else {
-                    QString expression = DynamicPropertiesModel::defaultExpressionForType(typeName);
+                    QString expression = defaultExpressionForType(typeName);
 
                     BindingProperty bindingProp = modelNode.bindingProperty(name.toUtf8());
                     bindingProp.setDynamicTypeNameAndExpression(typeName, expression);
@@ -261,7 +262,7 @@ PropertyEditorValue *DynamicPropertyRow::backendValue() const
 
 void DynamicPropertyRow::remove()
 {
-    m_model->dynamicPropertiesModel()->deleteDynamicPropertyByRow(m_row);
+    m_model->dynamicPropertiesModel()->remove(m_row);
 }
 
 PropertyEditorValue *DynamicPropertyRow::createProxyBackendValue()
@@ -283,7 +284,7 @@ void DynamicPropertyRow::setupBackendValue()
     if (!m_model)
         return;
 
-    AbstractProperty property = m_model->dynamicPropertiesModel()->abstractPropertyForRow(m_row);
+    AbstractProperty property = m_model->dynamicPropertiesModel()->propertyForRow(m_row);
     if (!property.isValid())
         return;
 
@@ -324,27 +325,32 @@ void DynamicPropertyRow::commitValue(const QVariant &value)
         return;
 
     auto propertiesModel = m_model->dynamicPropertiesModel();
-    VariantProperty variantProperty = propertiesModel->variantPropertyForRow(m_row);
+    AbstractProperty property = propertiesModel->propertyForRow(m_row);
 
-    if (!DynamicPropertiesModel::isValueType(variantProperty.dynamicTypeName()))
+    if (!isDynamicVariantPropertyType(property.dynamicTypeName()))
         return;
 
     m_lock = true;
-    auto unlock = qScopeGuard([this] { m_lock = false; });
+    const QScopeGuard cleanup([this] { m_lock = false; });
 
     auto view = propertiesModel->view();
     RewriterTransaction transaction = view->beginRewriterTransaction(__FUNCTION__);
     try {
-        QmlObjectNode objectNode = variantProperty.parentQmlObjectNode();
-        if (view->currentState().isBaseState()
-                && !(objectNode.timelineIsActive() && objectNode.currentTimeline().isRecording())) {
-            if (variantProperty.value() != value)
-                variantProperty.setDynamicTypeNameAndValue(variantProperty.dynamicTypeName(), value);
-        } else {
-            QTC_CHECK(objectNode.isValid());
-            PropertyName name = variantProperty.name();
-            if (objectNode.isValid() && objectNode.modelValue(name) != value)
-                objectNode.setVariantProperty(name, value);
+        if (property.isBindingProperty()) {
+            convertBindingToVariantProperty(property.toBindingProperty(), value);
+        } else if (property.isVariantProperty()) {
+            VariantProperty variantProperty = property.toVariantProperty();
+            QmlObjectNode objectNode = variantProperty.parentQmlObjectNode();
+            if (view->currentState().isBaseState()
+                    && !(objectNode.timelineIsActive() && objectNode.currentTimeline().isRecording())) {
+                if (variantProperty.value() != value)
+                    variantProperty.setDynamicTypeNameAndValue(variantProperty.dynamicTypeName(), value);
+            } else {
+                QTC_CHECK(objectNode.isValid());
+                PropertyName name = variantProperty.name();
+                if (objectNode.isValid() && objectNode.modelValue(name) != value)
+                    objectNode.setVariantProperty(name, value);
+            }
         }
         transaction.commit(); // committing in the try block
     } catch (Exception &e) {
@@ -358,7 +364,7 @@ void DynamicPropertyRow::commitExpression(const QString &expression)
         return;
 
     auto propertiesModel = m_model->dynamicPropertiesModel();
-    AbstractProperty property = propertiesModel->abstractPropertyForRow(m_row);
+    AbstractProperty property = propertiesModel->propertyForRow(m_row);
 
     BindingProperty bindingProperty = property.parentModelNode().bindingProperty(property.name());
 
@@ -371,7 +377,7 @@ void DynamicPropertyRow::commitExpression(const QString &expression)
     }
 
     m_lock = true;
-    auto unlock = qScopeGuard([this] { m_lock = false; });
+    const QScopeGuard cleanup([this] { m_lock = false; });
 
     auto view = propertiesModel->view();
     RewriterTransaction transaction = view->beginRewriterTransaction(__FUNCTION__);
@@ -413,20 +419,20 @@ void DynamicPropertyRow::resetValue()
     auto propertiesModel = m_model->dynamicPropertiesModel();
     auto view = propertiesModel->view();
 
-    AbstractProperty property = propertiesModel->abstractPropertyForRow(m_row);
+    AbstractProperty property = propertiesModel->propertyForRow(m_row);
     TypeName typeName = property.dynamicTypeName();
 
     if (view->currentState().isBaseState()) {
-        if (DynamicPropertiesModel::isValueType(typeName)) {
-            QVariant value = DynamicPropertiesModel::defaultValueForType(typeName);
+        if (isDynamicVariantPropertyType(typeName)) {
+            QVariant value = defaultValueForType(typeName);
             commitValue(value);
         } else {
-            QString expression = DynamicPropertiesModel::defaultExpressionForType(typeName);
+            QString expression = defaultExpressionForType(typeName);
             commitExpression(expression);
         }
     } else {
         m_lock = true;
-        auto unlock = qScopeGuard([this] { m_lock = false; });
+        const QScopeGuard cleanup([this] { m_lock = false; });
 
         RewriterTransaction transaction = view->beginRewriterTransaction(__FUNCTION__);
         try {

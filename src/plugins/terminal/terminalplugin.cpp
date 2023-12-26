@@ -1,13 +1,10 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "terminalplugin.h"
-
 #include "terminalpane.h"
 #include "terminalprocessimpl.h"
 #include "terminalsettings.h"
-#include "terminalsettingspage.h"
-#include "terminalcommands.h"
+#include "terminalwidget.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -16,6 +13,7 @@
 #include <coreplugin/imode.h>
 #include <coreplugin/modemanager.h>
 
+#include <extensionsystem/iplugin.h>
 #include <extensionsystem/pluginmanager.h>
 
 #include <QAction>
@@ -24,61 +22,64 @@
 #include <QMessageBox>
 #include <QPushButton>
 
-namespace Terminal {
-namespace Internal {
+namespace Terminal::Internal {
 
-TerminalPlugin::TerminalPlugin() {}
-
-TerminalPlugin::~TerminalPlugin()
+class TerminalPlugin final : public ExtensionSystem::IPlugin
 {
-    ExtensionSystem::PluginManager::instance()->removeObject(m_terminalPane);
-    delete m_terminalPane;
-    m_terminalPane = nullptr;
-}
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Terminal.json")
 
-bool TerminalPlugin::delayedInitialize()
-{
-    TerminalCommands::instance().lazyInitCommands();
-    return true;
-}
+public:
+    TerminalPlugin() = default;
 
-void TerminalPlugin::extensionsInitialized()
-{
-    TerminalSettingsPage::instance().init();
-    TerminalSettings::instance().readSettings(Core::ICore::settings());
+    ~TerminalPlugin() final
+    {
+        ExtensionSystem::PluginManager::removeObject(m_terminalPane);
+        delete m_terminalPane;
+        m_terminalPane = nullptr;
+    }
 
-    m_terminalPane = new TerminalPane();
-    ExtensionSystem::PluginManager::instance()->addObject(m_terminalPane);
+    void extensionsInitialized() final
+    {
+        m_terminalPane = new TerminalPane;
+        ExtensionSystem::PluginManager::addObject(m_terminalPane);
 
-    auto enable = [this] {
-        Utils::Terminal::Hooks::instance()
-            .addCallbackSet("Internal",
-                            {[this](const Utils::Terminal::OpenTerminalParameters &p) {
-                                 m_terminalPane->openTerminal(p);
-                             },
-                             [this] { return new TerminalProcessImpl(m_terminalPane); }});
-    };
+        TerminalWidget::initActions(this);
 
-    auto disable = [] { Utils::Terminal::Hooks::instance().removeCallbackSet("Internal"); };
+        auto enable = [this] {
+            Utils::Terminal::Hooks::instance()
+                .addCallbackSet("Internal",
+                                {[this](const Utils::Terminal::OpenTerminalParameters &p) {
+                                     m_terminalPane->openTerminal(p);
+                                 },
+                                 [this] { return new TerminalProcessImpl(m_terminalPane); }});
+        };
 
-    static bool isEnabled = false;
-    auto settingsChanged = [enable, disable] {
-        if (isEnabled != TerminalSettings::instance().enableTerminal.value()) {
-            isEnabled = TerminalSettings::instance().enableTerminal.value();
-            if (isEnabled)
-                enable();
-            else
-                disable();
-        }
-    };
+        auto disable = [] { Utils::Terminal::Hooks::instance().removeCallbackSet("Internal"); };
 
-    QObject::connect(&TerminalSettings::instance(),
-                     &Utils::AspectContainer::applied,
-                     this,
-                     settingsChanged);
+        static bool isEnabled = false;
+        auto settingsChanged = [enable, disable] {
+            if (isEnabled != settings().enableTerminal()) {
+                isEnabled = settings().enableTerminal();
+                if (isEnabled)
+                    enable();
+                else
+                    disable();
+            }
+        };
 
-    settingsChanged();
-}
+        QObject::connect(&settings(),
+                         &Utils::AspectContainer::applied,
+                         this,
+                         settingsChanged);
 
-} // namespace Internal
-} // namespace Terminal
+        settingsChanged();
+    }
+
+private:
+    TerminalPane *m_terminalPane{nullptr};
+};
+
+} // namespace Terminal::Internal
+
+#include "terminalplugin.moc"

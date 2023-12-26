@@ -12,17 +12,17 @@
 #include "qmakesettings.h"
 #include "qmakestep.h"
 
-#include <projectexplorer/target.h>
-#include <projectexplorer/toolchain.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/gnumakeparser.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/target.h>
+#include <projectexplorer/toolchain.h>
 #include <projectexplorer/xcodebuildparser.h>
 
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/variablechooser.h>
 
 #include <QDir>
@@ -40,10 +40,9 @@ public:
     QmakeMakeStep(BuildStepList *bsl, Id id);
 
 private:
-    void finish(ProcessResult result) override;
     bool init() override;
     void setupOutputFormatter(OutputFormatter *formatter) override;
-    void doRun() override;
+    Tasking::GroupItem runRecipe() final;
     QStringList displayArguments() const override;
 
     bool m_scriptTarget = false;
@@ -180,7 +179,7 @@ bool QmakeMakeStep::init()
 void QmakeMakeStep::setupOutputFormatter(OutputFormatter *formatter)
 {
     formatter->addLineParser(new GnuMakeParser());
-    ToolChain *tc = ToolChainKitAspect::cxxToolChain(kit());
+    Toolchain *tc = ToolchainKitAspect::cxxToolchain(kit());
     OutputTaskParser *xcodeBuildParser = nullptr;
     if (tc && tc->targetAbi().os() == Abi::DarwinOS) {
         xcodeBuildParser = new XcodebuildParser;
@@ -201,33 +200,38 @@ void QmakeMakeStep::setupOutputFormatter(OutputFormatter *formatter)
     AbstractProcessStep::setupOutputFormatter(formatter);
 }
 
-void QmakeMakeStep::doRun()
+Tasking::GroupItem QmakeMakeStep::runRecipe()
 {
-    if (m_scriptTarget || m_ignoredNonTopLevelBuild) {
-        emit finished(true);
-        return;
-    }
+    using namespace Tasking;
 
-    if (!m_makeFileToCheck.exists()) {
-        if (!ignoreReturnValue())
-            emit addOutput(Tr::tr("Cannot find Makefile. Check your build settings."), BuildStep::OutputFormat::NormalMessage);
-        const bool success = ignoreReturnValue();
-        emit finished(success);
-        return;
-    }
+    const auto onSetup = [this] {
+        if (m_scriptTarget || m_ignoredNonTopLevelBuild)
+            return SetupResult::StopWithSuccess;
 
-    AbstractProcessStep::doRun();
-}
+        if (!m_makeFileToCheck.exists()) {
+            const bool success = ignoreReturnValue();
+            if (!success) {
+                emit addOutput(Tr::tr("Cannot find Makefile. Check your build settings."),
+                               OutputFormat::NormalMessage);
+            }
+            return success ? SetupResult::StopWithSuccess : SetupResult::StopWithError;
+        }
+        return SetupResult::Continue;
+    };
+    const auto onError = [this] {
+        if (m_unalignedBuildDir && settings().warnAgainstUnalignedBuildDir()) {
+            const QString msg = Tr::tr("The build directory is not at the same level as the source "
+                                       "directory, which could be the reason for the build failure.");
+            emit addTask(BuildSystemTask(Task::Warning, msg));
+        }
+    };
 
-void QmakeMakeStep::finish(ProcessResult result)
-{
-    if (!isSuccess(result) && !isCanceled() && m_unalignedBuildDir
-            && QmakeSettings::warnAgainstUnalignedBuildDir()) {
-        const QString msg = Tr::tr("The build directory is not at the same level as the source "
-                               "directory, which could be the reason for the build failure.");
-        emit addTask(BuildSystemTask(Task::Warning, msg));
-    }
-    MakeStep::finish(result);
+    return Group {
+        ignoreReturnValue() ? finishAllAndSuccess : stopOnError,
+        onGroupSetup(onSetup),
+        onGroupDone(onError, CallDoneIf::Error),
+        defaultProcessTask()
+    };
 }
 
 QStringList QmakeMakeStep::displayArguments() const

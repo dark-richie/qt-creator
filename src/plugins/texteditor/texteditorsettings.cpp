@@ -5,6 +5,7 @@
 
 #include "behaviorsettings.h"
 #include "behaviorsettingspage.h"
+#include "commentssettings.h"
 #include "completionsettings.h"
 #include "completionsettingspage.h"
 #include "displaysettings.h"
@@ -47,12 +48,15 @@ public:
     HighlighterSettingsPage m_highlighterSettingsPage;
     SnippetsSettingsPage m_snippetsSettingsPage;
     CompletionSettingsPage m_completionSettingsPage;
+    CommentsSettingsPage m_commentsSettingsPage;
 
     QMap<Utils::Id, ICodeStylePreferencesFactory *> m_languageToFactory;
 
     QMap<Utils::Id, ICodeStylePreferences *> m_languageToCodeStyle;
     QMap<Utils::Id, CodeStylePool *> m_languageToCodeStylePool;
     QMap<QString, Utils::Id> m_mimeTypeToLanguage;
+
+    std::function<CommentsSettings::Data(const Utils::FilePath &)> m_retrieveCommentsSettings;
 
 private:
     static std::vector<FormatDescription> initialFormats();
@@ -140,6 +144,8 @@ FormatDescriptions TextEditorSettingsPrivate::initialFormats()
     formatDescr.emplace_back(C_PRIMITIVE_TYPE, Tr::tr("Primitive Type"),
                              Tr::tr("Name of a primitive data type."), Qt::darkYellow);
     formatDescr.emplace_back(C_TYPE, Tr::tr("Type"), Tr::tr("Name of a type."),
+                             Qt::darkMagenta);
+    formatDescr.emplace_back(C_CONCEPT, Tr::tr("Concept"), Tr::tr("Name of a concept."),
                              Qt::darkMagenta);
     formatDescr.emplace_back(C_NAMESPACE, Tr::tr("Namespace"), Tr::tr("Name of a namespace."),
                              Qt::darkGreen);
@@ -499,9 +505,16 @@ const ExtraEncodingSettings &TextEditorSettings::extraEncodingSettings()
     return d->m_behaviorSettingsPage.extraEncodingSettings();
 }
 
-const CommentsSettings &TextEditorSettings::commentsSettings()
+void TextEditorSettings::setCommentsSettingsRetriever(
+    const std::function<CommentsSettings::Data(const Utils::FilePath &)> &retrieve)
 {
-    return d->m_completionSettingsPage.commentsSettings();
+    d->m_retrieveCommentsSettings = retrieve;
+}
+
+CommentsSettings::Data TextEditorSettings::commentsSettings(const Utils::FilePath &filePath)
+{
+    QTC_ASSERT(d->m_retrieveCommentsSettings, return CommentsSettings::data());
+    return d->m_retrieveCommentsSettings(filePath);
 }
 
 void TextEditorSettings::registerCodeStyleFactory(ICodeStylePreferencesFactory *factory)
@@ -581,7 +594,6 @@ Utils::Id TextEditorSettings::languageId(const QString &mimeType)
 
 static void setFontZoom(int zoom)
 {
-    d->m_fontSettingsPage.setFontZoom(zoom);
     d->m_fontSettings.setFontZoom(zoom);
     d->m_fontSettings.toSettings(Core::ICore::settings());
     emit m_instance->fontSettingsChanged(d->m_fontSettings);

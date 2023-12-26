@@ -7,11 +7,11 @@
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildstep.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
+#include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
-#include <projectexplorer/project.h>
 
 #include <qmakeprojectmanager/qmakeprojectmanagerconstants.h> // Compile-time only
 
@@ -37,7 +37,7 @@ FilePath MakeCommandBuilder::defaultCommand() const
 {
     if (BuildConfiguration *buildConfig = buildStep()->buildConfiguration()) {
         if (Target *target = buildStep()->target()) {
-            if (ToolChain *toolChain = ToolChainKitAspect::cxxToolChain(target->kit()))
+            if (Toolchain *toolChain = ToolchainKitAspect::cxxToolchain(target->kit()))
                 return toolChain->makeCommand(buildConfig->environment());
         }
     }

@@ -4,16 +4,15 @@ add_qtc_plugin(WebAssembly
   SOURCES
     webassembly.qrc
     webassembly_global.h
-    webassemblytr.h
     webassemblyconstants.h
     webassemblydevice.cpp webassemblydevice.h
     webassemblyemsdk.cpp webassemblyemsdk.h
-    webassemblyoptionspage.cpp webassemblyoptionspage.h
-    webassemblyplugin.cpp webassemblyplugin.h
+    webassemblyplugin.cpp
     webassemblyqtversion.cpp webassemblyqtversion.h
-    webassemblyrunconfigurationaspects.cpp webassemblyrunconfigurationaspects.h
     webassemblyrunconfiguration.cpp webassemblyrunconfiguration.h
+    webassemblysettings.cpp webassemblysettings.h
     webassemblytoolchain.cpp webassemblytoolchain.h
+    webassemblytr.h
 )
 
 extend_qtc_plugin(WebAssembly

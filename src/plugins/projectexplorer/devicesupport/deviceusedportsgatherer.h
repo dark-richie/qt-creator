@@ -7,8 +7,11 @@
 
 #include <projectexplorer/runcontrol.h>
 
+#include <solutions/tasking/tasktree.h>
+
 #include <utils/portlist.h>
-#include <utils/tasktree.h>
+
+using namespace Tasking;
 
 namespace ProjectExplorer {
 
@@ -43,11 +46,14 @@ private:
     Internal::DeviceUsedPortsGathererPrivate * const d;
 };
 
-class PROJECTEXPLORER_EXPORT DeviceUsedPortsGathererAdapter
-    : public Utils::Tasking::TaskAdapter<DeviceUsedPortsGatherer>
+class PROJECTEXPLORER_EXPORT DeviceUsedPortsGathererTaskAdapter
+    : public TaskAdapter<DeviceUsedPortsGatherer>
 {
 public:
-    DeviceUsedPortsGathererAdapter();
+    DeviceUsedPortsGathererTaskAdapter() {
+        connect(task(), &DeviceUsedPortsGatherer::portListReady, this, [this] { emit done(DoneResult::Success); });
+        connect(task(), &DeviceUsedPortsGatherer::error, this, [this] { emit done(DoneResult::Error); });
+    }
     void start() final { task()->start(); }
 };
 
@@ -83,6 +89,6 @@ private:
     QVector<Internal::SubChannelProvider *> m_channelProviders;
 };
 
-} // namespace ProjectExplorer
+using DeviceUsedPortsGathererTask = CustomTask<DeviceUsedPortsGathererTaskAdapter>;
 
-QTC_DECLARE_CUSTOM_TASK(PortGatherer, ProjectExplorer::DeviceUsedPortsGathererAdapter);
+} // namespace ProjectExplorer

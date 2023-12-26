@@ -24,6 +24,8 @@
 
 #ifdef Q_OS_LINUX
 #include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
 #endif
 
 #include <iostream>
@@ -48,20 +50,16 @@ std::optional<QStringList> environmentVariables;
 QProcess inferiorProcess;
 int inferiorId{0};
 
-#ifndef Q_OS_WIN
-
 #ifdef Q_OS_DARWIN
 // A memory mapped helper to retrieve the pid of the inferior process in debugMode
 static int *shared_child_pid = nullptr;
 #endif
 
-using OSSocketNotifier = QSocketNotifier;
-#else
+#ifdef Q_OS_WIN
 Q_PROCESS_INFORMATION *win_process_information = nullptr;
-using OSSocketNotifier = QWinEventNotifier;
 #endif
-// Helper to read a single character from stdin in testMode
-OSSocketNotifier *stdInNotifier;
+
+bool waitingForExitKeyPress = false;
 
 QThread processThread;
 
@@ -77,8 +75,10 @@ std::optional<int> readEnvFile();
 void setupControlSocket();
 void setupSignalHandlers();
 void startProcess(const QString &program, const QStringList &arguments, const QString &workingDir);
-void readKey();
+void onKeyPress(std::function<void()> callback);
 void sendSelfPid();
+void killInferior();
+void resumeInferior();
 
 int main(int argc, char *argv[])
 {
@@ -117,7 +117,15 @@ int main(int argc, char *argv[])
 
         if (debugMode) {
             qDebug() << "Press 'c' to continue or 'k' to kill, followed by 'enter'";
-            readKey();
+
+            onKeyPress([] {
+                char ch;
+                std::cin >> ch;
+                if (ch == 'k')
+                    killInferior();
+                else
+                    resumeInferior();
+            });
         }
 
         return a.exec();
@@ -135,11 +143,6 @@ void sendMsg(const QByteArray &msg)
     } else {
         qDebug() << "MSG:" << msg;
     }
-}
-
-void sendQtcMarker(const QByteArray &marker)
-{
-    sendMsg(QByteArray("qtc: ") + marker + "\n");
 }
 
 void sendPid(int inferiorPid)
@@ -174,15 +177,20 @@ void sendErrChDir()
 
 void doExit(int exitCode)
 {
+    if (waitingForExitKeyPress)
+        exit(exitCode);
+
     if (controlSocket.state() == QLocalSocket::ConnectedState && controlSocket.bytesToWrite())
         controlSocket.waitForBytesWritten(1000);
 
     if (!commandLineParser.value("wait").isEmpty()) {
-        std::cout << commandLineParser.value("wait").toStdString();
-        std::cin.get();
-    }
+        std::cout << commandLineParser.value("wait").toStdString() << std::endl;
 
-    exit(exitCode);
+        waitingForExitKeyPress = true;
+        onKeyPress([] { doExit(0); });
+    } else {
+        exit(exitCode);
+    }
 }
 
 void onInferiorFinished(int exitCode, QProcess::ExitStatus status)
@@ -200,10 +208,40 @@ void onInferiorFinished(int exitCode, QProcess::ExitStatus status)
 
 void onInferiorErrorOccurered(QProcess::ProcessError error)
 {
-    qCInfo(log) << "Inferior error: " << error << inferiorProcess.errorString();
-    sendCrash(inferiorProcess.exitCode());
-    doExit(1);
+    qCWarning(log) << "Inferior error: " << error << inferiorProcess.errorString();
 }
+
+#ifdef Q_OS_LINUX
+QString statusToString(int status)
+{
+    if (WIFEXITED(status))
+        return QString("exit, status=%1").arg(WEXITSTATUS(status));
+    else if (WIFSIGNALED(status))
+        return QString("Killed by: %1").arg(WTERMSIG(status));
+    else if (WIFSTOPPED(status)) {
+        return QString("Stopped by: %1").arg(WSTOPSIG(status));
+    } else if (WIFCONTINUED(status))
+        return QString("Continued");
+
+    return QString("Unknown status");
+}
+
+bool waitFor(int signalToWaitFor)
+{
+    int status = 0;
+
+    waitpid(inferiorId, &status, WUNTRACED);
+
+    if (!WIFSTOPPED(status) || WSTOPSIG(status) != signalToWaitFor) {
+        qCCritical(log) << "Unexpected status during startup:" << statusToString(status)
+                        << ", aborting";
+        sendCrash(0xFF);
+        return false;
+    }
+
+    return true;
+}
+#endif
 
 void onInferiorStarted()
 {
@@ -217,7 +255,21 @@ void onInferiorStarted()
     if (!debugMode)
         sendPid(inferiorId);
 #else
-    ptrace(PTRACE_DETACH, inferiorId, 0, SIGSTOP);
+
+    if (debugMode) {
+        qCInfo(log) << "Waiting for SIGTRAP from inferiors execve ...";
+        if (!waitFor(SIGTRAP))
+            return;
+
+        qCInfo(log) << "Detaching ...";
+        ptrace(PTRACE_DETACH, inferiorId, 0, SIGSTOP);
+
+        // Wait until the process actually finished detaching
+        if (!waitFor(SIGSTOP))
+            return;
+    }
+
+    qCInfo(log) << "Sending pid:" << inferiorId;
     sendPid(inferiorId);
 #endif
 }
@@ -237,7 +289,11 @@ void setupUnixInferior()
         });
 #else
         // PTRACE_TRACEME will stop execution of the child process as soon as execve is called.
-        inferiorProcess.setChildProcessModifier([] { ptrace(PTRACE_TRACEME, 0, 0, 0); });
+        inferiorProcess.setChildProcessModifier([] {
+            ptrace(PTRACE_TRACEME, 0, 0, 0);
+            // Disable attachment restrictions so we are not bound by yama/ptrace_scope mode 1
+            prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
+        });
 #endif
     }
 #endif
@@ -317,31 +373,7 @@ void startProcess(const QString &executable, const QStringList &arguments, const
                      QCoreApplication::instance(),
                      &onInferiorStarted);
 
-    inferiorProcess.setProcessChannelMode(QProcess::SeparateChannels);
-
-    QObject::connect(&inferiorProcess,
-                     &QProcess::readyReadStandardOutput,
-                     QCoreApplication::instance(),
-                     [] {
-                         const QByteArray data = inferiorProcess.readAllStandardOutput();
-                         static bool isFirst = true;
-                         if (isFirst) {
-                             isFirst = false;
-                             if (data.startsWith("__qtc")) {
-                                 int lineBreak = data.indexOf("\r\n");
-                                 sendQtcMarker(data.mid(0, lineBreak));
-                                 if (lineBreak != -1)
-                                     writeToOut(data.mid(lineBreak + 2), Out::StdOut);
-                                 return;
-                             }
-                         }
-                         writeToOut(data, Out::StdOut);
-                     });
-
-    QObject::connect(&inferiorProcess,
-                     &QProcess::readyReadStandardError,
-                     QCoreApplication::instance(),
-                     [] { writeToOut(inferiorProcess.readAllStandardError(), Out::StdErr); });
+    inferiorProcess.setProcessChannelMode(QProcess::ForwardedChannels);
 
     if (!(testMode && debugMode))
         inferiorProcess.setInputChannelMode(QProcess::ForwardedInputChannel);
@@ -560,6 +592,8 @@ void onControlSocketReadyRead()
             break;
         }
         }
+
+        sendMsg(QString("ack %1\n").arg(ch).toUtf8());
     }
 }
 
@@ -579,23 +613,15 @@ void setupControlSocket()
     controlSocket.connectToServer(commandLineParser.value("socket"));
 }
 
-void onStdInReadyRead()
-{
-    char ch;
-    std::cin >> ch;
-    if (ch == 'k') {
-        killInferior();
-    } else {
-        resumeInferior();
-    }
-}
-
-void readKey()
+void onKeyPress(std::function<void()> callback)
 {
 #ifdef Q_OS_WIN
-    stdInNotifier = new QWinEventNotifier(GetStdHandle(STD_INPUT_HANDLE));
+    // On windows, QWinEventNotifier() doesn't work for stdin, so we have to use a thread instead.
+    QThread *thread = QThread::create([] { std::cin.ignore(); });
+    thread->start();
+    QObject::connect(thread, &QThread::finished, &controlSocket, callback);
 #else
-    stdInNotifier = new QSocketNotifier(fileno(stdin), QSocketNotifier::Read);
+    static auto stdInNotifier = new QSocketNotifier(fileno(stdin), QSocketNotifier::Read);
+    QObject::connect(stdInNotifier, &QSocketNotifier::activated, callback);
 #endif
-    QObject::connect(stdInNotifier, &OSSocketNotifier::activated, &onStdInReadyRead);
 }

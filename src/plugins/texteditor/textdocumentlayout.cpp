@@ -4,9 +4,16 @@
 #include "textdocumentlayout.h"
 #include "fontsettings.h"
 #include "textdocument.h"
+#include "texteditorplugin.h"
 #include "texteditorsettings.h"
+
 #include <utils/qtcassert.h>
+#include <utils/temporarydirectory.h>
+
 #include <QDebug>
+#ifdef WITH_TESTS
+#include <QTest>
+#endif
 
 namespace TextEditor {
 
@@ -596,6 +603,8 @@ bool TextDocumentLayout::updateSuggestion(const QTextBlock &block,
 {
     if (TextSuggestion *suggestion = TextDocumentLayout::suggestion(block)) {
         auto positionInBlock = position - block.position();
+        if (position < suggestion->position())
+            return false;
         const QString start = block.text().left(positionInBlock);
         const QString end = block.text().mid(positionInBlock);
         const QString replacement = suggestion->document()->firstBlock().text();
@@ -665,11 +674,15 @@ TextMarks TextDocumentLayout::documentClosing()
     return marks;
 }
 
-void TextDocumentLayout::documentAboutToReload()
+void TextDocumentLayout::documentAboutToReload(TextDocument *baseTextDocument)
 {
     m_reloadMarks = documentClosing();
-    for (TextMark *mark : std::as_const(m_reloadMarks))
-        mark->setDeleteCallback([this, mark] { m_reloadMarks.removeOne(mark); });
+    for (TextMark *mark : std::as_const(m_reloadMarks)) {
+        mark->setDeleteCallback([this, mark, baseTextDocument] {
+            baseTextDocument->removeMarkFromMarksCache(mark);
+            m_reloadMarks.removeOne(mark);
+        });
+    }
 }
 
 void TextDocumentLayout::documentReloaded(TextDocument *baseTextDocument)
@@ -845,7 +858,7 @@ bool Parenthesis::operator==(const Parenthesis &other) const
 
 void insertSorted(Parentheses &list, const Parenthesis &elem)
 {
-    const auto it = std::lower_bound(list.begin(), list.end(), elem,
+    const auto it = std::lower_bound(list.constBegin(), list.constEnd(), elem,
             [](const auto &p1, const auto &p2) { return p1.pos < p2.pos; });
     list.insert(it, elem);
 }
@@ -857,5 +870,24 @@ TextSuggestion::TextSuggestion()
 }
 
 TextSuggestion::~TextSuggestion() = default;
+
+#ifdef WITH_TESTS
+
+void Internal::TextEditorPlugin::testDeletingMarkOnReload()
+{
+    auto doc = new TextDocument();
+    doc->setFilePath(Utils::TemporaryDirectory::masterDirectoryFilePath() / "TestMarkDoc.txt");
+    doc->setPlainText("asd");
+    auto documentLayout = qobject_cast<TextDocumentLayout *>(doc->document()->documentLayout());
+    QVERIFY(documentLayout);
+    auto mark = new TextMark(doc, 1, TextMarkCategory{"testMark","testMark"});
+    QVERIFY(doc->marks().contains(mark));
+    documentLayout->documentAboutToReload(doc); // removes text marks non-permanently
+    delete mark;
+    documentLayout->documentReloaded(doc); // re-adds text marks
+    QVERIFY(!doc->marks().contains(mark));
+}
+
+#endif
 
 } // namespace TextEditor

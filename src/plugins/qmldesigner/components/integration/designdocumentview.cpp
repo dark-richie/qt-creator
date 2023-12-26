@@ -115,6 +115,7 @@ QString DesignDocumentView::toText() const
     QScopedPointer<RewriterView> rewriterView(
         new RewriterView(externalDependencies(), RewriterView::Amend));
     rewriterView->setCheckSemanticErrors(false);
+    rewriterView->setPossibleImportsEnabled(false);
     rewriterView->setTextModifier(&modifier);
     outputModel->setRewriterView(rewriterView.data());
 
@@ -226,7 +227,7 @@ void DesignDocumentView::copyModelNodes(const QList<ModelNode> &nodesToCopy,
     DesignDocumentView view{externalDependencies};
     copyModel->attachView(&view);
 
-    if (selectedNodes.count() == 1) {
+    if (selectedNodes.size() == 1) {
         const ModelNode &selectedNode = selectedNodes.constFirst();
 
         if (!selectedNode.isValid())
@@ -252,7 +253,6 @@ void DesignDocumentView::copyModelNodes(const QList<ModelNode> &nodesToCopy,
 
         view.toClipboard();
     }
-
 }
 
 }// namespace QmlDesigner

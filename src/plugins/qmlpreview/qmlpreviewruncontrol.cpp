@@ -13,21 +13,53 @@
 #include <projectexplorer/target.h>
 
 #include <qmldebug/qmldebugcommandlinearguments.h>
+#include <qmlprojectmanager/qmlmultilanguageaspect.h>
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
+#include <utils/async.h>
 #include <utils/filepath.h>
 #include <utils/port.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/url.h>
+
+#include <QFutureWatcher>
 
 using namespace ProjectExplorer;
 using namespace Utils;
-using namespace QmlPreview::Internal;
 
 namespace QmlPreview {
 
-static const QString QmlServerUrl = "QmlServerUrl";
+static const Key QmlServerUrl = "QmlServerUrl";
+
+class RefreshTranslationWorker final : public RunWorker
+{
+public:
+    explicit RefreshTranslationWorker(ProjectExplorer::RunControl *runControl,
+                                      const QmlPreviewRunnerSetting &runnerSettings)
+        : ProjectExplorer::RunWorker(runControl), m_runnerSettings(runnerSettings)
+    {
+        setId("RefreshTranslationWorker");
+        connect(this, &RunWorker::started, this, &RefreshTranslationWorker::startRefreshTranslationsAsync);
+        connect(this, &RunWorker::stopped, &m_futureWatcher, &QFutureWatcher<void>::cancel);
+        connect(&m_futureWatcher, &QFutureWatcherBase::finished, this, &RefreshTranslationWorker::stop);
+    }
+    ~RefreshTranslationWorker()
+    {
+        m_futureWatcher.cancel();
+        m_futureWatcher.waitForFinished();
+    }
+
+private:
+    void startRefreshTranslationsAsync()
+    {
+        m_futureWatcher.setFuture(Utils::asyncRun([this] {
+            m_runnerSettings.refreshTranslationsFunction();
+        }));
+    }
+    QmlPreviewRunnerSetting m_runnerSettings;
+    QFutureWatcher<void> m_futureWatcher;
+};
 
 class QmlPreviewRunner : public ProjectExplorer::RunWorker
 {
@@ -51,7 +83,7 @@ private:
     void start() override;
     void stop() override;
 
-    Internal::QmlPreviewConnectionManager m_connectionManager;
+    QmlPreviewConnectionManager m_connectionManager;
 };
 
 QmlPreviewRunner::QmlPreviewRunner(RunControl *runControl, const QmlPreviewRunnerSetting &settings)
@@ -78,9 +110,10 @@ QmlPreviewRunner::QmlPreviewRunner(RunControl *runControl, const QmlPreviewRunne
             this, [this, settings]() {
         if (settings.zoomFactor > 0)
             emit zoom(settings.zoomFactor);
-        if (!settings.language.isEmpty())
-            emit language(settings.language);
-
+        if (auto multiLanguageAspect = QmlProjectManager::QmlMultiLanguageAspect::current()) {
+            if (!multiLanguageAspect->currentLocale().isEmpty())
+                emit language(multiLanguageAspect->currentLocale());
+        }
         emit ready();
     });
 
@@ -88,14 +121,19 @@ QmlPreviewRunner::QmlPreviewRunner(RunControl *runControl, const QmlPreviewRunne
         if (!runControl->isRunning())
             return;
 
-        this->connect(runControl, &RunControl::stopped, [this, runControl] {
-            auto rc = new RunControl(ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE);
-            rc->copyDataFromRunControl(runControl);
-            ProjectExplorerPlugin::startRunControl(rc);
-        });
+        this->connect(runControl,
+                      &RunControl::stopped,
+                      ProjectExplorerPlugin::instance(),
+                      [runControl] {
+                          auto rc = new RunControl(ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE);
+                          rc->copyDataFromRunControl(runControl);
+                          ProjectExplorerPlugin::startRunControl(rc);
+                      });
 
         runControl->initiateStop();
     });
+
+    addStartDependency(new RefreshTranslationWorker(runControl, settings));
 }
 
 void QmlPreviewRunner::start()
@@ -124,7 +162,7 @@ QUrl QmlPreviewRunner::serverUrl() const
 QmlPreviewRunWorkerFactory::QmlPreviewRunWorkerFactory(QmlPreviewPlugin *plugin,
                                                        const QmlPreviewRunnerSetting *runnerSettings)
 {
-    setProducer([this, plugin, runnerSettings](RunControl *runControl) {
+    setProducer([plugin, runnerSettings](RunControl *runControl) {
         auto runner = new QmlPreviewRunner(runControl, *runnerSettings);
         QObject::connect(plugin, &QmlPreviewPlugin::updatePreviews,
                          runner, &QmlPreviewRunner::loadFile);

@@ -23,8 +23,8 @@ namespace Git::Internal {
 
 MergeTool::MergeTool(QObject *parent) : QObject(parent)
 {
-    connect(&m_process, &QtcProcess::done, this, &MergeTool::done);
-    connect(&m_process, &QtcProcess::readyReadStandardOutput, this, &MergeTool::readData);
+    connect(&m_process, &Process::done, this, &MergeTool::done);
+    connect(&m_process, &Process::readyReadStandardOutput, this, &MergeTool::readData);
     Environment env = Environment::systemEnvironment();
     env.set("LANG", "C");
     env.set("LANGUAGE", "C");
@@ -37,7 +37,7 @@ void MergeTool::start(const FilePath &workingDirectory, const QStringList &files
 {
     QStringList arguments;
     arguments << "mergetool" << "-y" << files;
-    const CommandLine cmd = {GitClient::instance()->vcsBinary(), arguments};
+    const CommandLine cmd = {gitClient().vcsBinary(), arguments};
     VcsOutputWindow::appendCommand(workingDirectory, cmd);
     m_process.setCommand(cmd);
     m_process.setWorkingDirectory(workingDirectory);
@@ -94,7 +94,7 @@ QString MergeTool::mergeTypeName()
     case DeletedMerge: return Tr::tr("Deleted");
     case SymbolicLinkMerge: return Tr::tr("Symbolic link");
     }
-    return QString();
+    return {};
 }
 
 QString MergeTool::stateName(MergeTool::FileState state, const QString &extraInfo)
@@ -107,7 +107,7 @@ QString MergeTool::stateName(MergeTool::FileState state, const QString &extraInf
     case SymbolicLinkState: return Tr::tr("Symbolic link -> %1").arg(extraInfo);
     default: break;
     }
-    return QString();
+    return {};
 }
 
 void MergeTool::chooseAction()
@@ -224,7 +224,7 @@ void MergeTool::done()
         VcsOutputWindow::appendError(m_process.exitMessage());
 
     const FilePath workingDirectory = m_process.workingDirectory();
-    GitClient::instance()->continueCommandIfNeeded(workingDirectory, success);
+    gitClient().continueCommandIfNeeded(workingDirectory, success);
     GitPlugin::emitRepositoryChanged(workingDirectory);
     deleteLater();
 }

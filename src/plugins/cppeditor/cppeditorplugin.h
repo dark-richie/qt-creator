@@ -5,10 +5,8 @@
 
 #include <extensionsystem/iplugin.h>
 
-namespace Utils {
-class FilePath;
-class FutureSynchronizer;
-}
+namespace ProjectExplorer { class Project; }
+namespace Utils { class FilePath; }
 
 namespace CppEditor {
 class CppCodeModelSettings;
@@ -17,7 +15,6 @@ namespace Internal {
 
 class CppEditorPluginPrivate;
 class CppFileSettings;
-class CppQuickFixAssistProvider;
 
 class CppEditorPlugin : public ExtensionSystem::IPlugin
 {
@@ -30,17 +27,10 @@ public:
 
     static CppEditorPlugin *instance();
 
-    CppQuickFixAssistProvider *quickFixProvider() const;
-
-    static const QStringList &headerSearchPaths();
-    static const QStringList &sourceSearchPaths();
-    static const QStringList &headerPrefixes();
-    static const QStringList &sourcePrefixes();
     static void clearHeaderSourceCache();
-    static Utils::FilePath licenseTemplatePath();
-    static QString licenseTemplate();
-    static bool usePragmaOnce();
-    static Utils::FutureSynchronizer *futureSynchronizer();
+    static Utils::FilePath licenseTemplatePath(ProjectExplorer::Project *project);
+    static QString licenseTemplate(ProjectExplorer::Project *project);
+    static bool usePragmaOnce(ProjectExplorer::Project *project);
 
     void openDeclarationDefinitionInNextSplit();
     void openTypeHierarchy();
@@ -50,7 +40,10 @@ public:
     void switchDeclarationDefinition();
 
     CppCodeModelSettings *codeModelSettings();
-    static CppFileSettings *fileSettings();
+    static CppFileSettings fileSettings(ProjectExplorer::Project *project);
+#ifdef WITH_TESTS
+    static void setGlobalFileSettings(const CppFileSettings &settings);
+#endif
 
 signals:
     void typeHierarchyRequested();
@@ -59,6 +52,14 @@ signals:
 private:
     void initialize() override;
     void extensionsInitialized() override;
+
+    void setupMenus();
+    void addPerSymbolActions();
+    void addActionsForSelections();
+    void addPerFileActions();
+    void addGlobalActions();
+    void registerVariables();
+    void registerTests();
 
     CppEditorPluginPrivate *d = nullptr;
 };

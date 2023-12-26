@@ -165,6 +165,13 @@ bool CurveSegment::isLegal() const
     return ex.size() == 0;
 }
 
+bool CurveSegment::isLegalMcu() const
+{
+    if (interpolation() == Keyframe::Interpolation::Linear)
+        return isValid();
+    return false;
+}
+
 bool CurveSegment::containsX(double x) const
 {
     return m_left.position().x() <= x && m_right.position().x() >= x;
@@ -243,8 +250,8 @@ void CurveSegment::extendWithEasingCurve(QPainterPath &path, const QEasingCurve 
         return QPointF(start.x() + slope.x() * pos.x(), start.y() + slope.y() * pos.y());
     };
 
-    QVector<QPointF> points = curve.toCubicSpline();
-    int numSegments = points.count() / 3;
+    QList<QPointF> points = curve.toCubicSpline();
+    int numSegments = points.size() / 3;
     for (int i = 0; i < numSegments; i++) {
         QPointF p1 = mapEasing(m_left.position(), m_right.position(), points.at(i * 3));
         QPointF p2 = mapEasing(m_left.position(), m_right.position(), points.at(i * 3 + 1));
@@ -264,7 +271,7 @@ void CurveSegment::extend(QPainterPath &path) const
         extendWithEasingCurve(path, easingCurve());
     } else if (interpolation() == Keyframe::Interpolation::Easing) {
         QVariant data = m_right.data();
-        if (data.isValid() && data.type() == static_cast<int>(QMetaType::QEasingCurve)) {
+        if (data.isValid() && data.typeId() == static_cast<int>(QMetaType::QEasingCurve)) {
             extendWithEasingCurve(path, data.value<QEasingCurve>());
         }
     }

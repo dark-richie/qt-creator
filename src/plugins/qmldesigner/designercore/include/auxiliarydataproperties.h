@@ -16,6 +16,13 @@ namespace QmlDesigner {
 inline constexpr AuxiliaryDataKeyDefaultValue customIdProperty{AuxiliaryDataType::Document,
                                                                "customId",
                                                                QStringView{}};
+
+inline constexpr AuxiliaryDataKeyDefaultValue defaultWidthProperty{
+    AuxiliaryDataType::NodeInstancePropertyOverwrite, "defaultWidth", 640};
+
+inline constexpr AuxiliaryDataKeyDefaultValue defaultHeightProperty{
+    AuxiliaryDataType::NodeInstancePropertyOverwrite, "defaultHeight", 480};
+
 inline constexpr AuxiliaryDataKeyDefaultValue widthProperty{
     AuxiliaryDataType::NodeInstancePropertyOverwrite, "width", 4};
 inline constexpr AuxiliaryDataKeyView heightProperty{AuxiliaryDataType::NodeInstancePropertyOverwrite,
@@ -106,6 +113,10 @@ inline constexpr AuxiliaryDataKeyView globalAnnotationStatus{AuxiliaryDataType::
 inline constexpr AuxiliaryDataKeyView rotBlockProperty{AuxiliaryDataType::NodeInstanceAuxiliary,
                                                        "rotBlock"};
 inline constexpr AuxiliaryDataKeyView languageProperty{AuxiliaryDataType::Temporary, "language"};
+inline constexpr AuxiliaryDataKeyView bakeLightsManualProperty{AuxiliaryDataType::Document,
+                                                               "bakeLightsManual"};
+inline constexpr AuxiliaryDataKeyView contextImageProperty{AuxiliaryDataType::Temporary,
+                                                           "contextImage"};
 
 // Most material preview aux properties are duplicated as document and instance types, as they
 // are both required to be persistent and used at runtime to control material preview rendering

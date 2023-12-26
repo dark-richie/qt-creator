@@ -5,12 +5,13 @@
 
 #include <enumeration.h>
 #include <modelnode.h>
-#include <metainfo.h>
 
 #include <QUrl>
 #include <QVector3D>
 #include <QVector2D>
 #include <QDebug>
+
+using namespace Qt::StringLiterals;
 
 namespace {
 
@@ -202,7 +203,7 @@ QVariant read(const QString &typeStr, const QString &str)
 {
     int type = QMetaType::type(typeStr.toUtf8().constData());
     if (type == 0) {
-        if (typeStr != QStringLiteral("binding") && typeStr != QStringLiteral("enum")) {
+        if (typeStr != "binding"_L1 && typeStr != "enum"_L1) {
             qWarning() << "Type " << typeStr
                     << " is unknown to QMetaType system. Cannot create properly typed QVariant for value "
                     << str;

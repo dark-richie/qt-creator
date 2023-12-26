@@ -3,13 +3,15 @@
 
 #pragma once
 
-#include "qmldesignercorelib_global.h"
-#include <metainfo.h>
+#ifndef QDS_USE_PROJECTSTORAGE
 
-#include <qmljs/qmljssimplereader.h>
+#  include "qmldesignercorelib_global.h"
+#  include <metainfo.h>
 
-#include <QCoreApplication>
-#include <QString>
+#  include <qmljs/qmljssimplereader.h>
+
+#  include <QCoreApplication>
+#  include <QString>
 
 
 namespace QmlDesigner {
@@ -65,7 +67,6 @@ private:
     ParserSate readExtraFileElement(const QString &name);
 
     void readTypeProperty(const QString &name, const QVariant &value);
-    void readImportsProperty(const QString &name, const QVariant &value);
     void readItemLibraryEntryProperty(const QString &name, const QVariant &value);
     void readPropertyProperty(const QString &name, const QVariant &value);
     void readQmlSourceProperty(const QString &name, const QVariant &value);
@@ -107,3 +108,5 @@ private:
 
 }
 }
+
+#endif

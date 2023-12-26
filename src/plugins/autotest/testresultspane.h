@@ -60,8 +60,6 @@ public:
     // IOutputPane interface
     QWidget *outputWidget(QWidget *parent) override;
     QList<QWidget *> toolBarWidgets() const override;
-    QString displayName() const override;
-    int priorityInStatusBar() const override;
     void clearContents() override;
     void setFocus() override;
     bool hasFocus() const override;
@@ -80,8 +78,6 @@ private:
     explicit TestResultsPane(QObject *parent = nullptr);
 
     void onItemActivated(const QModelIndex &index);
-    void onRunAllTriggered();
-    void onRunSelectedTriggered();
     void checkAllFilter(bool checked);
     void filterMenuTriggered(QAction *action);
     bool eventFilter(QObject *object, QEvent *event) override;

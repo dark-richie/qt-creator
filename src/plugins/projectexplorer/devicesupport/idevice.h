@@ -6,11 +6,14 @@
 #include "../projectexplorer_export.h"
 #include "idevicefwd.h"
 
-#include <utils/id.h>
+#include <solutions/tasking/tasktree.h>
+
+#include <utils/aspects.h>
 #include <utils/expected.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
-#include <utils/tasktree.h>
+#include <utils/id.h>
+#include <utils/store.h>
 
 #include <QAbstractSocket>
 #include <QCoreApplication>
@@ -18,7 +21,6 @@
 #include <QObject>
 #include <QSharedPointer>
 #include <QUrl>
-#include <QVariantMap>
 
 #include <functional>
 #include <memory>
@@ -31,16 +33,14 @@ namespace Utils {
 class CommandLine;
 class DeviceFileAccess;
 class Environment;
-class Icon;
 class PortList;
 class Port;
+class Process;
 class ProcessInterface;
-class QtcProcess;
 } // Utils
 
 namespace ProjectExplorer {
 
-class DeviceProcessList;
 class FileTransferInterface;
 class FileTransferSetupData;
 class Kit;
@@ -84,6 +84,14 @@ public:
     std::function<QList<Utils::Port>(const QByteArray &commandOutput)> parsePorts;
 };
 
+class PROJECTEXPLORER_EXPORT DeviceSettings : public Utils::AspectContainer
+{
+public:
+    DeviceSettings();
+
+    Utils::StringAspect displayName{this};
+};
+
 // See cpp file for documentation.
 class PROJECTEXPLORER_EXPORT IDevice : public QEnableSharedFromThis<IDevice>
 {
@@ -100,9 +108,9 @@ public:
 
     Ptr clone() const;
 
+    DeviceSettings *settings() const;
+
     QString displayName() const;
-    void setDisplayName(const QString &name);
-    void setDefaultDisplayName(const QString &name);
 
     // Provide some information on the device suitable for formated
     // output, e.g. in tool tips. Get a list of name value pairs.
@@ -141,7 +149,6 @@ public:
 
     virtual PortsGatheringMethod portsGatheringMethod() const;
     virtual bool canCreateProcessModel() const { return false; }
-    virtual DeviceProcessList *createProcessListModel(QObject *parent = nullptr) const;
     virtual bool hasDeviceTester() const { return false; }
     virtual DeviceTester *createDeviceTester() const;
 
@@ -152,8 +159,8 @@ public:
     void setDeviceState(const DeviceState state);
     QString deviceStateToString() const;
 
-    static Utils::Id typeFromMap(const QVariantMap &map);
-    static Utils::Id idFromMap(const QVariantMap &map);
+    static Utils::Id typeFromMap(const Utils::Store &map);
+    static Utils::Id idFromMap(const Utils::Store &map);
 
     static QString defaultPrivateKeyFilePath();
     static QString defaultPublicKeyFilePath();
@@ -185,7 +192,8 @@ public:
     void setupId(Origin origin, Utils::Id id = Utils::Id());
 
     bool canOpenTerminal() const;
-    void openTerminal(const Utils::Environment &env, const Utils::FilePath &workingDir) const;
+    Utils::expected_str<void> openTerminal(const Utils::Environment &env,
+                                           const Utils::FilePath &workingDir) const;
 
     bool isEmptyCommandAllowed() const;
     void setAllowEmptyCommand(bool allow);
@@ -205,7 +213,9 @@ public:
     virtual Utils::ProcessInterface *createProcessInterface() const;
     virtual FileTransferInterface *createFileTransferInterface(
             const FileTransferSetupData &setup) const;
-    virtual Utils::Environment systemEnvironment() const;
+
+    Utils::Environment systemEnvironment() const;
+    virtual Utils::expected_str<Utils::Environment> systemEnvironmentWithError() const;
 
     virtual void aboutToBeRemoved() const {}
 
@@ -218,12 +228,13 @@ public:
     virtual void checkOsType() {}
 
 protected:
-    IDevice();
+    IDevice(std::unique_ptr<DeviceSettings> settings = nullptr);
 
-    virtual void fromMap(const QVariantMap &map);
-    virtual QVariantMap toMap() const;
+    virtual void fromMap(const Utils::Store &map);
+    virtual Utils::Store toMap() const;
 
-    using OpenTerminal = std::function<void(const Utils::Environment &, const Utils::FilePath &)>;
+    using OpenTerminal = std::function<Utils::expected_str<void>(const Utils::Environment &,
+                                                                 const Utils::FilePath &)>;
     void setOpenTerminal(const OpenTerminal &openTerminal);
     void setDisplayType(const QString &type);
     void setOsType(Utils::OsType osType);
@@ -268,7 +279,7 @@ public:
     QString errorString() const { return m_errorString; }
 
 signals:
-    void done(bool success);
+    void done(Tasking::DoneResult result);
 
 private:
     Utils::FilePath m_processPath;
@@ -276,13 +287,14 @@ private:
     QString m_errorString;
 };
 
-class PROJECTEXPLORER_EXPORT KillerAdapter : public Utils::Tasking::TaskAdapter<DeviceProcessKiller>
+class PROJECTEXPLORER_EXPORT DeviceProcessKillerTaskAdapter
+    : public Tasking::TaskAdapter<DeviceProcessKiller>
 {
 public:
-    KillerAdapter();
+    DeviceProcessKillerTaskAdapter();
     void start() final;
 };
 
-} // namespace ProjectExplorer
+using DeviceProcessKillerTask = Tasking::CustomTask<DeviceProcessKillerTaskAdapter>;
 
-QTC_DECLARE_CUSTOM_TASK(Killer, ProjectExplorer::KillerAdapter);
+} // namespace ProjectExplorer

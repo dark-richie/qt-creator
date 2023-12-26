@@ -21,8 +21,8 @@
 
 #include <utils/commandline.h>
 #include <utils/environment.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QDebug>
 #include <QStringList>
@@ -57,19 +57,13 @@ namespace VcsBase {
 VcsBaseClientImpl::VcsBaseClientImpl(VcsBaseSettings *baseSettings)
     : m_baseSettings(baseSettings)
 {
-    m_baseSettings->readSettings(ICore::settings());
     connect(ICore::instance(), &ICore::saveSettingsRequested,
             this, &VcsBaseClientImpl::saveSettings);
 }
 
-VcsBaseSettings &VcsBaseClientImpl::settings() const
-{
-    return *m_baseSettings;
-}
-
 FilePath VcsBaseClientImpl::vcsBinary() const
 {
-    return m_baseSettings->binaryPath.filePath();
+    return m_baseSettings->binaryPath();
 }
 
 VcsCommand *VcsBaseClientImpl::createCommand(const FilePath &workingDirectory,
@@ -90,7 +84,7 @@ VcsCommand *VcsBaseClientImpl::createCommand(const FilePath &workingDirectory,
     return cmd;
 }
 
-void VcsBaseClientImpl::setupCommand(Utils::QtcProcess &process,
+void VcsBaseClientImpl::setupCommand(Utils::Process &process,
                                      const FilePath &workingDirectory,
                                      const QStringList &args) const
 {
@@ -121,7 +115,7 @@ QStringList VcsBaseClientImpl::splitLines(const QString &s)
     if (output.endsWith(newLine))
         output.truncate(output.size() - 1);
     if (output.isEmpty())
-        return QStringList();
+        return {};
     return output.split(newLine);
 }
 
@@ -204,7 +198,7 @@ void VcsBaseClientImpl::vcsExecWithEditor(const Utils::FilePath &workingDirector
 
 int VcsBaseClientImpl::vcsTimeoutS() const
 {
-    return m_baseSettings->timeout.value();
+    return m_baseSettings->timeout();
 }
 
 VcsCommand *VcsBaseClientImpl::createVcsCommand(const FilePath &defaultWorkingDir,
@@ -235,6 +229,7 @@ VcsBaseEditorWidget *VcsBaseClientImpl::createVcsEditor(Id kind, QString title,
         connect(baseEditor, &VcsBaseEditorWidget::annotateRevisionRequested,
                 this, &VcsBaseClientImpl::annotateRevisionRequested);
         baseEditor->setSource(source);
+        baseEditor->setDefaultLineNumber(1);
         if (codec)
             baseEditor->setCodec(codec);
     }
@@ -245,7 +240,7 @@ VcsBaseEditorWidget *VcsBaseClientImpl::createVcsEditor(Id kind, QString title,
 
 void VcsBaseClientImpl::saveSettings()
 {
-    m_baseSettings->writeSettings(ICore::settings());
+    m_baseSettings->writeSettings();
 }
 
 VcsBaseClient::VcsBaseClient(VcsBaseSettings *baseSettings)
@@ -520,7 +515,7 @@ QString VcsBaseClient::vcsCommandString(VcsCommandTag cmd) const
     case LogCommand: return QLatin1String("log");
     case StatusCommand: return QLatin1String("status");
     }
-    return QString();
+    return {};
 }
 
 ExitCodeInterpreter VcsBaseClient::exitCodeInterpreter(VcsCommandTag cmd) const

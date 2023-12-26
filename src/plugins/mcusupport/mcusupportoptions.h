@@ -13,8 +13,6 @@
 #include <QObject>
 #include <QVersionNumber>
 
-QT_FORWARD_DECLARE_CLASS(QWidget)
-
 namespace Utils {
 class FilePath;
 class PathChooser;
@@ -23,7 +21,7 @@ class InfoLabel;
 
 namespace ProjectExplorer {
 class Kit;
-class ToolChain;
+class Toolchain;
 } // namespace ProjectExplorer
 
 namespace McuSupport {
@@ -61,6 +59,9 @@ public:
     [[nodiscard]] Utils::FilePath qulDirFromSettings() const;
     [[nodiscard]] Utils::FilePath qulDocsDir() const;
     static McuKitManager::UpgradeOption askForKitUpgrades();
+    static void displayKitCreationMessages(const MessagesList &messages,
+                                           const SettingsHandler::Ptr &settingsHandler,
+                                           McuPackagePtr qtMCUsPackage);
 
     void registerQchFiles() const;
     void registerExamples() const;

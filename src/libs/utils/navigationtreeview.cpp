@@ -9,6 +9,7 @@
 
 /*!
    \class Utils::NavigationTreeView
+   \inmodule QtCreator
 
     \brief The NavigationTreeView class implements a general TreeView for any
     sidebar widget.
@@ -23,8 +24,7 @@ NavigationTreeView::NavigationTreeView(QWidget *parent)
     : TreeView(parent)
 {
     setFrameStyle(QFrame::NoFrame);
-    setIndentation(indentation() * 9/10);
-    setUniformRowHeights(true);
+    setIndentation(indentation() * 7/10);
     setTextElideMode(Qt::ElideNone);
     setAttribute(Qt::WA_MacShowFocusRect, false);
 
@@ -67,6 +67,23 @@ void NavigationTreeView::scrollTo(const QModelIndex &index, QAbstractItemView::S
     scrollX = qBound(hBar->minimum(), scrollX, hBar->maximum());
     TreeView::scrollTo(index, hint);
     hBar->setValue(scrollX);
+}
+
+QModelIndex NavigationTreeView::moveCursor(CursorAction cursorAction,
+                                           Qt::KeyboardModifiers modifiers)
+{
+    if (cursorAction == MoveLeft) {
+        // work around QTBUG-118515
+        // Left key moves to parent instead of collapsing current item, if scroll position
+        // is not left-most
+        QScrollBar *sb = horizontalScrollBar();
+        QModelIndex current = currentIndex();
+        if (sb->value() != sb->minimum() && model()->hasChildren(current) && isExpanded(current)) {
+            collapse(current);
+            return current;
+        }
+    }
+    return TreeView::moveCursor(cursorAction, modifiers);
 }
 
 // This is a workaround to stop Qt from redrawing the project tree every

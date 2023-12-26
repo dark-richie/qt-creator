@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include "expected.h"
+#include "fileutils.h"
 #include "utils_global.h"
 
-#include "fileutils.h"
-
-#include <QMap>
+#include <QHash>
 #include <QMutex>
 #include <QProcess>
 #include <QThread>
@@ -19,7 +19,7 @@ namespace Utils {
 
 class CommandLine;
 class ProcessResultData;
-class QtcProcess;
+class Process;
 
 class DeviceShellImpl;
 
@@ -39,7 +39,7 @@ public:
     DeviceShell(bool forceFailScriptInstallation = false);
     virtual ~DeviceShell();
 
-    bool start();
+    expected_str<void> start();
 
     RunResult runInShell(const CommandLine &cmd, const QByteArray &stdInData = {});
 
@@ -51,21 +51,20 @@ signals:
     void done(const ProcessResultData &resultData);
 
 protected:
-    virtual void startupFailed(const CommandLine &cmdLine);
     RunResult run(const CommandLine &cmd, const QByteArray &stdInData = {});
 
     void close();
 
 private:
-    virtual void setupShellProcess(QtcProcess *shellProcess);
+    virtual void setupShellProcess(Process *shellProcess);
     virtual CommandLine createFallbackCommand(const CommandLine &cmdLine);
 
-    bool installShellScript();
+    expected_str<void> installShellScript();
     void closeShellProcess();
 
     void onReadyRead();
 
-    bool checkCommand(const QByteArray &command);
+    expected_str<QByteArray> checkCommand(const QByteArray &command);
 
 private:
     struct CommandRun : public RunResult
@@ -73,13 +72,12 @@ private:
         QWaitCondition *waiter;
     };
 
-    std::unique_ptr<QtcProcess> m_shellProcess;
+    std::unique_ptr<Process> m_shellProcess;
     QThread m_thread;
     int m_currentId{0};
 
     QMutex m_commandMutex;
-    // QMap is used here to preserve iterators
-    QMap<quint64, CommandRun> m_commandOutput;
+    QHash<quint64, CommandRun> m_commandOutput;
     QByteArray m_commandBuffer;
 
     State m_shellScriptState = State::Unknown;

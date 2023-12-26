@@ -384,7 +384,7 @@ QStringList SubComponentManager::importPaths() const
     if (model())
         return model()->importPaths();
 
-    return QStringList();
+    return {};
 }
 
 void SubComponentManager::parseQuick3DAssetsDir(const QString &quick3DAssetsPath)
@@ -434,11 +434,6 @@ void SubComponentManager::parseQuick3DAssetsItem(const QString &importUrl, const
         itemLibraryEntry.setCategory(::QmlDesigner::SubComponentManager::tr("My 3D Components"));
         itemLibraryEntry.setCustomComponentSource(qmlIt.fileInfo().absoluteFilePath());
         itemLibraryEntry.setRequiredImport(importUrl);
-        QString iconPath = qmlIt.fileInfo().absolutePath() + '/'
-                + Constants::QUICK_3D_ASSET_ICON_DIR + '/' + name
-                + Constants::QUICK_3D_ASSET_LIBRARY_ICON_SUFFIX;
-        if (QFileInfo::exists(iconPath))
-            itemLibraryEntry.setLibraryEntryIconPath(iconPath);
         itemLibraryEntry.setTypeIcon(QIcon(defaultIconPath));
 
         // load hints file if exists
@@ -491,7 +486,7 @@ QStringList SubComponentManager::qmlFiles() const
     return m_watcher.files();
 }
 
-void SubComponentManager::update(const QUrl &filePath, const QList<Import> &imports)
+void SubComponentManager::update(const QUrl &filePath, const Imports &imports)
 {
     if (debug)
         qDebug() << Q_FUNC_INFO << filePath << imports.size();

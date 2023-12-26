@@ -2,28 +2,29 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "navigatorview.h"
+
+#include "iconcheckboxitemdelegate.h"
+#include "nameitemdelegate.h"
 #include "navigatortreemodel.h"
 #include "navigatorwidget.h"
-#include "qmldesignerconstants.h"
-#include "qmldesignericons.h"
-#include "qmldesignerplugin.h"
-#include "assetslibrarywidget.h"
-#include "commontypecache.h"
 
-#include "nameitemdelegate.h"
-#include "iconcheckboxitemdelegate.h"
-
+#include <assetslibrarywidget.h>
 #include <bindingproperty.h>
-#include <designmodecontext.h>
+#include <commontypecache.h>
 #include <designersettings.h>
-#include <itemlibraryinfo.h>
-#include <nodeproperty.h>
-#include <nodelistproperty.h>
-#include <variantproperty.h>
-#include <qmlitemnode.h>
-#include <rewritingexception.h>
+#include <designmodecontext.h>
+#include <itemlibraryentry.h>
+#include <model/modelutils.h>
 #include <nodeinstanceview.h>
+#include <nodelistproperty.h>
+#include <nodeproperty.h>
+#include <rewritingexception.h>
 #include <theme.h>
+#include <variantproperty.h>
+#include <qmldesignerconstants.h>
+#include <qmldesignericons.h>
+#include <qmldesignerplugin.h>
+#include <qmlitemnode.h>
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
@@ -42,7 +43,7 @@
 #include <QPixmap>
 #include <QTimer>
 
-static inline void setScenePos(const QmlDesigner::ModelNode &modelNode,const QPointF &pos)
+inline static void setScenePos(const QmlDesigner::ModelNode &modelNode, const QPointF &pos)
 {
     if (modelNode.hasParentProperty() && QmlDesigner::QmlItemNode::isValidQmlItemNode(modelNode.parentProperty().parentModelNode())) {
         QmlDesigner::QmlItemNode parentNode = modelNode.parentProperty().parentQmlObjectNode().toQmlItemNode();
@@ -58,7 +59,7 @@ static inline void setScenePos(const QmlDesigner::ModelNode &modelNode,const QPo
     }
 }
 
-static inline void moveNodesUp(const QList<QmlDesigner::ModelNode> &nodes)
+inline static void moveNodesUp(const QList<QmlDesigner::ModelNode> &nodes)
 {
     for (const auto &node : nodes) {
         if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
@@ -73,7 +74,7 @@ static inline void moveNodesUp(const QList<QmlDesigner::ModelNode> &nodes)
     }
 }
 
-static inline void moveNodesDown(const QList<QmlDesigner::ModelNode> &nodes)
+inline static void moveNodesDown(const QList<QmlDesigner::ModelNode> &nodes)
 {
     for (const auto &node : nodes) {
         if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
@@ -127,10 +128,22 @@ void NavigatorView::modelAttached(Model *model)
 
     QTreeView *treeView = treeWidget();
 
-    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Name, QHeaderView::Stretch);
-    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Alias, 26);
-    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Visibility, 26);
-    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Lock, 26);
+    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Name,
+                                             QHeaderView::Stretch);
+    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Alias,
+                                             QHeaderView::Fixed);
+    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Visibility,
+                                             QHeaderView::Fixed);
+    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Lock, QHeaderView::Fixed);
+
+    treeView->header()->setStretchLastSection(false);
+    treeView->header()->setMinimumSectionSize(24);
+    treeView->header()->setDefaultSectionSize(24);
+
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Alias, 24);
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Visibility, 24);
+    // Make last column a bit wider to compensate the shift to the left due to vertical scrollbar
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Lock, 32);
     treeView->setIndentation(20);
 
     m_currentModelInterface->setFilter(false);
@@ -228,7 +241,7 @@ void NavigatorView::modelAboutToBeDetached(Model *model)
     AbstractView::modelAboutToBeDetached(model);
 }
 
-void NavigatorView::importsChanged(const QList<Import> &/*addedImports*/, const QList<Import> &/*removedImports*/)
+void NavigatorView::importsChanged(const Imports &/*addedImports*/, const Imports &/*removedImports*/)
 {
     treeWidget()->update();
 }
@@ -280,13 +293,12 @@ void NavigatorView::dragStarted(QMimeData *mimeData)
         m_widget->update();
     } else if (mimeData->hasFormat(Constants::MIME_TYPE_ASSETS)) {
         const QStringList assetsPaths = QString::fromUtf8(mimeData->data(Constants::MIME_TYPE_ASSETS)).split(',');
-        if (assetsPaths.count() > 0) {
+        if (assetsPaths.size() > 0) {
             auto assetTypeAndData = AssetsLibraryWidget::getAssetTypeAndData(assetsPaths[0]);
             QString assetType = assetTypeAndData.first;
             if (assetType == Constants::MIME_TYPE_ASSET_EFFECT) {
                 // We use arbitrary type name because at this time we don't have effect maker
                 // specific type
-                m_widget->setDragType(Storage::Info::EffectMaker);
                 m_widget->update();
             } else if (assetType == Constants::MIME_TYPE_ASSET_TEXTURE3D) {
                 m_widget->setDragType(Constants::MIME_TYPE_ASSET_TEXTURE3D);
@@ -450,7 +462,7 @@ void NavigatorView::changeToComponent(const QModelIndex &index)
         const ModelNode doubleClickNode = modelNodeForIndex(index);
         if (doubleClickNode.metaInfo().isFileComponent())
             Core::EditorManager::openEditor(Utils::FilePath::fromString(
-                                                doubleClickNode.metaInfo().componentFileName()),
+                                                ModelUtils::componentFilePath(doubleClickNode)),
                                             Utils::Id(),
                                             Core::EditorManager::DoNotMakeVisible);
     }
@@ -468,7 +480,7 @@ QAbstractItemModel *NavigatorView::currentModel() const
 
 const ProjectExplorer::FileNode *NavigatorView::fileNodeForModelNode(const ModelNode &node) const
 {
-    QString filename = node.metaInfo().componentFileName();
+    QString filename = ModelUtils::componentFilePath(node);
     Utils::FilePath filePath = Utils::FilePath::fromString(filename);
     ProjectExplorer::Project *currentProject = ProjectExplorer::ProjectManager::projectForFile(
         filePath);
@@ -517,7 +529,7 @@ void NavigatorView::propagateInstanceErrorToExplorer(const ModelNode &modelNode)
 
 void NavigatorView::leftButtonClicked()
 {
-    if (selectedModelNodes().count() > 1)
+    if (selectedModelNodes().size() > 1)
         return; //Semantics are unclear for multi selection.
 
     bool blocked = blockSelectionChangedSignal(true);
@@ -541,14 +553,15 @@ void NavigatorView::leftButtonClicked()
 
 void NavigatorView::rightButtonClicked()
 {
-    if (selectedModelNodes().count() > 1)
+    if (selectedModelNodes().size() > 1)
         return; //Semantics are unclear for multi selection.
 
     bool blocked = blockSelectionChangedSignal(true);
     bool reverse = QmlDesignerPlugin::settings().value(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER).toBool();
 
     for (const ModelNode &node : selectedModelNodes()) {
-        if (!node.isRootNode() && node.parentProperty().isNodeListProperty() && node.parentProperty().count() > 1) {
+        if (!node.isRootNode() && node.parentProperty().isNodeListProperty()
+            && node.parentProperty().count() > 1) {
             int index = node.parentProperty().indexOf(node);
 
             bool indexOk = false;
@@ -759,7 +772,7 @@ void NavigatorView::setupWidget()
     connect(m_widget.data(), &NavigatorWidget::textFilterChanged, this, &NavigatorView::textFilterChanged);
 
     const QString fontName = "qtds_propertyIconFont.ttf";
-    const QSize size = QSize(28, 28);
+    const QSize size = QSize(32, 32);
 
     const QString visibilityOnUnicode = Theme::getIconUnicode(Theme::Icon::visibilityOn);
     const QString visibilityOffUnicode = Theme::getIconUnicode(Theme::Icon::visibilityOff);

@@ -47,7 +47,7 @@ public:
     std::pair<CppCodeStyleWidget *, QString> additionalTab(
         ICodeStylePreferences *codeStyle, Project *project, QWidget *parent) const override
     {
-        return {new ClangFormatConfigWidget(codeStyle, project, parent), Tr::tr("ClangFormat")};
+        return {createClangFormatConfigWidget(codeStyle, project, parent), Tr::tr("ClangFormat")};
     }
 
     CodeStyleEditorWidget *createAdditionalGlobalSettings(
@@ -71,37 +71,18 @@ void ClangFormatPlugin::initialize()
 
     ActionContainer *contextMenu = ActionManager::actionContainer(CppEditor::Constants::M_CONTEXT);
     if (contextMenu) {
-        auto openClangFormatConfigAction
-            = new QAction(Tr::tr("Open Used .clang-format Configuration File"), this);
-        Command *command = ActionManager::registerAction(openClangFormatConfigAction,
-                                                         Constants::OPEN_CURRENT_CONFIG_ID);
         contextMenu->addSeparator();
-        contextMenu->addAction(command);
 
-        if (EditorManager::currentEditor()) {
-            if (const IDocument *doc = EditorManager::currentEditor()->document())
-                openClangFormatConfigAction->setData(doc->filePath().toVariant());
-        }
-
-        connect(openClangFormatConfigAction,
-                &QAction::triggered,
-                this,
-                [openClangFormatConfigAction] {
-                    const FilePath fileName = FilePath::fromVariant(openClangFormatConfigAction->data());
-                    if (!fileName.isEmpty())
-                        EditorManager::openEditor(configForFile(fileName));
-                });
-
-        connect(EditorManager::instance(),
-                &EditorManager::currentEditorChanged,
-                this,
-                [openClangFormatConfigAction](IEditor *editor) {
-                    if (!editor)
-                        return;
-
-                    if (const IDocument *doc = editor->document())
-                        openClangFormatConfigAction->setData(doc->filePath().toVariant());
-                });
+        ActionBuilder openConfig(this,  Constants::OPEN_CURRENT_CONFIG_ID);
+        openConfig.setText(Tr::tr("Open Used .clang-format Configuration File"));
+        openConfig.addToContainer(CppEditor::Constants::M_CONTEXT);
+        openConfig.addOnTriggered(this, [] {
+            if (const IDocument *doc = EditorManager::currentDocument()) {
+                const FilePath filePath = doc->filePath();
+                if (!filePath.isEmpty())
+                    EditorManager::openEditor(configForFile(filePath));
+            }
+        });
     }
 
 #ifdef WITH_TESTS

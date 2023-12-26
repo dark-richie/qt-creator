@@ -4,6 +4,7 @@
 #include "treemodel.h"
 
 #include "qtcassert.h"
+#include "stringutils.h"
 
 #include <QStack>
 #include <QSize>
@@ -72,6 +73,7 @@ private:
 };
 
 /*!
+    \internal
     Connect to all of the models signals.  Whenever anything happens
     recheck everything.
 */
@@ -135,6 +137,7 @@ void ModelTest::runAllTests()
 }
 
 /*!
+    \internal
     nonDestructiveBasicTest tries to call a number of the basic functions (not all)
     to make sure the model doesn't outright segfault, testing the functions that makes sense.
 */
@@ -173,6 +176,7 @@ void ModelTest::nonDestructiveBasicTest()
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::rowCount() and hasChildren()
 
     Models that are dynamically populated are not as fully tested here.
@@ -200,6 +204,7 @@ void ModelTest::rowCount()
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::columnCount() and hasChildren()
  */
 void ModelTest::columnCount()
@@ -218,6 +223,7 @@ void ModelTest::columnCount()
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::hasIndex()
  */
 void ModelTest::hasIndex()
@@ -242,6 +248,7 @@ void ModelTest::hasIndex()
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::index()
  */
 void ModelTest::index()
@@ -274,6 +281,7 @@ void ModelTest::index()
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::parent()
  */
 void ModelTest::parent()
@@ -322,6 +330,7 @@ void ModelTest::parent()
 }
 
 /*!
+    \internal
     Called from the parent() test.
 
     A model that returns an index of parent X should also return X when asking
@@ -430,6 +439,7 @@ void ModelTest::checkChildren(const QModelIndex &parent, int currentDepth)
 }
 
 /*!
+    \internal
     Tests model's implementation of QAbstractItemModel::data()
  */
 void ModelTest::data()
@@ -494,6 +504,7 @@ void ModelTest::data()
 }
 
 /*!
+    \internal
     Store what is about to be inserted to make sure it actually happens
 
     \sa rowsInserted()
@@ -510,6 +521,7 @@ void ModelTest::rowsAboutToBeInserted(const QModelIndex &parent, int start, int 
 }
 
 /*!
+    \internal
     Confirm that what was said was going to happen actually did
 
     \sa rowsAboutToBeInserted()
@@ -547,6 +559,7 @@ void ModelTest::layoutChanged()
 }
 
 /*!
+    \internal
     Store what is about to be inserted to make sure it actually happens
 
     \sa rowsRemoved()
@@ -562,6 +575,7 @@ void ModelTest::rowsAboutToBeRemoved(const QModelIndex &parent, int start, int e
 }
 
 /*!
+    \internal
     Confirm that what was said was going to happen actually did
 
     \sa rowsAboutToBeRemoved()
@@ -590,7 +604,7 @@ TreeItem::~TreeItem()
 {
     QTC_CHECK(m_parent == nullptr);
     QTC_CHECK(m_model == nullptr);
-    removeChildren();
+    removeChildren(false);
 }
 
 TreeItem *TreeItem::childAt(int pos) const
@@ -686,15 +700,17 @@ void TreeItem::removeChildAt(int pos)
     }
 }
 
-void TreeItem::removeChildren()
+void TreeItem::removeChildren(bool emitSignals)
 {
     if (childCount() == 0)
         return;
     if (m_model) {
         QModelIndex idx = index();
-        m_model->beginRemoveRows(idx, 0, childCount() - 1);
+        if (emitSignals)
+            m_model->beginRemoveRows(idx, 0, childCount() - 1);
         clear();
-        m_model->endRemoveRows();
+        if (emitSignals)
+            m_model->endRemoveRows();
     } else {
         clear();
     }
@@ -704,7 +720,7 @@ void TreeItem::sortChildren(const std::function<bool(const TreeItem *, const Tre
 {
     if (m_model) {
         if (const int n = childCount()) {
-            QVector<TreeItem *> tmp = m_children;
+            QList<TreeItem *> tmp = m_children;
             std::sort(tmp.begin(), tmp.end(), cmp);
             if (tmp == m_children) {
                 // Nothing changed.
@@ -895,6 +911,7 @@ void TreeItem::propagateModel(BaseTreeModel *m)
 
 /*!
     \class Utils::TreeModel
+    \inmodule QtCreator
 
     \brief The TreeModel class is a convienience base class for models
     to use in a QTreeView.
@@ -1046,25 +1063,30 @@ TreeItem *BaseTreeModel::rootItem() const
 
 void BaseTreeModel::setRootItem(TreeItem *item)
 {
+    beginResetModel();
+    setRootItemInternal(item);
+    endResetModel();
+}
+
+void BaseTreeModel::setRootItemInternal(TreeItem *item)
+{
     QTC_ASSERT(item, return);
     QTC_ASSERT(item->m_model == nullptr, return);
     QTC_ASSERT(item->m_parent == nullptr, return);
     QTC_ASSERT(item != m_root, return);
     QTC_CHECK(m_root);
 
-    beginResetModel();
     if (m_root) {
         QTC_CHECK(m_root->m_parent == nullptr);
         QTC_CHECK(m_root->m_model == this);
         // needs to be done explicitly before setting the model to 0, otherwise it might lead to a
         // crash inside a view or proxy model, especially if there are selected items
-        m_root->removeChildren();
+        m_root->removeChildren(false);
         m_root->m_model = nullptr;
         delete m_root;
     }
     m_root = item;
     item->propagateModel(this);
-    endResetModel();
 }
 
 void BaseTreeModel::setHeader(const QStringList &displays)
@@ -1183,6 +1205,14 @@ Qt::ItemFlags StaticTreeItem::flags(int column) const
 {
     Q_UNUSED(column)
     return Qt::ItemIsEnabled;
+}
+
+bool SortModel::lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const
+{
+    if (m_lessThan)
+        return m_lessThan(source_left, source_right);
+    return caseFriendlyCompare(sourceModel()->data(source_left).toString(),
+                               sourceModel()->data(source_right).toString()) < 0;
 }
 
 } // namespace Utils

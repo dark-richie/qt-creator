@@ -8,7 +8,10 @@
 #include <QWidgetAction>
 #include <QIcon>
 
+QT_BEGIN_NAMESPACE
 class QWidgetAction;
+QT_END_NAMESPACE
+
 namespace QmlDesigner {
 
 using SelectionContextOperation = std::function<void(const SelectionContext &)>;
@@ -88,23 +91,6 @@ private:
     View3DActionType m_actionType;
 };
 
-class Edit3DCameraAction : public Edit3DAction
-{
-public:
-    Edit3DCameraAction(const QByteArray &menuId,
-                       View3DActionType type,
-                       const QString &description,
-                       const QKeySequence &key,
-                       bool checkable,
-                       bool checked,
-                       const QIcon &icon,
-                       Edit3DView *view,
-                       SelectionContextOperation selectionAction = nullptr);
-
-protected:
-    bool isEnabled(const SelectionContext &selectionContext) const override;
-};
-
 class Edit3DParticleSeekerAction : public Edit3DAction
 {
 public:
@@ -120,6 +106,21 @@ protected:
 
 private:
     SeekerSliderAction *m_seeker = nullptr;
+};
+
+class Edit3DBakeLightsAction : public Edit3DAction
+{
+public:
+    Edit3DBakeLightsAction(const QIcon &icon,
+                           Edit3DView *view,
+                           SelectionContextOperation selectionAction);
+
+protected:
+    bool isVisible(const SelectionContext &) const override;
+    bool isEnabled(const SelectionContext &) const override;
+
+private:
+    Edit3DView *m_view = nullptr;
 };
 
 } // namespace QmlDesigner

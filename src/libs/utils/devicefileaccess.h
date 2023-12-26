@@ -35,7 +35,7 @@ protected:
     virtual bool isDirectory(const FilePath &filePath) const;
     virtual bool isSymLink(const FilePath &filePath) const;
     virtual bool hasHardLinks(const FilePath &filePath) const;
-    virtual bool ensureWritableDirectory(const FilePath &filePath) const;
+    virtual expected_str<void> ensureWritableDirectory(const FilePath &filePath) const;
     virtual bool ensureExistingFile(const FilePath &filePath) const;
     virtual bool createDirectory(const FilePath &filePath) const;
     virtual bool exists(const FilePath &filePath) const;
@@ -92,7 +92,7 @@ protected:
     bool isDirectory(const FilePath &filePath) const override;
     bool isSymLink(const FilePath &filePath) const override;
     bool hasHardLinks(const FilePath &filePath) const override;
-    bool ensureWritableDirectory(const FilePath &filePath) const override;
+    expected_str<void> ensureWritableDirectory(const FilePath &filePath) const override;
     bool ensureExistingFile(const FilePath &filePath) const override;
     bool createDirectory(const FilePath &filePath) const override;
     bool exists(const FilePath &filePath) const override;
@@ -183,16 +183,15 @@ protected:
 
     expected_str<FilePath> createTempFile(const FilePath &filePath) override;
 
+    void findUsingLs(const QString &current,
+                     const FileFilter &filter,
+                     QStringList *found,
+                     const QString &start) const;
 
 private:
-    bool iterateWithFind(
-            const FilePath &filePath,
-            const FileFilter &filter,
-            const FilePath::IterateDirCallback &callBack) const;
-    void findUsingLs(
-            const QString &current,
-            const FileFilter &filter,
-            QStringList *found) const;
+    bool iterateWithFind(const FilePath &filePath,
+                         const FileFilter &filter,
+                         const FilePath::IterateDirCallback &callBack) const;
 
     QStringList statArgs(const FilePath &filePath,
                          const QString &linuxFormat,

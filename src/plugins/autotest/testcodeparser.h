@@ -18,7 +18,7 @@ class QThreadPool;
 QT_END_NAMESPACE
 
 namespace ProjectExplorer { class Project; }
-namespace Utils { class TaskTree; }
+namespace Tasking { class TaskTree; }
 
 namespace Autotest {
 namespace Internal {
@@ -31,7 +31,8 @@ public:
         Idle,
         PartialParse,
         FullParse,
-        Shutdown
+        Shutdown,
+        DisabledTemporarily
     };
 
     TestCodeParser();
@@ -53,7 +54,7 @@ signals:
     void parsingStarted();
     void parsingFinished();
     void parsingFailed();
-    void requestRemoval(const Utils::FilePath &filePath);
+    void requestRemoval(const QSet<Utils::FilePath> &filePaths);
     void requestRemoveAllFrameworkItems();
 
 public:
@@ -63,11 +64,11 @@ public:
     void onQmlDocumentUpdated(const QmlJS::Document::Ptr &document);
     void onStartupProjectChanged(ProjectExplorer::Project *project);
     void onProjectPartsUpdated(ProjectExplorer::Project *project);
-    void aboutToShutdown();
+    void aboutToShutdown(bool isFinal);
 
 private:
-    bool postponed(const Utils::FilePaths &fileList);
-    void scanForTests(const Utils::FilePaths &fileList = Utils::FilePaths(),
+    bool postponed(const QSet<Utils::FilePath> &fileList);
+    void scanForTests(const QSet<Utils::FilePath> &filePaths = {},
                       const QList<ITestParser *> &parsers = {});
 
     // qml files must be handled slightly different
@@ -94,9 +95,11 @@ private:
     QList<ITestParser *> m_testCodeParsers; // ptrs are still owned by TestFrameworkManager
     QTimer m_reparseTimer;
     QSet<ITestParser *> m_updateParsers;
-    QThreadPool *m_threadPool = nullptr;
     Utils::FutureSynchronizer m_futureSynchronizer;
-    std::unique_ptr<Utils::TaskTree> m_taskTree;
+    std::unique_ptr<Tasking::TaskTree> m_taskTree;
+    QHash<Utils::FilePath, int> m_qmlEditorRev;
+
+    QElapsedTimer m_parsingTimer;
 };
 
 } // namespace Internal

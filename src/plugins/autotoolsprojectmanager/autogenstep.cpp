@@ -14,6 +14,7 @@
 #include <projectexplorer/target.h>
 
 #include <utils/aspects.h>
+#include <utils/process.h>
 
 #include <QDateTime>
 
@@ -39,26 +40,26 @@ public:
     AutogenStep(BuildStepList *bsl, Id id);
 
 private:
-    void doRun() final;
+    Tasking::GroupItem runRecipe() final;
 
     bool m_runAutogen = false;
+    StringAspect m_arguments{this};
 };
 
 AutogenStep::AutogenStep(BuildStepList *bsl, Id id) : AbstractProcessStep(bsl, id)
 {
-    auto arguments = addAspect<StringAspect>();
-    arguments->setSettingsKey("AutotoolsProjectManager.AutogenStep.AdditionalArguments");
-    arguments->setLabelText(Tr::tr("Arguments:"));
-    arguments->setDisplayStyle(StringAspect::LineEditDisplay);
-    arguments->setHistoryCompleter("AutotoolsPM.History.AutogenStepArgs");
+    m_arguments.setSettingsKey("AutotoolsProjectManager.AutogenStep.AdditionalArguments");
+    m_arguments.setLabelText(Tr::tr("Arguments:"));
+    m_arguments.setDisplayStyle(StringAspect::LineEditDisplay);
+    m_arguments.setHistoryCompleter("AutotoolsPM.History.AutogenStepArgs");
 
-    connect(arguments, &BaseAspect::changed, this, [this] { m_runAutogen = true; });
+    connect(&m_arguments, &BaseAspect::changed, this, [this] { m_runAutogen = true; });
 
     setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
 
-    setCommandLineProvider([this, arguments] {
+    setCommandLineProvider([this] {
         return CommandLine(project()->projectDirectory() / "autogen.sh",
-                           arguments->value(),
+                           m_arguments(),
                            CommandLine::Raw);
     });
 
@@ -69,29 +70,36 @@ AutogenStep::AutogenStep(BuildStepList *bsl, Id id) : AbstractProcessStep(bsl, i
     });
 }
 
-void AutogenStep::doRun()
+Tasking::GroupItem AutogenStep::runRecipe()
 {
-    // Check whether we need to run autogen.sh
-    const FilePath projectDir = project()->projectDirectory();
-    const FilePath configure = projectDir / "configure";
-    const FilePath configureAc = projectDir / "configure.ac";
-    const FilePath makefileAm = projectDir / "Makefile.am";
+    using namespace Tasking;
 
-    if (!configure.exists()
-        || configure.lastModified() < configureAc.lastModified()
-        || configure.lastModified() < makefileAm.lastModified()) {
-        m_runAutogen = true;
-    }
+    const auto onSetup = [this] {
+        // Check whether we need to run autogen.sh
+        const FilePath projectDir = project()->projectDirectory();
+        const FilePath configure = projectDir / "configure";
+        const FilePath configureAc = projectDir / "configure.ac";
+        const FilePath makefileAm = projectDir / "Makefile.am";
 
-    if (!m_runAutogen) {
-        emit addOutput(Tr::tr("Configuration unchanged, skipping autogen step."),
-                       OutputFormat::NormalMessage);
-        emit finished(true);
-        return;
-    }
+        if (!configure.exists()
+            || configure.lastModified() < configureAc.lastModified()
+            || configure.lastModified() < makefileAm.lastModified()) {
+            m_runAutogen = true;
+        }
 
-    m_runAutogen = false;
-    AbstractProcessStep::doRun();
+        if (!m_runAutogen) {
+            emit addOutput(Tr::tr("Configuration unchanged, skipping autogen step."),
+                           OutputFormat::NormalMessage);
+            return SetupResult::StopWithSuccess;
+        }
+        return SetupResult::Continue;
+    };
+
+    return Group {
+        onGroupSetup(onSetup),
+        onGroupDone([this] { m_runAutogen = false; }, CallDoneIf::Success),
+        defaultProcessTask()
+    };
 }
 
 // AutogenStepFactory

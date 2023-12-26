@@ -15,6 +15,9 @@
 #include <cppeditor/clangdiagnosticconfigsmodel.h>
 #include <cppeditor/clangdiagnosticconfigsselectionwidget.h>
 
+#include <projectexplorer/projectpanelfactory.h>
+#include <projectexplorer/projectsettingswidget.h>
+
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 
@@ -24,12 +27,12 @@
 #include <QPushButton>
 #include <QTreeView>
 
-namespace ClangTools {
-namespace Internal {
+using namespace ProjectExplorer;
+
+namespace ClangTools::Internal {
 
 class SuppressedDiagnosticsModel : public QAbstractTableModel
 {
-    Q_OBJECT
 public:
     SuppressedDiagnosticsModel(QObject *parent = nullptr) : QAbstractTableModel(parent) { }
 
@@ -48,9 +51,30 @@ private:
     SuppressedDiagnosticsList m_diagnostics;
 };
 
-ClangToolsProjectSettingsWidget::ClangToolsProjectSettingsWidget(ProjectExplorer::Project *project, QWidget *parent) :
-    ProjectExplorer::ProjectSettingsWidget(parent),
-    m_projectSettings(ClangToolsProjectSettings::getSettings(project))
+class ClangToolsProjectSettingsWidget : public ProjectSettingsWidget
+{
+public:
+    explicit ClangToolsProjectSettingsWidget(Project *project);
+
+private:
+    void onGlobalCustomChanged(bool useGlobal);
+
+    void updateButtonStates();
+    void updateButtonStateRemoveSelected();
+    void updateButtonStateRemoveAll();
+    void removeSelected();
+
+    QPushButton *m_restoreGlobal;
+    RunSettingsWidget *m_runSettingsWidget;
+    QTreeView *m_diagnosticsView;
+    QPushButton *m_removeSelectedButton;
+    QPushButton *m_removeAllButton;
+
+    QSharedPointer<ClangToolsProjectSettings> const m_projectSettings;
+};
+
+ClangToolsProjectSettingsWidget::ClangToolsProjectSettingsWidget(Project *project)
+    : m_projectSettings(ClangToolsProjectSettings::getSettings(project))
 {
     setGlobalSettingsId(ClangTools::Constants::SETTINGS_PAGE_ID);
     m_restoreGlobal = new QPushButton(Tr::tr("Restore Global Settings"));
@@ -68,7 +92,7 @@ ClangToolsProjectSettingsWidget::ClangToolsProjectSettingsWidget(ProjectExplorer
     m_removeSelectedButton = new QPushButton(Tr::tr("Remove Selected"), this);
     m_removeAllButton = new QPushButton(Tr::tr("Remove All"));
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
     Column {
         Row { m_restoreGlobal, st, gotoClangTidyModeLabel, gotoClazyModeLabel },
 
@@ -84,8 +108,9 @@ ClangToolsProjectSettingsWidget::ClangToolsProjectSettingsWidget(ProjectExplorer
                     st
                 }
             }
-        }
-    }.attachTo(this, WithoutMargins);
+        },
+        noMargin
+    }.attachTo(this);
 
     setUseGlobalSettings(m_projectSettings->useGlobalSettings());
     onGlobalCustomChanged(useGlobalSettings());
@@ -217,7 +242,23 @@ QVariant SuppressedDiagnosticsModel::data(const QModelIndex &index, int role) co
     return QVariant();
 }
 
-} // namespace Internal
-} // namespace ClangTools
+class ClangToolsProjectPanelFactory final : public ProjectPanelFactory
+{
+public:
+    ClangToolsProjectPanelFactory()
+    {
+        setPriority(100);
+        setId(Constants::PROJECT_PANEL_ID);
+        setDisplayName(Tr::tr("Clang Tools"));
+        setCreateWidgetFunction([](Project *project) {
+            return new ClangToolsProjectSettingsWidget(project);
+        });
+    }
+};
 
-#include "clangtoolsprojectsettingswidget.moc"
+void setupClangToolsProjectPanel()
+{
+    static ClangToolsProjectPanelFactory theClangToolsProjectPanelFactory;
+}
+
+} // namespace ClangTools::Internal

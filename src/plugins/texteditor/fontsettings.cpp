@@ -17,7 +17,6 @@
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
-#include <QSettings>
 #include <QTextCharFormat>
 
 #include <cmath>
@@ -32,6 +31,8 @@ const char antialiasKey[] = "FontAntialias";
 const char schemeFileNamesKey[] = "ColorSchemes";
 
 const bool DEFAULT_ANTIALIAS = true;
+
+const char g_sourceCodePro[] = "Source Code Pro";
 
 namespace TextEditor {
 
@@ -56,57 +57,57 @@ void FontSettings::clear()
     clearCaches();
 }
 
-static QString settingsGroup()
+static Key settingsGroup()
 {
-    return Utils::settingsKey(TextEditor::Constants::TEXT_EDITOR_SETTINGS_CATEGORY);
+    return keyFromString(Utils::settingsKey(TextEditor::Constants::TEXT_EDITOR_SETTINGS_CATEGORY));
 }
 
-void FontSettings::toSettings(QSettings *s) const
+void FontSettings::toSettings(QtcSettings *s) const
 {
     s->beginGroup(settingsGroup());
-    if (m_family != defaultFixedFontFamily() || s->contains(QLatin1String(fontFamilyKey)))
-        s->setValue(QLatin1String(fontFamilyKey), m_family);
+    if (m_family != defaultFixedFontFamily() || s->contains(fontFamilyKey))
+        s->setValue(fontFamilyKey, m_family);
 
-    if (m_fontSize != defaultFontSize() || s->contains(QLatin1String(fontSizeKey)))
-        s->setValue(QLatin1String(fontSizeKey), m_fontSize);
+    if (m_fontSize != defaultFontSize() || s->contains(fontSizeKey))
+        s->setValue(fontSizeKey, m_fontSize);
 
-    if (m_fontZoom!= 100 || s->contains(QLatin1String(fontZoomKey)))
-        s->setValue(QLatin1String(fontZoomKey), m_fontZoom);
+    if (m_fontZoom!= 100 || s->contains(fontZoomKey))
+        s->setValue(fontZoomKey, m_fontZoom);
 
-    if (m_lineSpacing != 100 || s->contains(QLatin1String(lineSpacingKey)))
-        s->setValue(QLatin1String(lineSpacingKey), m_lineSpacing);
+    if (m_lineSpacing != 100 || s->contains(lineSpacingKey))
+        s->setValue(lineSpacingKey, m_lineSpacing);
 
-    if (m_antialias != DEFAULT_ANTIALIAS || s->contains(QLatin1String(antialiasKey)))
-        s->setValue(QLatin1String(antialiasKey), m_antialias);
+    if (m_antialias != DEFAULT_ANTIALIAS || s->contains(antialiasKey))
+        s->setValue(antialiasKey, m_antialias);
 
-    auto schemeFileNames = s->value(QLatin1String(schemeFileNamesKey)).toMap();
+    auto schemeFileNames = s->value(schemeFileNamesKey).toMap();
     if (m_schemeFileName != defaultSchemeFileName() || schemeFileNames.contains(Utils::creatorTheme()->id())) {
         schemeFileNames.insert(Utils::creatorTheme()->id(), m_schemeFileName.toSettings());
-        s->setValue(QLatin1String(schemeFileNamesKey), schemeFileNames);
+        s->setValue(schemeFileNamesKey, schemeFileNames);
     }
 
     s->endGroup();
 }
 
-bool FontSettings::fromSettings(const FormatDescriptions &descriptions, const QSettings *s)
+bool FontSettings::fromSettings(const FormatDescriptions &descriptions, const QtcSettings *s)
 {
     clear();
 
-    QString group = settingsGroup();
-    if (!s->childGroups().contains(group))
+    Key group = settingsGroup();
+    if (!s->childGroups().contains(stringFromKey(group)))
         return false;
 
-    group += QLatin1Char('/');
+    group = group + '/';
 
-    m_family = s->value(group + QLatin1String(fontFamilyKey), defaultFixedFontFamily()).toString();
-    m_fontSize = s->value(group + QLatin1String(fontSizeKey), m_fontSize).toInt();
-    m_fontZoom= s->value(group + QLatin1String(fontZoomKey), m_fontZoom).toInt();
-    m_lineSpacing = s->value(group + QLatin1String(lineSpacingKey), m_lineSpacing).toInt();
-    m_antialias = s->value(group + QLatin1String(antialiasKey), DEFAULT_ANTIALIAS).toBool();
+    m_family = s->value(group + fontFamilyKey, defaultFixedFontFamily()).toString();
+    m_fontSize = s->value(group + fontSizeKey, m_fontSize).toInt();
+    m_fontZoom= s->value(group + fontZoomKey, m_fontZoom).toInt();
+    m_lineSpacing = s->value(group + lineSpacingKey, m_lineSpacing).toInt();
+    m_antialias = s->value(group + antialiasKey, DEFAULT_ANTIALIAS).toBool();
 
-    if (s->contains(group + QLatin1String(schemeFileNamesKey))) {
+    if (s->contains(group + schemeFileNamesKey)) {
         // Load the selected color scheme for the current theme
-        auto schemeFileNames = s->value(group + QLatin1String(schemeFileNamesKey)).toMap();
+        auto schemeFileNames = s->value(group + schemeFileNamesKey).toMap();
         if (schemeFileNames.contains(Utils::creatorTheme()->id())) {
             const FilePath scheme = FilePath::fromSettings(schemeFileNames.value(Utils::creatorTheme()->id()));
             loadColorScheme(scheme, descriptions);
@@ -173,7 +174,7 @@ QTextCharFormat FontSettings::toTextCharFormat(TextStyle category) const
         tf.setBackground(QColor());
     }
 
-    tf.setFontWeight(f.bold() ? QFont::Bold : QFont::Normal);
+    tf.setFontWeight(f.bold() ? QFont::Bold : fontNormalWeight());
     tf.setFontItalic(f.italic());
 
     tf.setUnderlineColor(f.underlineColor());
@@ -219,6 +220,7 @@ QBrush mixBrush(const QBrush &original, double relativeSaturation, double relati
 void FontSettings::addMixinStyle(QTextCharFormat &textCharFormat,
                                  const MixinTextStyles &mixinStyles) const
 {
+    const int normalWeight = fontNormalWeight();
     for (TextStyle mixinStyle : mixinStyles) {
         const Format &format = m_scheme.formatFor(mixinStyle);
 
@@ -243,8 +245,8 @@ void FontSettings::addMixinStyle(QTextCharFormat &textCharFormat,
         if (!textCharFormat.fontItalic())
             textCharFormat.setFontItalic(format.italic());
 
-        if (textCharFormat.fontWeight() == QFont::Normal)
-            textCharFormat.setFontWeight(format.bold() ? QFont::Bold : QFont::Normal);
+        if (textCharFormat.fontWeight() == normalWeight)
+            textCharFormat.setFontWeight(format.bold() ? QFont::Bold : normalWeight);
 
         if (textCharFormat.underlineStyle() == QTextCharFormat::NoUnderline) {
             textCharFormat.setUnderlineStyle(format.underlineStyle());
@@ -333,7 +335,7 @@ void FontSettings::setFontZoom(int zoom)
 qreal FontSettings::lineSpacing() const
 {
     QFont currentFont = font();
-    currentFont.setPointSize(m_fontSize * m_fontZoom / 100);
+    currentFont.setPointSize(std::max(m_fontSize * m_fontZoom / 100, 1));
     qreal spacing = QFontMetricsF(currentFont).lineSpacing();
     if (m_lineSpacing != 100)
         spacing *= qreal(m_lineSpacing) / 100;
@@ -355,6 +357,15 @@ QFont FontSettings::font() const
     QFont f(family(), fontSize());
     f.setStyleStrategy(m_antialias ? QFont::PreferAntialias : QFont::NoAntialias);
     return f;
+}
+
+int FontSettings::fontNormalWeight() const
+{
+    // TODO: Fix this when we upgrade "Source Code Pro" to a version greater than 2.0.30
+    int weight = QFont::Normal;
+    if (Utils::HostOsInfo::isMacHost() && m_family == g_sourceCodePro)
+        weight = QFont::Medium;
+    return weight;
 }
 
 /**
@@ -420,8 +431,8 @@ bool FontSettings::loadColorScheme(const Utils::FilePath &filePath,
     for (const FormatDescription &desc : descriptions) {
         const TextStyle id = desc.id();
         if (!m_scheme.contains(id)) {
-            if (id == C_NAMESPACE && m_scheme.contains(C_TYPE)) {
-                m_scheme.setFormatFor(C_NAMESPACE, m_scheme.formatFor(C_TYPE));
+            if ((id == C_NAMESPACE || id == C_CONCEPT) && m_scheme.contains(C_TYPE)) {
+                m_scheme.setFormatFor(id, m_scheme.formatFor(C_TYPE));
                 continue;
             }
             if (id == C_MACRO && m_scheme.contains(C_FUNCTION)) {
@@ -476,9 +487,9 @@ void FontSettings::setColorScheme(const ColorScheme &scheme)
 static QString defaultFontFamily()
 {
     if (Utils::HostOsInfo::isMacHost())
-        return QLatin1String("Monaco");
+        return QLatin1String("Menlo");
 
-    const QString sourceCodePro("Source Code Pro");
+    const QString sourceCodePro(g_sourceCodePro);
     const QFontDatabase dataBase;
     if (dataBase.hasFamily(sourceCodePro))
         return sourceCodePro;

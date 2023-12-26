@@ -6,7 +6,6 @@
 #include "cpastertr.h"
 #include "fileshareprotocolsettingspage.h"
 
-#include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
 
 #include <utils/fileutils.h>
@@ -29,20 +28,13 @@ const char textElementC[] = "text";
 
 namespace CodePaster {
 
-FileShareProtocol::FileShareProtocol() :
-    m_settingsPage(new FileShareProtocolSettingsPage(&m_settings))
-{
-    m_settings.readSettings(Core::ICore::settings());
-}
+FileShareProtocol::FileShareProtocol() = default;
 
-FileShareProtocol::~FileShareProtocol()
-{
-    delete m_settingsPage;
-}
+FileShareProtocol::~FileShareProtocol() = default;
 
 QString FileShareProtocol::name() const
 {
-    return m_settingsPage->displayName();
+    return fileShareSettingsPage().displayName();
 }
 
 unsigned FileShareProtocol::capabilities() const
@@ -55,9 +47,9 @@ bool FileShareProtocol::hasSettings() const
     return true;
 }
 
-Core::IOptionsPage *FileShareProtocol::settingsPage() const
+const Core::IOptionsPage *FileShareProtocol::settingsPage() const
 {
-    return m_settingsPage;
+    return &fileShareSettingsPage();
 }
 
 static bool parse(const QString &fileName,
@@ -108,7 +100,7 @@ static bool parse(const QString &fileName,
 
 bool FileShareProtocol::checkConfiguration(QString *errorMessage)
 {
-    if (m_settings.path.value().isEmpty()) {
+    if (fileShareSettings().path().isEmpty()) {
         if (errorMessage)
             *errorMessage = Tr::tr("Please configure a path.");
         return false;
@@ -121,7 +113,7 @@ void FileShareProtocol::fetch(const QString &id)
     // Absolute or relative path name.
     QFileInfo fi(id);
     if (fi.isRelative())
-        fi = QFileInfo(m_settings.path.value() + '/' + id);
+        fi = fileShareSettings().path().pathAppended(id).toFileInfo();
     QString errorMessage;
     QString text;
     if (parse(fi.absoluteFilePath(), &errorMessage, nullptr, nullptr, &text))
@@ -133,7 +125,7 @@ void FileShareProtocol::fetch(const QString &id)
 void FileShareProtocol::list()
 {
     // Read out directory, display by date (latest first)
-    QDir dir(m_settings.path.value(), tempGlobPatternC,
+    QDir dir(fileShareSettings().path().toFSPathString(), tempGlobPatternC,
              QDir::Time, QDir::Files|QDir::NoDotAndDotDot|QDir::Readable);
     QStringList entries;
     QString user;
@@ -141,7 +133,7 @@ void FileShareProtocol::list()
     QString errorMessage;
     const QChar blank = QLatin1Char(' ');
     const QFileInfoList entryInfoList = dir.entryInfoList();
-    const int count = qMin(int(m_settings.displayCount.value()), entryInfoList.size());
+    const int count = qMin(int(fileShareSettings().displayCount()), entryInfoList.size());
     for (int i = 0; i < count; i++) {
         const QFileInfo& entryFi = entryInfoList.at(i);
         if (parse(entryFi.absoluteFilePath(), &errorMessage, &user, &description)) {
@@ -168,7 +160,7 @@ void FileShareProtocol::paste(
         )
 {
     // Write out temp XML file
-    Utils::TempFileSaver saver(m_settings.path.value() + '/' + tempPatternC);
+    Utils::TempFileSaver saver(fileShareSettings().path().pathAppended(tempPatternC).toFSPathString());
     saver.setAutoRemove(false);
     if (!saver.hasError()) {
         // Flat text sections embedded into pasterElement

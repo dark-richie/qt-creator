@@ -4,17 +4,19 @@
 #include "extracompiler.h"
 
 #include "buildmanager.h"
-#include "kitinformation.h"
+#include "kitaspects.h"
 #include "projectmanager.h"
 #include "target.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/idocument.h>
 
-#include <utils/asynctask.h>
+#include <extensionsystem/pluginmanager.h>
+
+#include <utils/async.h>
 #include <utils/expected.h>
 #include <utils/guard.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QDateTime>
 #include <QLoggingCategory>
@@ -22,6 +24,7 @@
 #include <QTimer>
 
 using namespace Core;
+using namespace Tasking;
 using namespace Utils;
 
 namespace ProjectExplorer {
@@ -45,7 +48,6 @@ public:
 
     QTimer timer;
 
-    FutureSynchronizer m_futureSynchronizer;
     std::unique_ptr<TaskTree> m_taskTree;
 };
 
@@ -135,7 +137,7 @@ QThreadPool *ExtraCompiler::extraCompilerThreadPool()
     return s_extraCompilerThreadPool();
 }
 
-Tasking::TaskItem ExtraCompiler::compileFileItem()
+GroupItem ExtraCompiler::compileFileItem()
 {
     return taskItemImpl(fromFileProvider());
 }
@@ -152,12 +154,10 @@ void ExtraCompiler::compileContent(const QByteArray &content)
 
 void ExtraCompiler::compileImpl(const ContentProvider &provider)
 {
-    const auto finalize = [=] {
-        d->m_taskTree.release()->deleteLater();
-    };
     d->m_taskTree.reset(new TaskTree({taskItemImpl(provider)}));
-    connect(d->m_taskTree.get(), &TaskTree::done, this, finalize);
-    connect(d->m_taskTree.get(), &TaskTree::errorOccurred, this, finalize);
+    connect(d->m_taskTree.get(), &TaskTree::done, this, [this] {
+        d->m_taskTree.release()->deleteLater();
+    });
     d->m_taskTree->start();
 }
 
@@ -291,11 +291,6 @@ Environment ExtraCompiler::buildEnvironment() const
     return env;
 }
 
-FutureSynchronizer *ExtraCompiler::futureSynchronizer() const
-{
-    return &d->m_futureSynchronizer;
-}
-
 void ExtraCompiler::setContent(const FilePath &file, const QByteArray &contents)
 {
     qCDebug(log).noquote() << Q_FUNC_INFO << contents;
@@ -329,15 +324,16 @@ ProcessExtraCompiler::ProcessExtraCompiler(const Project *project, const FilePat
     ExtraCompiler(project, source, targets, parent)
 { }
 
-Tasking::TaskItem ProcessExtraCompiler::taskItemImpl(const ContentProvider &provider)
+GroupItem ProcessExtraCompiler::taskItemImpl(const ContentProvider &provider)
 {
-    const auto setupTask = [=](AsyncTask<FileNameToContentsHash> &async) {
+    const auto onSetup = [=](Async<FileNameToContentsHash> &async) {
         async.setThreadPool(extraCompilerThreadPool());
+        // The passed synchronizer has cancelOnWait set to true by default.
+        async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
         async.setConcurrentCallData(&ProcessExtraCompiler::runInThread, this, command(),
                                     workingDirectory(), arguments(), provider, buildEnvironment());
-        async.setFutureSynchronizer(futureSynchronizer());
     };
-    const auto taskDone = [=](const AsyncTask<FileNameToContentsHash> &async) {
+    const auto onDone = [=](const Async<FileNameToContentsHash> &async) {
         if (!async.isResultAvailable())
             return;
         const FileNameToContentsHash data = async.result();
@@ -347,17 +343,17 @@ Tasking::TaskItem ProcessExtraCompiler::taskItemImpl(const ContentProvider &prov
             setContent(it.key(), it.value());
         updateCompileTime();
     };
-    return Tasking::Async<FileNameToContentsHash>(setupTask, taskDone);
+    return AsyncTask<FileNameToContentsHash>(onSetup, onDone, CallDoneIf::Success);
 }
 
 FilePath ProcessExtraCompiler::workingDirectory() const
 {
-    return FilePath();
+    return {};
 }
 
 QStringList ProcessExtraCompiler::arguments() const
 {
-    return QStringList();
+    return {};
 }
 
 bool ProcessExtraCompiler::prepareToRun(const QByteArray &sourceContents)
@@ -384,7 +380,7 @@ void ProcessExtraCompiler::runInThread(QPromise<FileNameToContentsHash> &promise
     if (sourceContents.isNull() || !prepareToRun(sourceContents))
         return;
 
-    QtcProcess process;
+    Process process;
 
     process.setEnvironment(env);
     if (!workDir.isEmpty())

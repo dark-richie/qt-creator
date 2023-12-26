@@ -8,7 +8,9 @@
 
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/buildtargetinfo.h>
+#include <projectexplorer/deployconfiguration.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/runconfigurationaspects.h>
 #include <projectexplorer/target.h>
 
@@ -25,20 +27,24 @@ public:
     explicit BareMetalRunConfiguration(Target *target, Id id)
         : RunConfiguration(target, id)
     {
-        const auto exeAspect = addAspect<ExecutableAspect>(target, ExecutableAspect::RunDevice);
-        exeAspect->setDisplayStyle(StringAspect::LabelDisplay);
-        exeAspect->setPlaceHolderText(Tr::tr("Unknown"));
+        executable.setDeviceSelector(target, ExecutableAspect::RunDevice);
+        executable.setPlaceHolderText(Tr::tr("Unknown"));
 
-        addAspect<ArgumentsAspect>(macroExpander());
-        addAspect<WorkingDirectoryAspect>(macroExpander(), nullptr);
+        arguments.setMacroExpander(macroExpander());
 
-        setUpdater([this, exeAspect] {
+        workingDir.setMacroExpander(macroExpander());
+
+        setUpdater([this] {
             const BuildTargetInfo bti = buildTargetInfo();
-            exeAspect->setExecutable(bti.targetFilePath);
+            executable.setExecutable(bti.targetFilePath);
         });
 
         connect(target, &Target::buildSystemUpdated, this, &RunConfiguration::update);
     }
+
+    ExecutableAspect executable{this};
+    ArgumentsAspect arguments{this};
+    WorkingDirectoryAspect workingDir{this};
 };
 
 class BareMetalCustomRunConfiguration final : public RunConfiguration
@@ -47,50 +53,83 @@ public:
     explicit BareMetalCustomRunConfiguration(Target *target, Id id)
         : RunConfiguration(target, id)
     {
-        const auto exeAspect = addAspect<ExecutableAspect>(target, ExecutableAspect::RunDevice);
-        exeAspect->setSettingsKey("BareMetal.CustomRunConfig.Executable");
-        exeAspect->setPlaceHolderText(Tr::tr("Unknown"));
-        exeAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
-        exeAspect->setHistoryCompleter("BareMetal.CustomRunConfig.History");
-        exeAspect->setExpectedKind(PathChooser::Any);
+        executable.setDeviceSelector(target, ExecutableAspect::RunDevice);
+        executable.setSettingsKey("BareMetal.CustomRunConfig.Executable");
+        executable.setPlaceHolderText(Tr::tr("Unknown"));
+        executable.setReadOnly(false);
+        executable.setHistoryCompleter("BareMetal.CustomRunConfig.History");
+        executable.setExpectedKind(PathChooser::Any);
 
-        addAspect<ArgumentsAspect>(macroExpander());
-        addAspect<WorkingDirectoryAspect>(macroExpander(), nullptr);
+        arguments.setMacroExpander(macroExpander());
+
+        workingDir.setMacroExpander(macroExpander());
 
         setDefaultDisplayName(RunConfigurationFactory::decoratedTargetName(
-                                  Tr::tr("Custom Executable"), target));
+            Tr::tr("Custom Executable"), target));
     }
 
 public:
-    Tasks checkForIssues() const final;
+    Tasks checkForIssues() const final
+    {
+        Tasks tasks;
+        if (executable.executable().isEmpty()) {
+            tasks << createConfigurationIssue(Tr::tr("The remote executable must be set in order to "
+                                                     "run a custom remote run configuration."));
+        }
+        return tasks;
+    }
+
+    ExecutableAspect executable{this};
+    ArgumentsAspect arguments{this};
+    WorkingDirectoryAspect workingDir{this};
 };
 
-Tasks BareMetalCustomRunConfiguration::checkForIssues() const
+
+// BareMetalDeployConfigurationFactory
+
+class BareMetalDeployConfigurationFactory : public DeployConfigurationFactory
 {
-    Tasks tasks;
-    if (aspect<ExecutableAspect>()->executable().isEmpty()) {
-        tasks << createConfigurationIssue(Tr::tr("The remote executable must be set in order to "
-                                                 "run a custom remote run configuration."));
+public:
+    BareMetalDeployConfigurationFactory()
+    {
+        setConfigBaseId("BareMetal.DeployConfiguration");
+        setDefaultDisplayName(Tr::tr("Deploy to BareMetal Device"));
+        addSupportedTargetDeviceType(Constants::BareMetalOsType);
     }
-    return tasks;
-}
+};
 
 // BareMetalRunConfigurationFactory
 
-BareMetalRunConfigurationFactory::BareMetalRunConfigurationFactory()
+class BareMetalRunConfigurationFactory final : public RunConfigurationFactory
 {
-    registerRunConfiguration<BareMetalRunConfiguration>(Constants::BAREMETAL_RUNCONFIG_ID);
-    setDecorateDisplayNames(true);
-    addSupportedTargetDeviceType(BareMetal::Constants::BareMetalOsType);
-}
+public:
+    BareMetalRunConfigurationFactory()
+    {
+        registerRunConfiguration<BareMetalRunConfiguration>(Constants::BAREMETAL_RUNCONFIG_ID);
+        setDecorateDisplayNames(true);
+        addSupportedTargetDeviceType(BareMetal::Constants::BareMetalOsType);
+    }
+};
 
 // BaseMetalCustomRunConfigurationFactory
 
-BareMetalCustomRunConfigurationFactory::BareMetalCustomRunConfigurationFactory()
-    : FixedRunConfigurationFactory(Tr::tr("Custom Executable"), true)
+class BareMetalCustomRunConfigurationFactory final : public FixedRunConfigurationFactory
 {
-    registerRunConfiguration<BareMetalCustomRunConfiguration>(Constants::BAREMETAL_CUSTOMRUNCONFIG_ID);
-    addSupportedTargetDeviceType(BareMetal::Constants::BareMetalOsType);
+public:
+    BareMetalCustomRunConfigurationFactory()
+        : FixedRunConfigurationFactory(Tr::tr("Custom Executable"), true)
+    {
+        registerRunConfiguration<BareMetalCustomRunConfiguration>(Constants::BAREMETAL_CUSTOMRUNCONFIG_ID);
+        addSupportedTargetDeviceType(BareMetal::Constants::BareMetalOsType);
+    }
+};
+
+
+void setupBareMetalDeployAndRunConfigurations()
+{
+   static BareMetalDeployConfigurationFactory theBareMetalDeployConfigurationFactory;
+   static BareMetalRunConfigurationFactory theBareMetalRunConfigurationFactory;
+   static BareMetalCustomRunConfigurationFactory theBareMetalCustomRunConfigurationFactory;
 }
 
 } // BareMetal::Internal

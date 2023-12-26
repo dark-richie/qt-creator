@@ -6,23 +6,23 @@
 #include "qbsprojectmanagerconstants.h"
 #include "qbsprojectmanagertr.h"
 
-#include <app/app_version.h>
 #include <coreplugin/icore.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
 #include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
+#include <utils/qtcsettings.h>
 
-#include <QCoreApplication>
 #include <QCheckBox>
 #include <QFormLayout>
+#include <QGuiApplication>
 #include <QLabel>
+#include <QPushButton>
 
 using namespace Utils;
 
-namespace QbsProjectManager {
-namespace Internal {
+namespace QbsProjectManager::Internal {
 
 const char QBS_EXE_KEY[] = "QbsProjectManager/QbsExecutable";
 const char QBS_DEFAULT_INSTALL_DIR_KEY[] = "QbsProjectManager/DefaultInstallDir";
@@ -32,7 +32,7 @@ static QString getQbsVersion(const FilePath &qbsExe)
 {
     if (qbsExe.isEmpty() || !qbsExe.exists())
         return {};
-    QtcProcess qbsProc;
+    Process qbsProc;
     qbsProc.setCommand({qbsExe, {"--version"}});
     qbsProc.start();
     if (!qbsProc.waitForFinished(5000) || qbsProc.exitCode() != 0)
@@ -53,12 +53,17 @@ static bool operator!=(const QbsSettingsData &s1, const QbsSettingsData &s2)
 
 FilePath QbsSettings::qbsExecutableFilePath()
 {
-    const QString fileName = HostOsInfo::withExecutableSuffix("qbs");
     FilePath candidate = instance().m_settings.qbsExecutableFilePath;
-    if (!candidate.exists()) {
-        candidate = FilePath::fromString(QCoreApplication::applicationDirPath())
-                .pathAppended(fileName);
-    }
+    if (!candidate.exists())
+        candidate = defaultQbsExecutableFilePath();
+    return candidate;
+}
+
+FilePath QbsSettings::defaultQbsExecutableFilePath()
+{
+    const QString fileName = HostOsInfo::withExecutableSuffix("qbs");
+    FilePath candidate = FilePath::fromString(QCoreApplication::applicationDirPath())
+                             .pathAppended(fileName);
     if (!candidate.exists())
         candidate = Environment::systemEnvironment().searchInPath(fileName);
     return candidate;
@@ -126,7 +131,7 @@ QbsSettings::QbsSettings()
 
 void QbsSettings::loadSettings()
 {
-    QSettings * const s = Core::ICore::settings();
+    QtcSettings * const s = Core::ICore::settings();
     m_settings.qbsExecutableFilePath = FilePath::fromString(s->value(QBS_EXE_KEY).toString());
     m_settings.defaultInstallDirTemplate = s->value(
                 QBS_DEFAULT_INSTALL_DIR_KEY,
@@ -136,37 +141,46 @@ void QbsSettings::loadSettings()
 
 void QbsSettings::storeSettings() const
 {
-    QSettings * const s = Core::ICore::settings();
-    s->setValue(QBS_EXE_KEY, m_settings.qbsExecutableFilePath.toString());
+    QtcSettings * const s = Core::ICore::settings();
+    s->setValueWithDefault(QBS_EXE_KEY, m_settings.qbsExecutableFilePath.toString(),
+                           defaultQbsExecutableFilePath().toString());
     s->setValue(QBS_DEFAULT_INSTALL_DIR_KEY, m_settings.defaultInstallDirTemplate);
     s->setValue(USE_CREATOR_SETTINGS_KEY, m_settings.useCreatorSettings);
 }
 
-class QbsSettingsPage::SettingsWidget : public QWidget
+class QbsSettingsPageWidget : public Core::IOptionsPageWidget
 {
 public:
-    SettingsWidget()
+    QbsSettingsPageWidget()
     {
         m_qbsExePathChooser.setExpectedKind(PathChooser::ExistingCommand);
         m_qbsExePathChooser.setFilePath(QbsSettings::qbsExecutableFilePath());
+        m_resetQbsExeButton.setText(Tr::tr("Reset"));
         m_defaultInstallDirLineEdit.setText(QbsSettings::defaultInstallDirTemplate());
         m_versionLabel.setText(getQbsVersionString());
+        //: %1 == "Qt Creator" or "Qt Design Studio"
         m_settingsDirCheckBox.setText(Tr::tr("Use %1 settings directory for Qbs")
-                                      .arg(Core::Constants::IDE_DISPLAY_NAME));
+                                          .arg(QGuiApplication::applicationDisplayName()));
         m_settingsDirCheckBox.setChecked(QbsSettings::useCreatorSettingsDirForQbs());
 
         const auto layout = new QFormLayout(this);
         layout->addRow(&m_settingsDirCheckBox);
-        layout->addRow(Tr::tr("Path to qbs executable:"), &m_qbsExePathChooser);
+        const auto qbsExeLayout = new QHBoxLayout;
+        qbsExeLayout->addWidget(&m_qbsExePathChooser);
+        qbsExeLayout->addWidget(&m_resetQbsExeButton);
+        layout->addRow(Tr::tr("Path to qbs executable:"), qbsExeLayout);
         layout->addRow(Tr::tr("Default installation directory:"), &m_defaultInstallDirLineEdit);
         layout->addRow(Tr::tr("Qbs version:"), &m_versionLabel);
 
-        connect(&m_qbsExePathChooser, &PathChooser::textChanged, [this] {
+        connect(&m_qbsExePathChooser, &PathChooser::textChanged, this, [this] {
             m_versionLabel.setText(getQbsVersionString());
+        });
+        connect(&m_resetQbsExeButton, &QPushButton::clicked, this, [this] {
+            m_qbsExePathChooser.setFilePath(QbsSettings::defaultQbsExecutableFilePath());
         });
     }
 
-    void apply()
+    void apply() final
     {
         QbsSettingsData settings = QbsSettings::rawSettingsData();
         if (m_qbsExePathChooser.filePath() != QbsSettings::qbsExecutableFilePath())
@@ -185,6 +199,7 @@ private:
     }
 
     PathChooser m_qbsExePathChooser;
+    QPushButton m_resetQbsExeButton;
     QLabel m_versionLabel;
     QCheckBox m_settingsDirCheckBox;
     FancyLineEdit m_defaultInstallDirLineEdit;
@@ -197,26 +212,7 @@ QbsSettingsPage::QbsSettingsPage()
     setCategory(Constants::QBS_SETTINGS_CATEGORY);
     setDisplayCategory(Tr::tr(Constants::QBS_SETTINGS_TR_CATEGORY));
     setCategoryIconPath(":/qbsprojectmanager/images/settingscategory_qbsprojectmanager.png");
+    setWidgetCreator([] { return new QbsSettingsPageWidget; });
 }
 
-QWidget *QbsSettingsPage::widget()
-{
-    if (!m_widget)
-        m_widget = new SettingsWidget;
-    return m_widget;
-
-}
-
-void QbsSettingsPage::apply()
-{
-    if (m_widget)
-        m_widget->apply();
-}
-
-void QbsSettingsPage::finish()
-{
-    delete m_widget;
-}
-
-} // namespace Internal
-} // namespace QbsProjectManager
+} // QbsProjectManager::Internal

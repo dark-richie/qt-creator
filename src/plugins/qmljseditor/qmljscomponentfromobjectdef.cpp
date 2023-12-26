@@ -79,7 +79,8 @@ public:
     }
 
     void performChanges(QmlJSRefactoringFilePtr currentFile,
-                        const QmlJSRefactoringChanges &refactoring) override
+                        const QmlJSRefactoringChanges &refactoring,
+                        const QString &imports = QString()) override
     {
         QString componentName = m_componentName;
 
@@ -128,18 +129,12 @@ public:
         const Utils::FilePath newFileName = path.pathAppended(componentName + QLatin1String(".")
                                                               + suffix);
 
-        QString imports;
-        UiProgram *prog = currentFile->qmljsDocument()->qmlProgram();
-        if (prog && prog->headers) {
-            const unsigned int start = currentFile->startOf(prog->headers->firstSourceLocation());
-            const unsigned int end = currentFile->startOf(prog->members->member->firstSourceLocation());
-            imports = currentFile->textOf(start, end);
-        }
+        QString qmlImports = imports.size() ? imports : currentFile->qmlImports();
 
         const unsigned int start = currentFile->startOf(m_firstSourceLocation);
         const unsigned int end = currentFile->startOf(m_lastSourceLocation);
-        QString newComponentSource = imports + currentFile->textOf(start, end)
-                + QLatin1String("}\n");
+        QString newComponentSource = qmlImports + currentFile->textOf(start, end)
+                                     + QLatin1String("}\n");
 
         //Remove properties from resulting code...
 
@@ -171,7 +166,7 @@ public:
         const bool reindent = true;
         const bool openEditor = false;
         const Utils::FilePath newFilePath = newFileName;
-        if (!refactoring.createFile(newFileName, newComponentSource, reindent, openEditor))
+        if (!refactoring.file(newFileName)->create(newComponentSource, reindent, openEditor))
             return;
 
         if (path.toString() == currentFileName.toFileInfo().path()) {
@@ -195,7 +190,6 @@ public:
         Utils::ChangeSet changes;
         changes.replace(start, end, replacement);
         currentFile->setChangeSet(changes);
-        currentFile->appendIndentRange(Range(start, end + 1));
         currentFile->apply();
 
         Core::IVersionControl *versionControl = Core::VcsManager::findVersionControlForDirectory(
@@ -248,16 +242,17 @@ void matchComponentFromObjectDefQuickFix(const QmlJSQuickFixAssistInterface *int
 
 void performComponentFromObjectDef(QmlJSEditorWidget *editor,
                                    const QString &fileName,
-                                   QmlJS::AST::UiObjectDefinition *objDef)
+                                   QmlJS::AST::UiObjectDefinition *objDef,
+                                   const QString &importData)
 {
     QmlJSRefactoringChanges refactoring(QmlJS::ModelManagerInterface::instance(),
                                         QmlJS::ModelManagerInterface::instance()->snapshot());
-    QmlJSRefactoringFilePtr current = refactoring.file(Utils::FilePath::fromString(fileName));
+    QmlJSRefactoringFilePtr current = refactoring.qmlJSFile(Utils::FilePath::fromString(fileName));
 
     QmlJSQuickFixAssistInterface interface(editor, TextEditor::AssistReason::ExplicitlyInvoked);
     Operation operation(&interface, objDef);
 
-    operation.performChanges(current, refactoring);
+    operation.performChanges(current, refactoring, importData);
 }
 
 } //namespace QmlJSEditor

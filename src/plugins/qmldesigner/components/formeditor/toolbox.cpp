@@ -5,6 +5,8 @@
 
 #include <theme.h>
 
+#include <utils/stylehelper.h>
+
 #include <QToolBar>
 #include <QHBoxLayout>
 #include <QDebug>
@@ -17,7 +19,9 @@ ToolBox::ToolBox(QWidget *parentWidget)
     , m_leftToolBar(new QToolBar(QLatin1String("LeftSidebar"), this))
     , m_rightToolBar(new QToolBar(QLatin1String("RightSidebar"), this))
 {
-    setProperty("panelwidget", false);
+    Utils::StyleHelper::setPanelWidget(this, false);
+    Utils::StyleHelper::setPanelWidgetSingleRow(this, false);
+    setFixedHeight(Theme::toolbarSize());
 
     m_leftToolBar->setFloatable(true);
     m_leftToolBar->setMovable(true);
@@ -27,20 +31,20 @@ ToolBox::ToolBox(QWidget *parentWidget)
     horizontalLayout->setContentsMargins(0, 0, 0, 0);
     horizontalLayout->setSpacing(0);
 
-    setFixedHeight(Theme::toolbarSize());
-
-    m_leftToolBar->setProperty("panelwidget", false);
-    m_leftToolBar->setProperty("panelwidget_singlerow", false);
+    Utils::StyleHelper::setPanelWidget(m_leftToolBar, false);
+    Utils::StyleHelper::setPanelWidgetSingleRow(m_leftToolBar, false);
     m_leftToolBar->setFixedHeight(Theme::toolbarSize());
+    m_leftToolBar->setStyleSheet("QToolBarExtension {margin-top: 5px;}");
 
-    m_rightToolBar->setProperty("panelwidget", false);
-    m_rightToolBar->setProperty("panelwidget_singlerow", false);
+    Utils::StyleHelper::setPanelWidget(m_rightToolBar, false);
+    Utils::StyleHelper::setPanelWidgetSingleRow(m_rightToolBar, false);
     m_rightToolBar->setFixedHeight(Theme::toolbarSize());
     m_rightToolBar->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Expanding);
+    m_rightToolBar->setStyleSheet("QToolBarExtension {margin-top: 5px;}");
 
     auto stretchToolbar = new QToolBar(this);
-    stretchToolbar->setProperty("panelwidget", false);
-    stretchToolbar->setProperty("panelwidget_singlerow", false);
+    Utils::StyleHelper::setPanelWidget(stretchToolbar, false);
+    Utils::StyleHelper::setPanelWidgetSingleRow(stretchToolbar, false);
     stretchToolbar->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
 
     m_rightToolBar->setOrientation(Qt::Horizontal);

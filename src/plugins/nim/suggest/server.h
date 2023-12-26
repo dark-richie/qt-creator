@@ -3,14 +3,9 @@
 
 #pragma once
 
-#include <QDebug>
-#include <QFile>
-#include <QObject>
+#include <utils/process.h>
 
-#include <utils/qtcprocess.h>
-
-namespace Nim {
-namespace Suggest {
+namespace Nim::Suggest {
 
 class NimSuggestServer : public QObject
 {
@@ -19,12 +14,10 @@ class NimSuggestServer : public QObject
 public:
     NimSuggestServer(QObject *parent = nullptr);
 
-    bool start(const QString &executablePath, const QString &projectFilePath);
+    bool start(const Utils::FilePath &executablePath, const Utils::FilePath &projectFilePath);
     void stop();
 
     quint16 port() const;
-    QString executablePath() const;
-    QString projectFilePath() const;
 
 signals:
     void started();
@@ -36,11 +29,10 @@ private:
     void clearState();
 
     bool m_portAvailable = false;
-    Utils::QtcProcess m_process;
+    Utils::Process m_process;
     quint16 m_port = 0;
-    QString m_projectFilePath;
-    QString m_executablePath;
+    Utils::FilePath m_projectFilePath;
+    Utils::FilePath m_executablePath;
 };
 
-} // namespace Suggest
-} // namespace Nim
+} // Nim::Suggest

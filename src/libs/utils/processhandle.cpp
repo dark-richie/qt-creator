@@ -7,6 +7,7 @@ namespace Utils {
 
 /*!
     \class Utils::ProcessHandle
+    \inmodule QtCreator
     \brief The ProcessHandle class is a helper class to describe a process.
 
     Encapsulates parameters of a running process, local (PID) or remote (to be
@@ -46,7 +47,7 @@ bool ProcessHandle::equals(const ProcessHandle &rhs) const
     return m_pid == rhs.m_pid;
 }
 
-#ifndef Q_OS_OSX
+#ifndef Q_OS_MACOS
 bool ProcessHandle::activate()
 {
     return false;

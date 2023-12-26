@@ -12,7 +12,6 @@
 #include <coreplugin/idocument.h>
 #include <coreplugin/editormanager/editormanager.h>
 
-#include <QSettings>
 #include <QAction>
 #include <QVBoxLayout>
 #include <QTextBlock>
@@ -45,9 +44,13 @@ bool QmlJSOutlineFilterModel::filterAcceptsRow(int sourceRow,
 {
     if (m_filterBindings) {
         QModelIndex sourceIndex = sourceModel()->index(sourceRow, 0, sourceParent);
-        QVariant itemType = sourceIndex.data(QmlOutlineModel::ItemTypeRole);
-        if (itemType == QmlOutlineModel::NonElementBindingType)
-            return false;
+        while (sourceIndex.isValid()) {
+            if (sourceIndex.data(QmlOutlineModel::ItemTypeRole)
+                == QmlOutlineModel::NonElementBindingType) {
+                return false;
+            }
+            sourceIndex = sourceIndex.parent();
+        }
     }
     return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
 }
@@ -128,11 +131,11 @@ void QmlJSOutlineWidget::setEditor(QmlJSEditorWidget *editor)
 
     m_filterModel->setSourceModel(m_editor->qmlJsEditorDocument()->outlineModel());
     m_treeView->expandAll();
-    connect(m_editor->qmlJsEditorDocument()->outlineModel(), &QAbstractItemModel::modelAboutToBeReset, m_treeView, [this]() {
+    connect(m_editor->qmlJsEditorDocument()->outlineModel(), &QAbstractItemModel::modelAboutToBeReset, m_treeView, [this] {
         if (m_treeView->selectionModel())
             m_treeView->selectionModel()->blockSignals(true);
     });
-    connect(m_editor->qmlJsEditorDocument()->outlineModel(), &QAbstractItemModel::modelReset, m_treeView, [this]() {
+    connect(m_editor->qmlJsEditorDocument()->outlineModel(), &QAbstractItemModel::modelReset, m_treeView, [this] {
         if (m_treeView->selectionModel())
             m_treeView->selectionModel()->blockSignals(false);
     });
@@ -145,10 +148,15 @@ void QmlJSOutlineWidget::setEditor(QmlJSEditorWidget *editor)
 
     connect(m_editor, &QmlJSEditorWidget::outlineModelIndexChanged,
             this, &QmlJSOutlineWidget::updateSelectionInTree);
-    connect(m_editor->qmlJsEditorDocument()->outlineModel(), &QmlOutlineModel::updated, this, [this] () {
-        m_treeView->expandAll();
-        m_editor->updateOutlineIndexNow();
-    });
+    connect(m_editor->qmlJsEditorDocument()->outlineModel(),
+            &QmlOutlineModel::updated,
+            this,
+            [treeView = QPointer(m_treeView), editor = QPointer(m_editor)]() {
+                if (treeView)
+                    treeView->expandAll();
+                if (editor)
+                    editor->updateOutlineIndexNow();
+            });
 }
 
 QList<QAction*> QmlJSOutlineWidget::filterMenuActions() const

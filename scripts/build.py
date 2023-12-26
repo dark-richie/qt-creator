@@ -146,6 +146,8 @@ def common_cmake_arguments(args):
     # Qt otherwise adds dependencies on libGLX and libOpenGL
     cmake_args += ['-DOpenGL_GL_PREFERENCE=LEGACY']
 
+    cmake_args += args.config_args
+
     return cmake_args
 
 def build_qtcreator(args, paths):
@@ -193,8 +195,6 @@ def build_qtcreator(args, paths):
         cmake_args += ['-DCPACK_PACKAGE_FILE_NAME=qtcreator' + args.zip_infix]
         if common.is_linux_platform():
             cmake_args += ['-DCPACK_INSTALL_PREFIX=/opt/qt-creator']
-
-    cmake_args += args.config_args
 
     common.check_print_call(cmake_args + [paths.src], paths.build)
     build_args = ['cmake', '--build', '.']
@@ -245,7 +245,10 @@ def build_qtcreatorcdbext(args, paths):
         return
     if not os.path.exists(paths.qtcreatorcdbext_build):
         os.makedirs(paths.qtcreatorcdbext_build)
-    prefix_paths = [common.to_posix_path(os.path.abspath(fp)) for fp in args.prefix_paths]
+    prefix_paths = [os.path.abspath(fp) for fp in args.prefix_paths]
+    if paths.llvm:
+        prefix_paths += [paths.llvm]
+    prefix_paths = [common.to_posix_path(fp) for fp in prefix_paths]
     cmake_args = ['-DCMAKE_PREFIX_PATH=' + ';'.join(prefix_paths),
                   '-DCMAKE_INSTALL_PREFIX=' + common.to_posix_path(paths.qtcreatorcdbext_install)]
     cmake_args += common_cmake_arguments(args)

@@ -15,17 +15,16 @@
 #include <utils/utilsicons.h>
 
 #include <QDialogButtonBox>
-#include <QDir>
-#include <QFileInfo>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QScreen>
-#include <QSettings>
 #include <QToolButton>
 #include <QWidgetAction>
+
+using namespace Utils;
 
 namespace ImageViewer::Internal {
 
@@ -95,36 +94,36 @@ static QVector<QSize> stringToSizes(const QString &s)
     return result;
 }
 
-static QString fileNameForSize(QString pattern, const QSize &s)
+static FilePath fileNameForSize(QString pattern, const QSize &s)
 {
     pattern.replace("%1", QString::number(s.width()));
     pattern.replace("%2", QString::number(s.height()));
-    return pattern;
+    return FilePath::fromString(pattern);
 }
 
 // Helpers for writing/reading the user-specified size specifications
 // from/to the settings.
-static inline QString settingsGroup() { return QStringLiteral("ExportSvgSizes"); }
+static Key settingsGroup() { return "ExportSvgSizes"; }
 
 static QVector<QSize> readSettings(const QSize &size)
 {
     QVector<QSize> result;
-    QSettings *settings = Core::ICore::settings();
+    QtcSettings *settings = Core::ICore::settings();
     settings->beginGroup(settingsGroup());
     const QStringList keys = settings->allKeys();
     const int idx = keys.indexOf(sizeToString(size));
     if (idx >= 0)
-        result = stringToSizes(settings->value(keys.at(idx)).toString());
+        result = stringToSizes(settings->value(keyFromString(keys.at(idx))).toString());
     settings->endGroup();
     return result;
 }
 
 static void writeSettings(const QSize &size, const QString &sizeSpec)
 {
-    QSettings *settings = Core::ICore::settings();
+    QtcSettings *settings = Core::ICore::settings();
     settings->beginGroup(settingsGroup());
     const QString spec = sizeToString(size);
-    settings->setValue(spec, QVariant(sizeSpec));
+    settings->setValue(keyFromString(spec), QVariant(sizeSpec));
 
     // Limit the number of sizes to 10. Remove the
     // first element unless it is the newly added spec.
@@ -132,7 +131,7 @@ static void writeSettings(const QSize &size, const QString &sizeSpec)
     while (keys.size() > 10) {
         const int existingIndex = keys.indexOf(spec);
         const int removeIndex = existingIndex == 0 ? 1 : 0;
-        settings->remove(keys.takeAt(removeIndex));
+        settings->remove(keyFromString(keys.takeAt(removeIndex)));
     }
     settings->endGroup();
 }
@@ -236,7 +235,7 @@ void MultiExportDialog::suggestSizes()
 QVector<ExportData> MultiExportDialog::exportData() const
 {
     const QVector<QSize> sizeList = sizes();
-    const QString pattern = exportFileName();
+    const QString pattern = exportFileName().toString();
      QVector<ExportData> result;
      result.reserve(sizeList.size());
      for (const QSize &s : sizeList)
@@ -268,7 +267,7 @@ void MultiExportDialog::accept()
                              Tr::tr("Invalid size specification: %1").arg(sizeSpec));
         return;
     }
-    if (data.size() > 1 && data.at(0).fileName == data.at(1).fileName) {
+    if (data.size() > 1 && data.at(0).filePath == data.at(1).filePath) {
         QMessageBox::warning(this, windowTitle(),
                              Tr::tr("The file name must contain one of the placeholders %1, %2.")
                                 .arg(QString("%1"), QString("%2")));
@@ -277,17 +276,17 @@ void MultiExportDialog::accept()
 
     writeSettings(m_svgSize, sizeSpec);
 
-    QStringList existingFiles;
+    FilePaths existingFiles;
     for (const ExportData &d : data) {
-        if (QFileInfo::exists(d.fileName))
-            existingFiles.append(d.fileName);
+        if (d.filePath.exists())
+            existingFiles.append(d.filePath);
     }
     if (!existingFiles.isEmpty()) {
         const QString message = existingFiles.size() == 1
             ? Tr::tr("The file %1 already exists.\nWould you like to overwrite it?")
-                .arg(QDir::toNativeSeparators(existingFiles.constFirst()))
+                .arg(existingFiles.constFirst().toUserOutput())
             : Tr::tr("The files %1 already exist.\nWould you like to overwrite them?")
-                .arg(QDir::toNativeSeparators(existingFiles.join(", ")));
+                .arg(FilePath::formatFilePaths(existingFiles, ", "));
         QMessageBox messageBox(QMessageBox::Question, windowTitle(), message,
                                QMessageBox::Yes | QMessageBox::No, this);
         if (messageBox.exec() != QMessageBox::Yes)
@@ -297,17 +296,21 @@ void MultiExportDialog::accept()
     QDialog::accept();
 }
 
-QString MultiExportDialog::exportFileName() const
+FilePath MultiExportDialog::exportFileName() const
 {
-    return m_pathChooser->filePath().toString();
+    return m_pathChooser->filePath();
 }
 
-void MultiExportDialog::setExportFileName(QString f)
+void MultiExportDialog::setExportFileName(const FilePath &filePath)
 {
-    const int lastDot = f.lastIndexOf('.');
-    if (lastDot != -1)
-        f.insert(lastDot, "-%1");
-    m_pathChooser->setFilePath(Utils::FilePath::fromString(f));
+    FilePath f = filePath;
+    QString ff = f.path();
+    const int lastDot = ff.lastIndexOf('.');
+    if (lastDot != -1) {
+        ff.insert(lastDot, "-%1");
+        f = f.withNewPath(ff);
+    };
+    m_pathChooser->setFilePath(f);
 }
 
 } // ImageViewer:Internal

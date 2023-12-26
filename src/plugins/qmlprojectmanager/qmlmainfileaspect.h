@@ -27,7 +27,7 @@ class QMLPROJECTMANAGER_EXPORT QmlMainFileAspect : public Utils::BaseAspect
     Q_OBJECT
 
 public:
-    explicit QmlMainFileAspect(ProjectExplorer::Target *target);
+    explicit QmlMainFileAspect(Utils::AspectContainer *container = nullptr);
     ~QmlMainFileAspect() override;
 
     enum MainScriptSource {
@@ -42,14 +42,15 @@ public:
         Utils::FilePath currentFile;
     };
 
-    void addToLayout(Utils::Layouting::LayoutBuilder &builder) final;
-    void toMap(QVariantMap &map) const final;
-    void fromMap(const QVariantMap &map) final;
+    void addToLayout(Layouting::LayoutItem &parent) final;
+    void toMap(Utils::Store &map) const final;
+    void fromMap(const Utils::Store &map) final;
 
     void updateFileComboBox();
     MainScriptSource mainScriptSource() const;
     void setMainScript(int index);
 
+    void setTarget(ProjectExplorer::Target *target);
     void setScriptSource(MainScriptSource source, const QString &settingsPath = QString());
 
     Utils::FilePath mainScript() const;

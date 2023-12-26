@@ -3,22 +3,24 @@
 
 #include "pythonplugin.h"
 
-#include "pysidebuildconfiguration.h"
+#include "pythonbuildconfiguration.h"
+#include "pythonconstants.h"
 #include "pythoneditor.h"
+#include "pythonkitaspect.h"
 #include "pythonproject.h"
 #include "pythonrunconfiguration.h"
 #include "pythonsettings.h"
+#include "pythontr.h"
 #include "pythonwizardpage.h"
 
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
-#include <projectexplorer/localenvironmentaspect.h>
+#include <projectexplorer/kitmanager.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/taskhub.h>
 
 #include <utils/fsengine/fileiconprovider.h>
-#include <utils/futuresynchronizer.h>
 #include <utils/theme/theme.h>
 
 using namespace ProjectExplorer;
@@ -35,10 +37,10 @@ public:
     PythonOutputFormatterFactory outputFormatterFactory;
     PythonRunConfigurationFactory runConfigFactory;
     PySideBuildStepFactory buildStepFactory;
-    PySideBuildConfigurationFactory buildConfigFactory;
+    PythonBuildConfigurationFactory buildConfigFactory;
     SimpleTargetRunnerFactory runWorkerFactory{{runConfigFactory.runConfigurationId()}};
     PythonSettings settings;
-    FutureSynchronizer m_futureSynchronizer;
+    PythonWizardPageFactory pythonWizardPageFactory;
 };
 
 PythonPlugin::PythonPlugin()
@@ -57,19 +59,15 @@ PythonPlugin *PythonPlugin::instance()
     return m_instance;
 }
 
-FutureSynchronizer *PythonPlugin::futureSynchronizer()
-{
-    QTC_ASSERT(m_instance, return nullptr);
-    return &m_instance->d->m_futureSynchronizer;
-}
-
 void PythonPlugin::initialize()
 {
     d = new PythonPluginPrivate;
 
-    ProjectManager::registerProjectType<PythonProject>(PythonMimeType);
-    ProjectManager::registerProjectType<PythonProject>(PythonMimeTypeLegacy);
-    JsonWizardFactory::registerPageFactory(new PythonWizardPageFactory);
+    KitManager::setIrrelevantAspects(KitManager::irrelevantAspects()
+                                     + QSet<Id>{PythonKitAspect::id()});
+
+    ProjectManager::registerProjectType<PythonProject>(Constants::C_PY_PROJECT_MIME_TYPE);
+    ProjectManager::registerProjectType<PythonProject>(Constants::C_PY_PROJECT_MIME_TYPE_LEGACY);
 }
 
 void PythonPlugin::extensionsInitialized()
@@ -79,7 +77,10 @@ void PythonPlugin::extensionsInitialized()
                                                                ::Constants::FILEOVERLAY_PY);
     FileIconProvider::registerIconOverlayForSuffix(imageFile, "py");
 
-    TaskHub::addCategory(PythonErrorTaskCategory, "Python", true);
+    TaskHub::addCategory({PythonErrorTaskCategory,
+                          "Python",
+                          Tr::tr("Issues parsed from Python runtime output."),
+                          true});
 }
 
 } // Python::Internal

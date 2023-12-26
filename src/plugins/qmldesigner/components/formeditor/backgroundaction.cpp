@@ -3,6 +3,10 @@
 
 #include "backgroundaction.h"
 
+#include <theme.h>
+
+#include <utils/stylehelper.h>
+
 #include <QComboBox>
 #include <QPainter>
 
@@ -26,6 +30,14 @@ QIcon iconForColor(const QColor &color) {
     image.fill(0);
     QPainter p(&image);
 
+    if (color == BackgroundAction::ContextImage) {
+        const QString unicode = Theme::getIconUnicode(Theme::Icon::textures_medium);
+        const QString fontName = "qtds_propertyIconFont.ttf";
+        QIcon icon = Utils::StyleHelper::getIconFromIconFont(fontName, unicode, 10, 10, Qt::white);
+
+        return icon;
+    }
+
     p.fillRect(2, 2, size - 4, size - 4, Qt::black);
 
     if (color.alpha() == 0) {
@@ -43,7 +55,7 @@ QWidget *BackgroundAction::createWidget(QWidget *parent)
     auto comboBox = new QComboBox(parent);
     comboBox->setFixedWidth(42);
 
-    for (int i = 0; i < colors().count(); ++i) {
+    for (int i = 0; i < colors().size(); ++i) {
         comboBox->addItem(tr(""));
         comboBox->setItemIcon(i, iconForColor((colors().at(i))));
     }
@@ -52,7 +64,8 @@ QWidget *BackgroundAction::createWidget(QWidget *parent)
     connect(comboBox, &QComboBox::currentIndexChanged,
             this, &BackgroundAction::emitBackgroundChanged);
 
-    comboBox->setProperty("hideborder", true);
+    comboBox->setProperty(Utils::StyleHelper::C_HIDE_BORDER, true);
+    comboBox->setProperty(Utils::StyleHelper::C_TOOLBAR_ACTIONWIDGET, true);
     comboBox->setToolTip(tr("Set the color of the canvas."));
     m_comboBox = comboBox;
     return comboBox;
@@ -60,7 +73,7 @@ QWidget *BackgroundAction::createWidget(QWidget *parent)
 
 void BackgroundAction::emitBackgroundChanged(int index)
 {
-    if (index < colors().count())
+    if (index < colors().size())
         emit backgroundChanged(colors().at(index));
 }
 
@@ -68,12 +81,12 @@ QList<QColor> BackgroundAction::colors()
 {
     static QColor alphaZero(Qt::transparent);
     static QList<QColor> colorList = {alphaZero,
+                                      QColor(BackgroundAction::ContextImage),
                                       QColor(Qt::black),
                                       QColor(0x4c4e50),
                                       QColor(Qt::darkGray),
                                       QColor(Qt::lightGray),
                                       QColor(Qt::white)};
-
 
     return colorList;
 }

@@ -18,15 +18,25 @@ public:
     explicit CrumbleBarModel(QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
-
     QHash<int, QByteArray> roleNames() const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
     void handleCrumblePathChanged();
 
     Q_INVOKABLE void onCrumblePathElementClicked(int i);
+};
 
-private:
+class WorkspaceModel : public QAbstractListModel
+{
+    Q_OBJECT
+    enum { DisplayNameRole = Qt::DisplayRole, FileNameRole = Qt::UserRole };
+
+public:
+    explicit WorkspaceModel(QObject *parent = nullptr);
+
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    QVariant data(const QModelIndex &index, int role = DisplayNameRole) const override;
 };
 
 class ActionSubscriber : public QObject
@@ -73,15 +83,17 @@ class ToolBarBackend : public QObject
     Q_PROPERTY(QStringList documentModel READ documentModel NOTIFY openDocumentsChanged)
     Q_PROPERTY(int documentIndex READ documentIndex NOTIFY documentIndexChanged)
     Q_PROPERTY(QString currentWorkspace READ currentWorkspace NOTIFY currentWorkspaceChanged)
-    Q_PROPERTY(QStringList workspaces READ workspaces NOTIFY workspacesChanged)
-    Q_PROPERTY(QStringList styles READ styles CONSTANT)
+    Q_PROPERTY(bool lockWorkspace READ lockWorkspace WRITE setLockWorkspace NOTIFY lockWorkspaceChanged)
+    Q_PROPERTY(QStringList styles READ styles NOTIFY stylesChanged)
     Q_PROPERTY(bool isInDesignMode READ isInDesignMode NOTIFY isInDesignModeChanged)
     Q_PROPERTY(bool isInEditMode READ isInEditMode NOTIFY isInEditModeChanged)
+    Q_PROPERTY(bool isInSessionMode READ isInSessionMode NOTIFY isInSessionModeChanged)
     Q_PROPERTY(bool isDesignModeEnabled READ isDesignModeEnabled NOTIFY isDesignModeEnabledChanged)
     Q_PROPERTY(int currentStyle READ currentStyle NOTIFY currentStyleChanged)
     Q_PROPERTY(QStringList kits READ kits NOTIFY kitsChanged)
     Q_PROPERTY(int currentKit READ currentKit NOTIFY currentKitChanged)
     Q_PROPERTY(bool isQt6 READ isQt6 NOTIFY isQt6Changed)
+    Q_PROPERTY(bool isMCUs READ isMCUs NOTIFY isMCUsChanged)
     Q_PROPERTY(bool projectOpened READ projectOpened NOTIFY projectOpenedChanged)
 
 public:
@@ -97,6 +109,7 @@ public:
     Q_INVOKABLE void closeCurrentDocument();
     Q_INVOKABLE void shareApplicationOnline();
     Q_INVOKABLE void setCurrentWorkspace(const QString &workspace);
+    Q_INVOKABLE void setLockWorkspace(bool value);
     Q_INVOKABLE void editGlobalAnnoation();
     Q_INVOKABLE void showZoomMenu(int x, int y);
     Q_INVOKABLE void setCurrentStyle(int index);
@@ -111,11 +124,13 @@ public:
     int documentIndex() const;
 
     QString currentWorkspace() const;
-    QStringList workspaces() const;
+    bool lockWorkspace() const;
 
     QStringList styles() const;
 
     bool isInDesignMode() const;
+    bool isInEditMode() const;
+    bool isInSessionMode() const;
     bool isDesignModeEnabled() const;
     int currentStyle() const;
 
@@ -124,10 +139,9 @@ public:
     int currentKit() const;
 
     bool isQt6() const;
+    bool isMCUs() const;
 
     bool projectOpened() const;
-
-    bool isInEditMode() const;
 
     static void launchGlobalAnnotations();
 
@@ -136,14 +150,17 @@ signals:
     void openDocumentsChanged();
     void documentIndexChanged();
     void currentWorkspaceChanged();
-    void workspacesChanged();
+    void lockWorkspaceChanged();
+    void stylesChanged();
     void isInDesignModeChanged();
     void isInEditModeChanged();
+    void isInSessionModeChanged();
     void isDesignModeEnabledChanged();
     void currentStyleChanged();
     void kitsChanged();
     void currentKitChanged();
     void isQt6Changed();
+    void isMCUsChanged();
     void projectOpenedChanged();
 
 private:
@@ -152,7 +169,6 @@ private:
     ActionInterface *m_zoomAction;
 
     QStringList m_openDocuments;
-    QStringList m_workspaces;
     QMetaObject::Connection m_kitConnection;
 };
 

@@ -7,13 +7,10 @@ QtcPlugin {
     Depends { name: "LanguageClient" }
     Depends { name: "TextEditor" }
 
-    Depends { name: "app_version_header" }
-
     Depends { name: "Qt"; submodules: ["widgets"] }
 
     files: [
         "cocoplugin.cpp",
-        "cocoplugin.h",
         "cocolanguageclient.cpp",
         "cocolanguageclient.h",
     ]

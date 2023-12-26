@@ -13,8 +13,7 @@
 
 using namespace TextEditor;
 
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 SelectableTextEditorWidget::SelectableTextEditorWidget(Utils::Id id, QWidget *parent)
     : TextEditorWidget(parent)
@@ -115,13 +114,13 @@ void SelectableTextEditorWidget::setFoldingIndent(const QTextBlock &block, int i
 void SelectableTextEditorWidget::paintBlock(QPainter *painter,
                                             const QTextBlock &block,
                                             const QPointF &offset,
-                                            const QVector<QTextLayout::FormatRange> &selections,
+                                            const QList<QTextLayout::FormatRange> &selections,
                                             const QRect &clipRect) const
 {
     const int blockNumber = block.blockNumber();
-    QList<DiffSelection> diffs = m_diffSelections.value(blockNumber);
+    const QList<DiffSelection> diffs = m_diffSelections.value(blockNumber);
 
-    QVector<QTextLayout::FormatRange> newSelections;
+    QList<QTextLayout::FormatRange> newSelections;
     for (const DiffSelection &diffSelection : diffs) {
         if (diffSelection.format) {
             QTextLayout::FormatRange formatRange;
@@ -142,5 +141,4 @@ void SelectableTextEditorWidget::paintBlock(QPainter *painter,
     TextEditorWidget::paintBlock(painter, block, offset, newSelections, clipRect);
 }
 
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal

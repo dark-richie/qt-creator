@@ -169,9 +169,7 @@ private:
     void createRepositoryActions(const Core::Context &context);
 
     // Variables
-    MercurialSettings m_settings;
-    MercurialClient m_client{&m_settings};
-    MercurialSettingsPage m_settingsPage{&m_settings};
+    MercurialClient m_client;
 
     Core::CommandLocator *m_commandLocator = nullptr;
     Core::ActionContainer *m_mercurialContainer = nullptr;
@@ -254,7 +252,7 @@ MercurialPluginPrivate::MercurialPluginPrivate()
 
     createMenu(context);
 
-    connect(&m_settings, &AspectContainer::applied, this, &IVersionControl::configurationChanged);
+    connect(&settings(), &AspectContainer::applied, this, &IVersionControl::configurationChanged);
 }
 
 void MercurialPluginPrivate::createMenu(const Core::Context &context)
@@ -633,8 +631,8 @@ void MercurialPluginPrivate::showCommitWidget(const QList<VcsBaseClient::StatusI
 
     const QString branch = vcsTopic(m_submitRepository);
     commitEditor->setFields(m_submitRepository, branch,
-                            m_settings.userName.value(),
-                            m_settings.userEmail.value(), status);
+                            settings().userName(),
+                            settings().userEmail(), status);
 }
 
 void MercurialPluginPrivate::diffFromEditorSelected(const QStringList &files)
@@ -716,7 +714,7 @@ bool MercurialPluginPrivate::managesFile(const FilePath &workingDirectory, const
 
 bool MercurialPluginPrivate::isConfigured() const
 {
-    const FilePath binary = m_settings.binaryPath.filePath();
+    const FilePath binary = settings().binaryPath();
     if (binary.isEmpty())
         return false;
     QFileInfo fi = binary.toFileInfo();
@@ -784,7 +782,7 @@ VcsCommand *MercurialPluginPrivate::createInitialCheckoutCommand(const QString &
     QStringList args;
     args << QLatin1String("clone") << extraArgs << url << localName;
     auto command = VcsBaseClient::createVcsCommand(baseDirectory, m_client.processEnvironment());
-    command->addJob({m_settings.binaryPath.filePath(), args}, -1);
+    command->addJob({settings().binaryPath(), args}, -1);
     return command;
 }
 

@@ -12,12 +12,19 @@
 #include <QReadWriteLock>
 #include <QSet>
 
+/*!
+    \class Utils::Environment
+    \inmodule QtCreator
+
+    \brief The Environment class sets \QC's system environment.
+*/
+
 namespace Utils {
 
 static QReadWriteLock s_envMutex;
 Q_GLOBAL_STATIC_WITH_ARGS(Environment, staticSystemEnvironment,
                           (QProcessEnvironment::systemEnvironment().toStringList()))
-Q_GLOBAL_STATIC(QVector<EnvironmentProvider>, environmentProviders)
+Q_GLOBAL_STATIC(QList<EnvironmentProvider>, environmentProviders)
 
 Environment::Environment()
     : m_dict(HostOsInfo::hostOs())
@@ -142,6 +149,11 @@ void Environment::prependOrSetPath(const FilePath &value)
     prependOrSet("PATH", value.nativePath(), OsSpecificAspects::pathListSeparator(osType()));
 }
 
+void Environment::prependOrSetPath(const QString &directories)
+{
+    prependOrSet("PATH", directories, OsSpecificAspects::pathListSeparator(osType()));
+}
+
 void Environment::appendOrSet(const QString &key, const QString &value, const QString &sep)
 {
     addItem(Item{std::in_place_index_t<AppendOrSet>(), key, value, sep});
@@ -155,14 +167,13 @@ void Environment::prependOrSet(const QString &key, const QString &value, const Q
 void Environment::prependOrSetLibrarySearchPath(const FilePath &value)
 {
     QTC_CHECK(value.osType() == osType());
+    const QChar sep = OsSpecificAspects::pathListSeparator(osType());
     switch (osType()) {
     case OsTypeWindows: {
-        const QChar sep = ';';
         prependOrSet("PATH", value.nativePath(), sep);
         break;
     }
     case OsTypeMac: {
-        const QChar sep =  ':';
         const QString nativeValue = value.nativePath();
         prependOrSet("DYLD_LIBRARY_PATH", nativeValue, sep);
         prependOrSet("DYLD_FRAMEWORK_PATH", nativeValue, sep);
@@ -170,7 +181,6 @@ void Environment::prependOrSetLibrarySearchPath(const FilePath &value)
     }
     case OsTypeLinux:
     case OsTypeOtherUnix: {
-        const QChar sep = ':';
         prependOrSet("LD_LIBRARY_PATH", value.nativePath(), sep);
         break;
     }
@@ -186,6 +196,14 @@ void Environment::prependOrSetLibrarySearchPaths(const FilePaths &values)
     });
 }
 
+/*!
+    Returns \QC's system environment.
+
+    This can be different from the system environment that \QC started in if the
+    user changed it in \uicontrol Preferences > \uicontrol Environment >
+    \uicontrol System > \uicontrol Environment.
+*/
+
 Environment Environment::systemEnvironment()
 {
     QReadLocker lock(&s_envMutex);
@@ -199,149 +217,20 @@ void Environment::setupEnglishOutput()
 
 using SearchResultCallback = std::function<IterationPolicy(const FilePath &)>;
 
-static IterationPolicy searchInDirectory(const SearchResultCallback &resultCallback,
-                                         const FilePaths &execs,
-                                         const FilePath &directory,
-                                         QSet<FilePath> &alreadyCheckedDirectories,
-                                         const FilePathPredicate &filter = {})
-{
-    // Compare the initial size of the set with the size after insertion to check if the directory
-    // was already checked.
-    const int initialCount = alreadyCheckedDirectories.count();
-    alreadyCheckedDirectories.insert(directory);
-    const bool wasAlreadyChecked = alreadyCheckedDirectories.count() == initialCount;
-
-    if (directory.isEmpty() || wasAlreadyChecked)
-        return IterationPolicy::Continue;
-
-    for (const FilePath &exec : execs) {
-        const FilePath filePath = directory / exec.path();
-        if (filePath.isExecutableFile() && (!filter || filter(filePath))) {
-            if (resultCallback(filePath) == IterationPolicy::Stop)
-                return IterationPolicy::Stop;
-        }
-    }
-    return IterationPolicy::Continue;
-}
-
-static FilePaths appendExeExtensions(const Environment &env, const FilePath &executable)
-{
-    FilePaths execs{executable};
-    if (env.osType() == OsTypeWindows) {
-        // Check all the executable extensions on windows:
-        // PATHEXT is only used if the executable has no extension
-        if (executable.suffix().isEmpty()) {
-            const QStringList extensions = env.expandedValueForKey("PATHEXT").split(';');
-
-            for (const QString &ext : extensions)
-                execs << executable.stringAppended(ext.toLower());
-        }
-    }
-    return execs;
-}
-
 QString Environment::expandedValueForKey(const QString &key) const
 {
     const NameValueDictionary &dict = resolved();
     return expandVariables(dict.value(key));
 }
 
-static void searchInDirectoriesHelper(const SearchResultCallback &resultCallback,
-                                      const Environment &env,
-                                      const QString &executable,
-                                      const FilePaths &dirs,
-                                      const FilePathPredicate &func,
-                                      bool usePath)
-{
-    if (executable.isEmpty())
-        return;
-
-    const FilePath exec = FilePath::fromUserInput(QDir::cleanPath(env.expandVariables(executable)));
-    const FilePaths execs = appendExeExtensions(env, exec);
-
-    if (exec.isAbsolutePath()) {
-        for (const FilePath &path : execs) {
-            if (path.isExecutableFile() && (!func || func(path)))
-                if (resultCallback(path) == IterationPolicy::Stop)
-                    return;
-        }
-        return;
-    }
-
-    QSet<FilePath> alreadyCheckedDirectories;
-    for (const FilePath &dir : dirs) {
-        if (searchInDirectory(resultCallback, execs, dir, alreadyCheckedDirectories, func)
-            == IterationPolicy::Stop)
-            return;
-    }
-
-    if (usePath) {
-        QTC_ASSERT(!executable.contains('/'), return);
-
-        for (const FilePath &p : env.path()) {
-            if (searchInDirectory(resultCallback, execs, p, alreadyCheckedDirectories, func)
-                == IterationPolicy::Stop)
-                return;
-        }
-    }
-    return;
-}
-
-FilePath Environment::searchInDirectories(const QString &executable,
-                                          const FilePaths &dirs,
-                                          const FilePathPredicate &func) const
-{
-    FilePath result;
-    searchInDirectoriesHelper(
-        [&result](const FilePath &path) {
-            result = path;
-            return IterationPolicy::Stop;
-        },
-        *this,
-        executable,
-        dirs,
-        func,
-        false);
-
-    return result;
-}
-
 FilePath Environment::searchInPath(const QString &executable,
                                    const FilePaths &additionalDirs,
-                                   const FilePathPredicate &func) const
+                                   const FilePathPredicate &filter,
+                                   FilePath::MatchScope scope) const
 {
-    FilePath result;
-    searchInDirectoriesHelper(
-        [&result](const FilePath &path) {
-            result = path;
-            return IterationPolicy::Stop;
-        },
-        *this,
-        executable,
-        additionalDirs,
-        func,
-        true);
-
-    return result;
-}
-
-FilePaths Environment::findAllInPath(const QString &executable,
-                                     const FilePaths &additionalDirs,
-                                     const FilePathPredicate &func) const
-{
-    QSet<FilePath> result;
-    searchInDirectoriesHelper(
-        [&result](const FilePath &path) {
-            result.insert(path);
-            return IterationPolicy::Continue;
-        },
-        *this,
-        executable,
-        additionalDirs,
-        func,
-        true);
-
-    return result.values();
+    const FilePath exec = FilePath::fromUserInput(expandVariables(executable));
+    const FilePaths dirs = path() + additionalDirs;
+    return exec.searchInDirectories(dirs, filter, scope);
 }
 
 FilePaths Environment::path() const
@@ -469,7 +358,7 @@ void EnvironmentProvider::addProvider(EnvironmentProvider &&provider)
     environmentProviders->append(std::move(provider));
 }
 
-const QVector<EnvironmentProvider> EnvironmentProvider::providers()
+const QList<EnvironmentProvider> EnvironmentProvider::providers()
 {
     return *environmentProviders;
 }

@@ -3,6 +3,8 @@
 
 #include "sdkpersistentsettings.h"
 
+#include "operation.h" // for cleanPath()
+
 #include <QCoreApplication>
 #include <QDataStream>
 #include <QDateTime>
@@ -130,7 +132,7 @@ static QString resolveSymlinks(QString current)
     while (links--) {
         const QFileInfo info(current);
         if (!info.isSymLink())
-            return {};
+            return current;
         current = info.symLinkTarget();
     }
     return current;
@@ -171,7 +173,7 @@ bool SdkSaveFile::commit()
     if (!result) {
         DWORD replaceErrorCode = GetLastError();
         QString errorStr;
-        if (!QFile::exists(finalFileName)) {
+        if (!QFileInfo::exists(finalFileName)) {
             // Replace failed because finalFileName does not exist, try rename.
             if (!(result = rename(finalFileName)))
                 errorStr = errorString();
@@ -208,7 +210,7 @@ bool SdkSaveFile::commit()
 
     // Back up current file.
     // If it's opened by another application, the lock follows the move.
-    if (QFile::exists(finalFileName)) {
+    if (QFileInfo::exists(finalFileName)) {
         // Kill old backup. Might be useful if creator crashed before removing backup.
         QFile::remove(backupName);
         QFile finalFile(finalFileName);
@@ -316,7 +318,7 @@ bool SdkFileSaverBase::write(const QByteArray &bytes)
 {
     if (m_hasError)
         return false;
-    return setResult(m_file->write(bytes) == bytes.count());
+    return setResult(m_file->write(bytes) == bytes.size());
 }
 
 bool SdkFileSaverBase::setResult(bool ok)
@@ -826,7 +828,7 @@ void SdkPersistentSettingsWriter::setContents(const QVariantMap &data)
 
 bool SdkPersistentSettingsWriter::write(const QVariantMap &data, QString *errorString) const
 {
-    const QString parentDir = QDir::cleanPath(m_fileName + "/..");
+    const QString parentDir = cleanPath(m_fileName + "/..");
 
     const QFileInfo fi(parentDir);
     if (!(fi.exists() && fi.isDir() && fi.isWritable())) {

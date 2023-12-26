@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "android_global.h"
 #include "androiddeviceinfo.h"
 #include "androidsdkmanager.h"
 #include "androidsdkpackage.h"
@@ -12,26 +11,19 @@
 #include <projectexplorer/toolchain.h>
 #include <qtsupport/qtversionmanager.h>
 
+#include <utils/filepath.h>
+
 #include <QStringList>
 #include <QVector>
 #include <QHash>
 #include <QMap>
 #include <QVersionNumber>
 
-#include <utils/filepath.h>
-
-QT_BEGIN_NAMESPACE
-class QSettings;
-QT_END_NAMESPACE
-
 namespace ProjectExplorer { class Abi; }
 
 namespace Android {
 
-namespace Internal {
-class AndroidSdkManager;
-class AndroidPluginPrivate;
-}
+namespace Internal { class AndroidSdkManager; }
 
 class CreateAvdInfo
 {
@@ -56,11 +48,11 @@ public:
     bool containsVersion(const QVersionNumber &qtVersion) const;
 };
 
-class ANDROID_EXPORT AndroidConfig
+class AndroidConfig
 {
 public:
-    void load(const QSettings &settings);
-    void save(QSettings &settings) const;
+    void load(const Utils::QtcSettings &settings);
+    void save(Utils::QtcSettings &settings) const;
 
     static QStringList apiLevelNamesFor(const SdkPlatformList &platforms);
     static QString apiLevelNameFor(const SdkPlatform *platform);
@@ -150,6 +142,8 @@ public:
     static QStringList getAbis(const QString &device);
     static int getSDKVersion(const QString &device);
 
+    Utils::Environment toolsEnvironment() const;
+
 private:
     static QString getDeviceProperty(const QString &device, const QString &property);
 
@@ -181,7 +175,7 @@ private:
     mutable QHash<QString, QString> m_serialNumberToDeviceName;
 };
 
-class ANDROID_EXPORT AndroidConfigurations : public QObject
+class AndroidConfigurations : public QObject
 {
     Q_OBJECT
 
@@ -191,30 +185,30 @@ public:
     static void setConfig(const AndroidConfig &config);
     static AndroidConfigurations *instance();
 
-    static void registerNewToolChains();
-    static void registerCustomToolChainsAndDebuggers();
+    static void registerNewToolchains();
+    static void registerCustomToolchainsAndDebuggers();
     static void removeUnusedDebuggers();
-    static void removeOldToolChains();
+    static void removeOldToolchains();
     static void updateAutomaticKitList();
     static bool force32bitEmulator();
-    static Utils::Environment toolsEnvironment(const AndroidConfig &config);
 
 signals:
     void aboutToUpdate();
     void updated();
 
 private:
-    friend class Android::Internal::AndroidPluginPrivate;
+    friend void setupAndroidConfigurations();
     AndroidConfigurations();
-    ~AndroidConfigurations() override;
+
     void load();
     void save();
 
     static void updateAndroidDevice();
-    static AndroidConfigurations *m_instance;
     AndroidConfig m_config;
     std::unique_ptr<Internal::AndroidSdkManager> m_sdkManager;
 };
+
+void setupAndroidConfigurations();
 
 } // namespace Android
 

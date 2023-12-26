@@ -9,7 +9,7 @@
 #include <QWidget>
 
 #include <coreplugin/icontext.h>
-#include "itemlibraryinfo.h"
+#include <itemlibraryentry.h>
 #include <modelnode.h>
 
 namespace QmlDesigner {
@@ -53,7 +53,10 @@ public:
     void updateCreateSubMenu(const QList<ItemLibraryDetails> &entriesList);
 
 private slots:
-    void onCreateAction();
+    void onCreateAction(QAction *action);
+    void onMatOverrideAction(QAction *action);
+    void onWireframeAction();
+    void onResetAllOverridesAction();
 
 protected:
     void dragEnterEvent(QDragEnterEvent *dragEnterEvent) override;
@@ -66,15 +69,19 @@ private:
     bool isPasteAvailable() const;
     bool isSceneLocked() const;
 
+    void showOnboardingLabel();
+
     QPointer<Edit3DView> m_edit3DView;
     QPointer<Edit3DView> m_view;
     QPointer<Edit3DCanvas> m_canvas;
     QPointer<QLabel> m_onboardingLabel;
+    QPointer<QLabel> m_mcuLabel;
     QPointer<ToolBox> m_toolBox;
     Core::IContext *m_context = nullptr;
     QPointer<QMenu> m_visibilityTogglesMenu;
     QPointer<QMenu> m_backgroundColorMenu;
     QPointer<QMenu> m_contextMenu;
+    QPointer<QAction> m_bakeLightsAction;
     QPointer<QAction> m_editComponentAction;
     QPointer<QAction> m_editMaterialAction;
     QPointer<QAction> m_duplicateAction;
@@ -86,6 +93,8 @@ private:
     QPointer<QAction> m_alignViewAction;
     QPointer<QAction> m_selectParentAction;
     QPointer<QAction> m_toggleGroupAction;
+    QPointer<QAction> m_wireFrameAction;
+    QHash<int, QPointer<QAction>> m_matOverrideActions;
     QPointer<QMenu> m_createSubMenu;
     ModelNode m_contextMenuTarget;
     QVector3D m_contextMenuPos3d;

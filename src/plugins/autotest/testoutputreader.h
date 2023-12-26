@@ -7,7 +7,7 @@
 
 #include <QObject>
 
-namespace Utils { class QtcProcess; }
+namespace Utils { class Process; }
 
 namespace Autotest {
 
@@ -15,7 +15,7 @@ class TestOutputReader : public QObject
 {
     Q_OBJECT
 public:
-    TestOutputReader(Utils::QtcProcess *testApplication, const Utils::FilePath &buildDirectory);
+    TestOutputReader(Utils::Process *testApplication, const Utils::FilePath &buildDirectory);
     virtual ~TestOutputReader();
     void processStdOutput(const QByteArray &outputLine);
     virtual void processStdError(const QByteArray &outputLine);
@@ -27,6 +27,8 @@ public:
     QHash<ResultType, int> summary() const { return m_summary; }
     void setId(const QString &id) { m_id = id; }
     QString id() const { return m_id; }
+
+    virtual void onDone(int exitCode) { Q_UNUSED(exitCode) }
 
     void resetCommandlineColor();
 signals:

@@ -1,3 +1,29 @@
+# used in the .json.in
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.7.0)
+  set(DESIGNER_PLUGIN_ARGUMENTS
+  "\"Arguments\" : [
+    {
+        \"Name\" : \"-designer-qt-pluginpath\",
+        \"Parameter\" : \"path\",
+        \"Description\" : \"Override the default search path for Qt Designer plugins\"
+    },
+    {
+        \"Name\" : \"-designer-pluginpath\",
+        \"Parameter\" : \"path\",
+        \"Description\" : \"Add a custom search path for Qt Designer plugins\"
+    }
+    ],")
+else()
+  set(DESIGNER_PLUGIN_ARGUMENTS
+  "\"Arguments\" : [
+    {
+        \"Name\" : \"-designer-qt-pluginpath\",
+        \"Parameter\" : \"path\",
+        \"Description\" : \"Override the default search path for Qt Designer plugins\"
+    }
+    ],")
+endif()
+
 add_qtc_plugin(Designer
   PLUGIN_CLASS FormEditorPlugin
   CONDITION TARGET Qt::DesignerComponentsPrivate AND TARGET Qt::Designer
@@ -22,7 +48,7 @@ add_qtc_plugin(Designer
     formeditorfactory.cpp formeditorfactory.h
     formeditorplugin.cpp formeditorplugin.h
     formeditorstack.cpp formeditorstack.h
-    formeditorw.cpp formeditorw.h
+    formeditor.cpp formeditor.h
     formtemplatewizardpage.cpp formtemplatewizardpage.h
     formwindoweditor.cpp formwindoweditor.h
     formwindowfile.cpp formwindowfile.h

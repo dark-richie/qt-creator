@@ -24,17 +24,19 @@ void NodeProperty::setModelNode(const ModelNode &modelNode)
     if (!modelNode.isValid())
         return;
 
-    if (internalNode()->hasProperty(name())) { //check if oldValue != value
-        Internal::InternalProperty::Pointer internalProperty = internalNode()->property(name());
-        if (internalProperty->isNodeProperty()
-            && internalProperty->toNodeProperty()->node() == modelNode.internalNode())
+    if (auto property = internalNode()->property(name()); property) {
+        auto nodeProperty = property->to<PropertyType::Node>();
+        if (nodeProperty && nodeProperty->node() == modelNode.internalNode())
             return;
+
+        if (!nodeProperty)
+            privateModel()->removePropertyAndRelatedResources(property);
     }
 
-    if (internalNode()->hasProperty(name()) && !internalNode()->property(name())->isNodeProperty())
-        privateModel()->removeProperty(internalNode()->property(name()));
-
-    privateModel()->reparentNode(internalNode(), name(), modelNode.internalNode(), false); //### we have to add a flag that this is not a list
+    privateModel()->reparentNode(internalNodeSharedPointer(),
+                                 name(),
+                                 modelNode.internalNode(),
+                                 false); //### we have to add a flag that this is not a list
 }
 
 ModelNode NodeProperty::modelNode() const
@@ -42,11 +44,9 @@ ModelNode NodeProperty::modelNode() const
     if (!isValid())
         return {};
 
-    if (internalNode()->hasProperty(name())) { //check if oldValue != value
-        Internal::InternalProperty::Pointer internalProperty = internalNode()->property(name());
-        if (internalProperty->isNodeProperty())
-            return ModelNode(internalProperty->toNodeProperty()->node(), model(), view());
-    }
+    auto internalProperty = internalNode()->nodeProperty(name());
+    if (internalProperty) //check if oldValue != value
+        return ModelNode(internalProperty->node(), model(), view());
 
     return ModelNode();
 }

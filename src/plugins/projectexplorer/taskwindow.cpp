@@ -6,7 +6,6 @@
 #include "itaskhandler.h"
 #include "projectexplorericons.h"
 #include "projectexplorertr.h"
-#include "session.h"
 #include "task.h"
 #include "taskhub.h"
 #include "taskmodel.h"
@@ -17,10 +16,12 @@
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/itemviewfind.h>
-#include <coreplugin/icore.h>
 #include <coreplugin/icontext.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/session.h>
 
 #include <utils/algorithm.h>
+#include <utils/execmenu.h>
 #include <utils/fileinprojectfinder.h>
 #include <utils/hostosinfo.h>
 #include <utils/itemviews.h>
@@ -43,6 +44,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+using namespace Core;
 using namespace Utils;
 
 const char SESSION_FILTER_CATEGORIES[] = "TaskWindow.Categories";
@@ -91,7 +93,7 @@ namespace Internal {
 class TaskView : public TreeView
 {
 public:
-    TaskView() { setMouseTracking(true); }
+    TaskView();
     void resizeColumns();
 
 private:
@@ -142,7 +144,6 @@ public:
     Internal::TaskFilterModel *m_filter;
     TaskView m_treeView;
     Core::IContext *m_taskWindowContext;
-    QMenu *m_contextMenu;
     QMap<const QAction *, ITaskHandler *> m_actionToHandlerMap;
     ITaskHandler *m_defaultHandler = nullptr;
     QToolButton *m_filterWarningsButton;
@@ -167,8 +168,13 @@ static QToolButton *createFilterButton(const QIcon &icon, const QString &toolTip
 
 TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
 {
+    setId("Issues");
+    setDisplayName(Tr::tr("Issues"));
+    setPriorityInStatusBar(100);
+
     d->m_model = new Internal::TaskModel(this);
     d->m_filter = new Internal::TaskFilterModel(d->m_model);
+    d->m_filter->setAutoAcceptChildRows(true);
 
     auto agg = new Aggregation::Aggregate;
     agg->add(&d->m_treeView);
@@ -206,8 +212,6 @@ TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
         }
     });
 
-    d->m_contextMenu = new QMenu(&d->m_treeView);
-
     d->m_treeView.setContextMenuPolicy(Qt::ActionsContextMenu);
 
     d->m_filterWarningsButton = createFilterButton(
@@ -217,11 +221,12 @@ TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
     d->m_categoriesButton = new QToolButton;
     d->m_categoriesButton->setIcon(Utils::Icons::FILTER.icon());
     d->m_categoriesButton->setToolTip(Tr::tr("Filter by categories"));
-    d->m_categoriesButton->setProperty("noArrow", true);
+    d->m_categoriesButton->setProperty(StyleHelper::C_NO_ARROW, true);
     d->m_categoriesButton->setPopupMode(QToolButton::InstantPopup);
 
     d->m_categoriesMenu = new QMenu(d->m_categoriesButton);
     connect(d->m_categoriesMenu, &QMenu::aboutToShow, this, &TaskWindow::updateCategoriesMenu);
+    Utils::addToolTipsToMenu(d->m_categoriesMenu);
 
     d->m_categoriesButton->setMenu(d->m_categoriesMenu);
 
@@ -240,17 +245,17 @@ TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
     connect(hub, &TaskHub::showTask, this, &TaskWindow::showTask);
     connect(hub, &TaskHub::openTask, this, &TaskWindow::openTask);
 
-    connect(d->m_filter, &TaskFilterModel::rowsAboutToBeRemoved,
+    connect(d->m_filter, &TaskFilterModel::rowsAboutToBeRemoved, this,
             [this](const QModelIndex &, int first, int last) {
         d->m_visibleIssuesCount -= d->m_filter->issuesCount(first, last);
         emit setBadgeNumber(d->m_visibleIssuesCount);
     });
-    connect(d->m_filter, &TaskFilterModel::rowsInserted,
+    connect(d->m_filter, &TaskFilterModel::rowsInserted, this,
             [this](const QModelIndex &, int first, int last) {
         d->m_visibleIssuesCount += d->m_filter->issuesCount(first, last);
         emit setBadgeNumber(d->m_visibleIssuesCount);
     });
-    connect(d->m_filter, &TaskFilterModel::modelReset, [this] {
+    connect(d->m_filter, &TaskFilterModel::modelReset, this, [this] {
         d->m_visibleIssuesCount = d->m_filter->issuesCount(0, d->m_filter->rowCount());
         emit setBadgeNumber(d->m_visibleIssuesCount);
     });
@@ -305,11 +310,6 @@ QList<QWidget*> TaskWindow::toolBarWidgets() const
     return {d->m_filterWarningsButton, d->m_categoriesButton, filterWidget()};
 }
 
-QString TaskWindow::displayName() const
-{
-    return Tr::tr("Issues");
-}
-
 QWidget *TaskWindow::outputWidget(QWidget *)
 {
     return &d->m_treeView;
@@ -328,31 +328,33 @@ void TaskWindow::setCategoryVisibility(Id categoryId, bool visible)
     if (!categoryId.isValid())
         return;
 
-    QList<Id> categories = d->m_filter->filteredCategories();
+    QSet<Id> categories = d->m_filter->filteredCategories();
 
     if (visible)
-        categories.removeOne(categoryId);
+        categories.remove(categoryId);
     else
-        categories.append(categoryId);
+        categories.insert(categoryId);
 
     d->m_filter->setFilteredCategories(categories);
 }
 
 void TaskWindow::saveSettings()
 {
-    QStringList categories = Utils::transform(d->m_filter->filteredCategories(), &Id::toString);
-    SessionManager::setValue(QLatin1String(SESSION_FILTER_CATEGORIES), categories);
-    SessionManager::setValue(QLatin1String(SESSION_FILTER_WARNINGS), d->m_filter->filterIncludesWarnings());
+    const QStringList categories = Utils::toList(
+        Utils::transform(d->m_filter->filteredCategories(), &Id::toString));
+    SessionManager::setValue(SESSION_FILTER_CATEGORIES, categories);
+    SessionManager::setValue(SESSION_FILTER_WARNINGS, d->m_filter->filterIncludesWarnings());
 }
 
 void TaskWindow::loadSettings()
 {
-    QVariant value = SessionManager::value(QLatin1String(SESSION_FILTER_CATEGORIES));
+    QVariant value = SessionManager::value(SESSION_FILTER_CATEGORIES);
     if (value.isValid()) {
-        QList<Id> categories = Utils::transform(value.toStringList(), &Id::fromString);
+        const QSet<Id> categories = Utils::toSet(
+            Utils::transform(value.toStringList(), &Id::fromString));
         d->m_filter->setFilteredCategories(categories);
     }
-    value = SessionManager::value(QLatin1String(SESSION_FILTER_WARNINGS));
+    value = SessionManager::value(SESSION_FILTER_WARNINGS);
     if (value.isValid()) {
         bool includeWarnings = value.toBool();
         d->m_filter->setFilterIncludesWarnings(includeWarnings);
@@ -366,12 +368,12 @@ void TaskWindow::visibilityChanged(bool visible)
         delayedInitialization();
 }
 
-void TaskWindow::addCategory(Id categoryId, const QString &displayName, bool visible, int priority)
+void TaskWindow::addCategory(const TaskCategory &category)
 {
-    d->m_model->addCategory(categoryId, displayName, priority);
-    if (!visible) {
-        QList<Id> filters = d->m_filter->filteredCategories();
-        filters += categoryId;
+    d->m_model->addCategory(category);
+    if (!category.visible) {
+        QSet<Id> filters = d->m_filter->filteredCategories();
+        filters.insert(category.id);
         d->m_filter->setFilteredCategories(filters);
     }
 }
@@ -436,6 +438,8 @@ void TaskWindow::triggerDefaultHandler(const QModelIndex &index)
     QModelIndex taskIndex = index;
     if (index.parent().isValid())
         taskIndex = index.parent();
+    if (taskIndex.column() == 1)
+        taskIndex = taskIndex.siblingAtColumn(0);
     Task task(d->m_filter->task(taskIndex));
     if (task.isNull())
         return;
@@ -464,27 +468,20 @@ void TaskWindow::setShowWarnings(bool show)
 
 void TaskWindow::updateCategoriesMenu()
 {
-    using NameToIdsConstIt = QMap<QString, Id>::ConstIterator;
-
     d->m_categoriesMenu->clear();
 
-    const QList<Id> filteredCategories = d->m_filter->filteredCategories();
+    const QSet<Id> filteredCategories = d->m_filter->filteredCategories();
+    const QList<TaskCategory> categories = Utils::sorted(d->m_model->categories(),
+                                                         &TaskCategory::displayName);
 
-    QMap<QString, Id> nameToIds;
-    const QList<Id> ids = d->m_model->categoryIds();
-    for (const Id categoryId : ids)
-        nameToIds.insert(d->m_model->categoryDisplayName(categoryId), categoryId);
-
-    const NameToIdsConstIt cend = nameToIds.constEnd();
-    for (NameToIdsConstIt it = nameToIds.constBegin(); it != cend; ++it) {
-        const QString &displayName = it.key();
-        const Id categoryId = it.value();
+    for (const TaskCategory &c : categories) {
         auto action = new QAction(d->m_categoriesMenu);
         action->setCheckable(true);
-        action->setText(displayName);
-        action->setChecked(!filteredCategories.contains(categoryId));
-        connect(action, &QAction::triggered, this, [this, action, categoryId] {
-            setCategoryVisibility(categoryId, action->isChecked());
+        action->setText(c.displayName);
+        action->setToolTip(c.description);
+        action->setChecked(!filteredCategories.contains(c.id));
+        connect(action, &QAction::triggered, this, [this, action, id = c.id] {
+            setCategoryVisibility(id, action->isChecked());
         });
         d->m_categoriesMenu->addAction(action);
     }
@@ -503,11 +500,6 @@ int TaskWindow::errorTaskCount(Id category) const
 int TaskWindow::warningTaskCount(Id category) const
 {
     return d->m_model->warningTaskCount(category);
-}
-
-int TaskWindow::priorityInStatusBar() const
-{
-    return 90;
 }
 
 void TaskWindow::clearContents()
@@ -620,6 +612,7 @@ void TaskDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
     painter->save();
     m_doc.setHtml(options.text);
+    m_doc.setTextWidth(options.rect.width());
     options.text = "";
     options.widget->style()->drawControl(QStyle::CE_ItemViewItem, &options, painter);
     painter->translate(options.rect.left(), options.rect.top());
@@ -647,9 +640,12 @@ QSize TaskDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelInd
         return QStyledItemDelegate::sizeHint(option, index);
 
     QStyleOptionViewItem options = option;
+    options.initFrom(options.widget);
     initStyleOption(&options, index);
     m_doc.setHtml(options.text);
-    m_doc.setTextWidth(options.rect.width());
+    const auto view = qobject_cast<const QTreeView *>(options.widget);
+    QTC_ASSERT(view, return {});
+    m_doc.setTextWidth(view->width() * 0.85 - view->indentation());
     return QSize(m_doc.idealWidth(), m_doc.size().height());
 }
 
@@ -661,10 +657,16 @@ bool TaskDelegate::needsSpecialHandling(const QModelIndex &index) const
     return sourceIndex.internalId();
 }
 
+TaskView::TaskView()
+{
+    setMouseTracking(true);
+    setVerticalScrollMode(ScrollPerPixel);
+    setUniformRowHeights(false);
+}
+
 void TaskView::resizeColumns()
 {
     setColumnWidth(0, width() * 0.85);
-    setColumnWidth(1, width() * 0.15);
 }
 
 void TaskView::resizeEvent(QResizeEvent *e)
@@ -688,15 +690,15 @@ void TaskView::mouseMoveEvent(QMouseEvent *e)
     if (m_hoverAnchor != anchor) {
         m_hoverAnchor = anchor;
         if (!m_hoverAnchor.isEmpty())
-            QApplication::setOverrideCursor(QCursor(Qt::PointingHandCursor));
+            setCursor(Qt::PointingHandCursor);
         else
-            QApplication::restoreOverrideCursor();
+            unsetCursor();
     }
 }
 
 void TaskView::mouseReleaseEvent(QMouseEvent *e)
 {
-    if (m_clickAnchor.isEmpty()) {
+    if (m_clickAnchor.isEmpty() || e->button() == Qt::RightButton) {
         TreeView::mouseReleaseEvent(e);
         return;
     }

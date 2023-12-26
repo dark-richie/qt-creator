@@ -9,13 +9,12 @@
 #include "qtversionmanager.h"
 #include "qtversionfactory.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/dialogs/restartdialog.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
+#include <projectexplorer/kitoptionspage.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectexplorericons.h>
 #include <projectexplorer/toolchain.h>
@@ -43,7 +42,6 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QSortFilterProxyModel>
 #include <QTextBrowser>
 #include <QTreeView>
 
@@ -54,7 +52,8 @@ using namespace Utils;
 
 const char kInstallSettingsKey[] = "Settings/InstallSettings";
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
 class QtVersionItem : public TreeItem
 {
@@ -191,14 +190,14 @@ private:
         QIcon icon;
     };
     ValidityInfo validInformation(const QtVersion *version);
-    QList<ProjectExplorer::ToolChain*> toolChains(const QtVersion *version);
+    QList<ProjectExplorer::Toolchain*> toolChains(const QtVersion *version);
     QByteArray defaultToolChainId(const QtVersion *version);
 
     bool isNameUnique(const QtVersion *version);
     void updateVersionItem(QtVersionItem *item);
 
     TreeModel<TreeItem, TreeItem, QtVersionItem> *m_model;
-    QSortFilterProxyModel *m_filterModel;
+    KitSettingsSortModel *m_filterModel;
     TreeItem *m_autoItem;
     TreeItem *m_manualItem;
 
@@ -232,8 +231,6 @@ QtOptionsPageWidget::QtOptionsPageWidget()
     , m_warningVersionIcon(Utils::Icons::WARNING.icon())
     , m_configurationWidget(nullptr)
 {
-    resize(446, 450);
-
     m_qtdirList = new QTreeView(this);
     m_qtdirList->setObjectName("qtDirList");
     m_qtdirList->setUniformRowHeights(true);
@@ -261,15 +258,16 @@ QtOptionsPageWidget::QtOptionsPageWidget()
 
     m_errorLabel = new QLabel;
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     auto versionInfoWidget = new QWidget;
     // clang-format off
     Form {
         Tr::tr("Name:"), m_nameEdit, br,
         Tr::tr("qmake path:"), Row { m_qmakePath, m_editPathPushButton }, br,
-        Span(2, m_errorLabel)
-    }.attachTo(versionInfoWidget, WithoutMargins);
+        Span(2, m_errorLabel),
+        noMargin
+    }.attachTo(versionInfoWidget);
     // clang-format on
 
     m_formLayout = qobject_cast<QFormLayout*>(versionInfoWidget->layout());
@@ -316,9 +314,10 @@ QtOptionsPageWidget::QtOptionsPageWidget()
     m_model->rootItem()->appendChild(m_autoItem);
     m_model->rootItem()->appendChild(m_manualItem);
 
-    m_filterModel = new QSortFilterProxyModel(this);
+    m_filterModel = new KitSettingsSortModel(this);
+    m_filterModel->setSortedCategories({ProjectExplorer::Constants::msgAutoDetected(),
+                                        ProjectExplorer::Constants::msgManual()});
     m_filterModel->setSourceModel(m_model);
-    m_filterModel->setSortCaseSensitivity(Qt::CaseInsensitive);
 
     m_qtdirList->setModel(m_filterModel);
     m_qtdirList->setSortingEnabled(true);
@@ -370,7 +369,7 @@ QtOptionsPageWidget::QtOptionsPageWidget()
     connect(QtVersionManager::instance(), &QtVersionManager::qtVersionsChanged,
             this, &QtOptionsPageWidget::updateQtVersions);
 
-    connect(ProjectExplorer::ToolChainManager::instance(), &ToolChainManager::toolChainsChanged,
+    connect(ProjectExplorer::ToolchainManager::instance(), &ToolchainManager::toolchainsChanged,
             this, &QtOptionsPageWidget::toolChainsUpdated);
 
     auto chooser = new VariableChooser(this);
@@ -439,7 +438,15 @@ void QtOptionsPageWidget::toolChainsUpdated()
 
 void QtOptionsPageWidget::setInfoWidgetVisibility()
 {
-    m_versionInfoWidget->setVisible(m_infoWidget->state() == DetailsWidget::Collapsed);
+    bool isExpanded = m_infoWidget->state() == DetailsWidget::Expanded;
+    if (isExpanded && m_infoBrowser->toPlainText().isEmpty()) {
+        QtVersionItem *item = currentItem();
+        const QtVersion *version = item ? item->version() : nullptr;
+        if (version)
+            m_infoBrowser->setHtml(version->toHtml(true));
+    }
+
+    m_versionInfoWidget->setVisible(!isExpanded);
     m_infoWidget->setVisible(true);
 }
 
@@ -480,13 +487,13 @@ QtOptionsPageWidget::ValidityInfo QtOptionsPageWidget::validInformation(const Qt
     const Abis qtAbis = version->qtAbis();
 
     for (const Abi &abi : qtAbis) {
-        const auto abiCompatePred = [&abi] (const ToolChain *tc)
+        const auto abiCompatePred = [&abi] (const Toolchain *tc)
         {
             return Utils::contains(tc->supportedAbis(),
                                    [&abi](const Abi &sabi) { return sabi.isCompatibleWith(abi); });
         };
 
-        if (!ToolChainManager::toolChain(abiCompatePred))
+        if (!ToolchainManager::toolchain(abiCompatePred))
             missingToolChains.append(abi);
     }
 
@@ -523,21 +530,19 @@ QtOptionsPageWidget::ValidityInfo QtOptionsPageWidget::validInformation(const Qt
     return info;
 }
 
-QList<ToolChain*> QtOptionsPageWidget::toolChains(const QtVersion *version)
+QList<Toolchain*> QtOptionsPageWidget::toolChains(const QtVersion *version)
 {
-    QList<ToolChain*> toolChains;
+    QList<Toolchain*> toolChains;
     if (!version)
         return toolChains;
 
     QSet<QByteArray> ids;
     const Abis abis = version->qtAbis();
     for (const Abi &a : abis) {
-        const Toolchains tcList = ToolChainManager::findToolChains(a);
-        for (ToolChain *tc : tcList) {
-            if (ids.contains(tc->id()))
-                continue;
-            ids.insert(tc->id());
-            toolChains.append(tc);
+        const Toolchains tcList = ToolchainManager::findToolchains(a);
+        for (Toolchain *tc : tcList) {
+            if (Utils::insert(ids, tc->id()))
+                toolChains.append(tc);
         }
     }
 
@@ -546,7 +551,7 @@ QList<ToolChain*> QtOptionsPageWidget::toolChains(const QtVersion *version)
 
 QByteArray QtOptionsPageWidget::defaultToolChainId(const QtVersion *version)
 {
-    QList<ToolChain*> possibleToolChains = toolChains(version);
+    QList<Toolchain*> possibleToolChains = toolChains(version);
     if (!possibleToolChains.isEmpty())
         return possibleToolChains.first()->id();
     return QByteArray();
@@ -597,7 +602,7 @@ void QtOptionsPageWidget::updateQtVersions(const QList<int> &additions, const QL
 
     // Add changed/added items:
     for (int a : std::as_const(toAdd)) {
-        QtVersion *version = QtVersionManager::version(a)->clone();
+        QtVersion *version = QtVersionManager::version(a)->clone(true);
         auto *item = new QtVersionItem(version);
 
         // Insert in the right place:
@@ -760,11 +765,10 @@ void QtOptionsPageWidget::updateDescriptionLabel()
     if (item)
         item->setIcon(info.icon);
 
+    m_infoBrowser->clear();
     if (version) {
-        m_infoBrowser->setHtml(version->toHtml(true));
         setInfoWidgetVisibility();
     } else {
-        m_infoBrowser->clear();
         m_versionInfoWidget->setVisible(false);
         m_infoWidget->setVisible(false);
     }
@@ -806,20 +810,20 @@ void QtOptionsPageWidget::updateWidgets()
 
 static QString settingsFile(const QString &baseDir)
 {
-    return baseDir + (baseDir.isEmpty() ? "" : "/") + Core::Constants::IDE_SETTINGSVARIANT_STR + '/'
-           + Core::Constants::IDE_CASED_ID + ".ini";
+    return baseDir + (baseDir.isEmpty() ? "" : "/") + QCoreApplication::organizationName() + '/'
+           + QCoreApplication::applicationName() + ".ini";
 }
 
 static QString qtVersionsFile(const QString &baseDir)
 {
-    return baseDir + (baseDir.isEmpty() ? "" : "/") + Core::Constants::IDE_SETTINGSVARIANT_STR + '/'
-           + Core::Constants::IDE_ID + '/' + "qtversion.xml";
+    return baseDir + (baseDir.isEmpty() ? "" : "/") + QCoreApplication::organizationName() + '/'
+           + QCoreApplication::applicationName() + '/' + "qtversion.xml";
 }
 
 static std::optional<FilePath> currentlyLinkedQtDir(bool *hasInstallSettings)
 {
     const QString installSettingsFilePath = settingsFile(Core::ICore::resourcePath().toString());
-    const bool installSettingsExist = QFile::exists(installSettingsFilePath);
+    const bool installSettingsExist = QFileInfo::exists(installSettingsFilePath);
     if (hasInstallSettings)
         *hasInstallSettings = installSettingsExist;
     if (installSettingsExist) {
@@ -850,12 +854,12 @@ static bool canLinkWithQt(QString *toolTip)
     if (!Core::ICore::resourcePath().isWritableDir()) {
         canLink = false;
         tip << Tr::tr("%1's resource directory is not writable.")
-                   .arg(Core::Constants::IDE_DISPLAY_NAME);
+                   .arg(QGuiApplication::applicationDisplayName());
     }
     const FilePath link = installSettingsValue ? *installSettingsValue : FilePath();
     if (!link.isEmpty())
         tip << Tr::tr("%1 is currently linked to \"%2\".")
-                   .arg(QString(Core::Constants::IDE_DISPLAY_NAME), link.toUserOutput());
+                   .arg(QGuiApplication::applicationDisplayName(), link.toUserOutput());
     if (toolTip)
         *toolTip = tip.join("\n\n");
     return canLink;
@@ -867,7 +871,7 @@ void QtOptionsPageWidget::setupLinkWithQtButton()
     const bool canLink = canLinkWithQt(&tip);
     m_linkWithQtButton->setEnabled(canLink);
     m_linkWithQtButton->setToolTip(tip);
-    connect(m_linkWithQtButton, &QPushButton::clicked, this, &QtOptionsPage::linkWithQt);
+    connect(m_linkWithQtButton, &QPushButton::clicked, this, &LinkWithQtSupport::linkWithQt);
 }
 
 void QtOptionsPageWidget::updateCurrentQtName()
@@ -931,29 +935,27 @@ static std::optional<FilePath> settingsDirForQtDir(const FilePath &baseDirectory
         return qtDir / dir;
     });
     const FilePath validDir = Utils::findOrDefault(dirsToCheck, [baseDirectory](const FilePath &dir) {
-        return QFile::exists(settingsFile(baseDirectory.resolvePath(dir).toString()))
-               || QFile::exists(qtVersionsFile(baseDirectory.resolvePath(dir).toString()));
+        return QFileInfo::exists(settingsFile(baseDirectory.resolvePath(dir).toString()))
+               || QFileInfo::exists(qtVersionsFile(baseDirectory.resolvePath(dir).toString()));
     });
     if (!validDir.isEmpty())
         return validDir;
     return {};
 }
 
-static bool validateQtInstallDir(PathChooser *input, QString *errorString)
+static FancyLineEdit::AsyncValidationResult validateQtInstallDir(const QString &input,
+                                                                 const FilePath &baseDirectory)
 {
-    const FilePath qtDir = input->rawFilePath();
-    if (!settingsDirForQtDir(input->baseDirectory(), qtDir)) {
-        if (errorString) {
-            const QStringList filesToCheck = settingsFilesToCheck() + qtversionFilesToCheck();
-            *errorString = "<html><body>"
-                           + Tr::tr("Qt installation information was not found in \"%1\". "
-                                    "Choose a directory that contains one of the files %2")
-                                 .arg(qtDir.toUserOutput(),
-                                      "<pre>" + filesToCheck.join('\n') + "</pre>");
-        }
-        return false;
+    const FilePath qtDir = FilePath::fromUserInput(input);
+    if (!settingsDirForQtDir(baseDirectory, qtDir)) {
+        const QStringList filesToCheck = settingsFilesToCheck() + qtversionFilesToCheck();
+        return make_unexpected(
+            "<html><body>"
+            + ::QtSupport::Tr::tr("Qt installation information was not found in \"%1\". "
+                                  "Choose a directory that contains one of the files %2")
+                  .arg(qtDir.toUserOutput(), "<pre>" + filesToCheck.join('\n') + "</pre>"));
     }
-    return true;
+    return input;
 }
 
 static FilePath defaultQtInstallationPath()
@@ -970,36 +972,43 @@ void QtOptionsPageWidget::linkWithQt()
     bool askForRestart = false;
     QDialog dialog(Core::ICore::dialogParent());
     dialog.setWindowTitle(title);
-    auto layout = new QVBoxLayout;
-    dialog.setLayout(layout);
     auto tipLabel = new QLabel(linkingPurposeText());
     tipLabel->setWordWrap(true);
-    layout->addWidget(tipLabel);
-    auto pathLayout = new QHBoxLayout;
-    layout->addLayout(pathLayout);
     auto pathLabel = new QLabel(Tr::tr("Qt installation path:"));
     pathLabel->setToolTip(
         Tr::tr("Choose the Qt installation directory, or a directory that contains \"%1\".")
             .arg(settingsFile("")));
-    pathLayout->addWidget(pathLabel);
     auto pathInput = new PathChooser;
-    pathLayout->addWidget(pathInput);
     pathInput->setExpectedKind(PathChooser::ExistingDirectory);
     pathInput->setBaseDirectory(FilePath::fromString(QCoreApplication::applicationDirPath()));
     pathInput->setPromptDialogTitle(title);
     pathInput->setMacroExpander(nullptr);
-    pathInput->setValidationFunction([pathInput](FancyLineEdit *input, QString *errorString) {
-        if (pathInput->defaultValidationFunction()
-            && !pathInput->defaultValidationFunction()(input, errorString))
-            return false;
-        return validateQtInstallDir(pathInput, errorString);
-    });
+    pathInput->setValidationFunction(
+        [pathInput](const QString &input) -> FancyLineEdit::AsyncValidationFuture {
+            return pathInput->defaultValidationFunction()(input).then(
+                [baseDir = pathInput->baseDirectory()](
+                    const FancyLineEdit::AsyncValidationResult &result)
+                    -> FancyLineEdit::AsyncValidationResult {
+                    if (!result)
+                        return result;
+                    return validateQtInstallDir(result.value(), baseDir);
+                });
+        });
     const std::optional<FilePath> currentLink = currentlyLinkedQtDir(nullptr);
     pathInput->setFilePath(currentLink ? *currentLink : defaultQtInstallationPath());
     pathInput->setAllowPathFromDevice(true);
     auto buttons = new QDialogButtonBox;
-    layout->addStretch(10);
-    layout->addWidget(buttons);
+
+    using namespace Layouting;
+    Column {
+        tipLabel,
+        Form {
+            Tr::tr("Qt installation path:"), pathInput, br,
+        },
+        st,
+        buttons,
+    }.attachTo(&dialog);
+
     auto linkButton = buttons->addButton(Tr::tr("Link with Qt"), QDialogButtonBox::AcceptRole);
     connect(linkButton, &QPushButton::clicked, &dialog, &QDialog::accept);
     auto cancelButton = buttons->addButton(Tr::tr("Cancel"), QDialogButtonBox::RejectRole);
@@ -1023,6 +1032,7 @@ void QtOptionsPageWidget::linkWithQt()
     connect(pathInput, &PathChooser::validChanged, linkButton, &QPushButton::setEnabled);
     linkButton->setEnabled(pathInput->isValid());
 
+    dialog.setMinimumWidth(520);
     dialog.exec();
     if (dialog.result() == QDialog::Accepted) {
         const std::optional<FilePath> settingsDir = settingsDirForQtDir(pathInput->baseDirectory(),
@@ -1058,19 +1068,40 @@ QtOptionsPage::QtOptionsPage()
     setWidgetCreator([] { return new QtOptionsPageWidget; });
 }
 
-bool QtOptionsPage::canLinkWithQt()
+QStringList QtOptionsPage::keywords() const
+{
+    return {
+        Tr::tr("Add..."),
+        Tr::tr("Remove"),
+        Tr::tr("Clean Up"),
+        Tr::tr("Link with Qt"),
+        Tr::tr("Remove Link"),
+        Tr::tr("Qt installation path:"),
+        Tr::tr("qmake path:"),
+        Tr::tr("Register documentation:")
+    };
+}
+
+} // Internal
+
+bool LinkWithQtSupport::canLinkWithQt()
 {
     return Internal::canLinkWithQt(nullptr);
 }
 
-bool QtOptionsPage::isLinkedWithQt()
+bool LinkWithQtSupport::isLinkedWithQt()
 {
-    return currentlyLinkedQtDir(nullptr).has_value();
+    return Internal::currentlyLinkedQtDir(nullptr).has_value();
 }
 
-void QtOptionsPage::linkWithQt()
+Utils::FilePath LinkWithQtSupport::linkedQt()
 {
-    QtOptionsPageWidget::linkWithQt();
+    return Internal::currentlyLinkedQtDir(nullptr).value_or(Utils::FilePath());
 }
 
-} // QtSupport::Internal
+void LinkWithQtSupport::linkWithQt()
+{
+    Internal::QtOptionsPageWidget::linkWithQt();
+}
+
+} // QtSupport

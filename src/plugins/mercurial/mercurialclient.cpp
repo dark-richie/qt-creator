@@ -12,8 +12,8 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <vcsbase/vcsbasediffeditorcontroller.h>
 #include <vcsbase/vcsbaseeditor.h>
@@ -53,20 +53,20 @@ MercurialDiffEditorController::MercurialDiffEditorController(IDocument *document
 
     using namespace Tasking;
 
-    const TreeStorage<QString> diffInputStorage = inputStorage();
+    const Storage<QString> diffInputStorage;
 
-    const auto setupDiff = [=](QtcProcess &process) {
+    const auto onDiffSetup = [this, args](Process &process) {
         setupCommand(process, {addConfigurationArguments(args)});
         VcsOutputWindow::appendCommand(process.workingDirectory(), process.commandLine());
     };
-    const auto onDiffDone = [diffInputStorage](const QtcProcess &process) {
+    const auto onDiffDone = [diffInputStorage](const Process &process) {
         *diffInputStorage = process.cleanedStdOut();
     };
 
     const Group root {
-        Storage(diffInputStorage),
-        Process(setupDiff, onDiffDone),
-        postProcessTask()
+        diffInputStorage,
+        ProcessTask(onDiffSetup, onDiffDone, CallDoneIf::Success),
+        postProcessTask(diffInputStorage)
     };
     setReloadRecipe(root);
 }
@@ -81,7 +81,8 @@ QStringList MercurialDiffEditorController::addConfigurationArguments(const QStri
 
 /////////////////////////////////////////////////////////////
 
-MercurialClient::MercurialClient(MercurialSettings *settings) : VcsBaseClient(settings)
+MercurialClient::MercurialClient()
+    : VcsBaseClient(&Internal::settings())
 {
 }
 
@@ -427,7 +428,7 @@ void MercurialClient::requestReload(const QString &documentId, const FilePath &s
     IDocument *document = DiffEditorController::findOrCreateDocument(documentId, title);
     QTC_ASSERT(document, return);
     auto controller = new MercurialDiffEditorController(document, args);
-    controller->setVcsBinary(settings().binaryPath.filePath());
+    controller->setVcsBinary(settings().binaryPath());
     controller->setProcessEnvironment(processEnvironment());
     controller->setWorkingDirectory(workingDirectory);
 

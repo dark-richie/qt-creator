@@ -17,6 +17,7 @@
 #include <cplusplus/SimpleLexer.h>
 #include <cplusplus/TypeOfExpression.h>
 #include <texteditor/textdocumentlayout.h>
+#include <utils/algorithm.h>
 #include <utils/textutils.h>
 #include <utils/qtcassert.h>
 
@@ -181,9 +182,7 @@ Class *VirtualFunctionHelper::staticClassOfFunctionCallExpression_internal() con
 Link findMacroLink_helper(const QByteArray &name, Document::Ptr doc, const Snapshot &snapshot,
                           QSet<QString> *processed)
 {
-    if (doc && !name.startsWith('<') && !processed->contains(doc->filePath().path())) {
-        processed->insert(doc->filePath().path());
-
+    if (doc && !name.startsWith('<') && Utils::insert(*processed, doc->filePath().path())) {
         for (const Macro &macro : doc->definedMacros()) {
             if (macro.name() == name) {
                 Link link;
@@ -210,7 +209,7 @@ Link findMacroLink(const QByteArray &name, const Document::Ptr &doc)
 {
     if (!name.isEmpty()) {
         if (doc) {
-            const Snapshot snapshot = CppModelManager::instance()->snapshot();
+            const Snapshot snapshot = CppModelManager::snapshot();
             QSet<QString> processed;
             return findMacroLink_helper(name, doc, snapshot, &processed);
         }
@@ -343,7 +342,7 @@ Link attemptDeclDef(const QTextCursor &cursor, Snapshot snapshot,
         result = target->toLink();
 
         int startLine, startColumn, endLine, endColumn;
-        document->translationUnit()->getTokenStartPosition(name->firstToken(), &startLine,
+        document->translationUnit()->getTokenPosition(name->firstToken(), &startLine,
                                                            &startColumn);
         document->translationUnit()->getTokenEndPosition(name->lastToken() - 1, &endLine,
                                                          &endColumn);
@@ -485,7 +484,6 @@ void FollowSymbolUnderCursor::findLink(
     int line = 0;
     int column = 0;
     Utils::Text::convertPosition(document, cursor.position(), &line, &column);
-    const int positionInBlock = column - 1;
 
     Snapshot snapshot = theSnapshot;
 
@@ -530,7 +528,7 @@ void FollowSymbolUnderCursor::findLink(
     for (int i = 0; i < tokens.size(); ++i) {
         const Token &tk = tokens.at(i);
 
-        if (positionInBlock >= tk.utf16charsBegin() && positionInBlock < tk.utf16charsEnd()) {
+        if (column >= tk.utf16charsBegin() && column < tk.utf16charsEnd()) {
             int closingParenthesisPos = tokens.size();
             if (i >= 2 && tokens.at(i).is(T_IDENTIFIER) && tokens.at(i - 1).is(T_LPAREN)
                 && (tokens.at(i - 2).is(T_SIGNAL) || tokens.at(i - 2).is(T_SLOT))) {
@@ -572,7 +570,7 @@ void FollowSymbolUnderCursor::findLink(
 
             // In this case we want to look at one token before the current position to recognize
             // an operator if the cursor is inside the actual operator: operator[$]
-            if (positionInBlock >= tk.utf16charsBegin() && positionInBlock <= tk.utf16charsEnd()) {
+            if (column >= tk.utf16charsBegin() && column <= tk.utf16charsEnd()) {
                 cursorRegionReached = true;
                 if (tk.is(T_OPERATOR)) {
                     link = attemptDeclDef(cursor, theSnapshot,
@@ -582,7 +580,7 @@ void FollowSymbolUnderCursor::findLink(
                 } else if (tk.isPunctuationOrOperator() && i > 0 && tokens.at(i - 1).is(T_OPERATOR)) {
                     QTextCursor c = cursor;
                     c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor,
-                                   positionInBlock - tokens.at(i - 1).utf16charsBegin());
+                                   column - tokens.at(i - 1).utf16charsBegin());
                     link = attemptDeclDef(c, theSnapshot, documentFromSemanticInfo, symbolFinder);
                     if (link.hasValidLinkText())
                         return processLinkCallback(link);
@@ -662,7 +660,7 @@ void FollowSymbolUnderCursor::findLink(
     }
 
     // Find the last symbol up to the cursor position
-    Scope *scope = doc->scopeAt(line, positionInBlock);
+    Scope *scope = doc->scopeAt(line, column);
     if (!scope)
         return processLinkCallback(link);
 
@@ -684,7 +682,7 @@ void FollowSymbolUnderCursor::findLink(
             if (Symbol *d = r.declaration()) {
                 if (d->asDeclaration() || d->asFunction()) {
                     if (data.filePath() == d->filePath()) {
-                        if (line == d->line() && positionInBlock >= d->column()) {
+                        if (line == d->line() && column >= d->column()) {
                             // TODO: check the end
                             result = r; // take the symbol under cursor.
                             break;
@@ -697,7 +695,7 @@ void FollowSymbolUnderCursor::findLink(
                                                  &tokenBeginColumnNumber);
                     if (tokenBeginLineNumber > d->line()
                             || (tokenBeginLineNumber == d->line()
-                                && tokenBeginColumnNumber >= d->column())) {
+                                && tokenBeginColumnNumber + 1 >= d->column())) {
                         result = r; // take the symbol under cursor.
                         break;
                     }

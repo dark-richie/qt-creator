@@ -6,6 +6,9 @@
 #include <instances/puppetstartdata.h>
 #include <utils/filepath.h>
 
+#include <QColor>
+#include <QUrl>
+
 namespace QmlDesigner {
 
 class DesignerSettings;
@@ -26,8 +29,6 @@ public:
     virtual QString defaultPuppetToplevelBuildDirectory() const = 0;
     virtual QUrl projectUrl() const = 0;
     virtual QString currentProjectDirPath() const = 0;
-    virtual QList<QColor> designerSettingsEdit3DViewBackgroundColor() const = 0;
-    virtual QColor designerSettingsEdit3DViewGridColor() const = 0;
     virtual QUrl currentResourcePath() const = 0;
     virtual void parseItemLibraryDescriptions() = 0;
     virtual const DesignerSettings &designerSettings() const = 0;
@@ -40,6 +41,12 @@ public:
     virtual PuppetStartData puppetStartData(const class Model &model) const = 0;
     virtual bool instantQmlTextUpdate() const = 0;
     virtual Utils::FilePath qmlPuppetPath() const = 0;
+    virtual QStringList modulePaths() const = 0;
+    virtual QStringList projectModulePaths() const = 0;
+    virtual bool isQt6Project() const = 0;
+    virtual bool isQtForMcusProject() const = 0;
+    virtual QString qtQuickVersion() const = 0;
+    virtual Utils::FilePath resourcePath(const QString &relativePath) const = 0;
 };
 
 } // namespace QmlDesigner

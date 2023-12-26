@@ -13,11 +13,13 @@
 
 #include <projectexplorer/abi.h>
 #include <projectexplorer/devicesupport/idevicefwd.h>
-#include <projectexplorer/runcontrol.h>
 
 #include <texteditor/textmark.h>
 
 #include <utils/filepath.h>
+#include <utils/outputformat.h>
+#include <utils/processhandle.h>
+#include <utils/processinterface.h>
 
 QT_BEGIN_NAMESPACE
 class QDebug;
@@ -99,7 +101,7 @@ public:
     DebuggerStartMode startMode = NoStartMode;
     DebuggerCloseMode closeMode = KillAtClose;
 
-    ProjectExplorer::Runnable inferior;
+    Utils::ProcessRunData inferior;
     QString displayName; // Used in the Snapshots view.
     Utils::ProcessHandle attachPID;
     Utils::FilePaths solibSearchPath;
@@ -144,19 +146,22 @@ public:
     QString additionalStartupCommands;
 
     DebuggerEngineType cppEngineType = NoEngineType;
+    QString version;
 
     bool isQmlDebugging = false;
+    bool isPythonDebugging = false;
     bool breakOnMain = false;
     bool multiProcess = false; // Whether to set detach-on-fork off.
     bool useTerminal = false;
     bool runAsRoot = false;
 
-    ProjectExplorer::Runnable debugger;
+    Utils::ProcessRunData debugger;
     Utils::FilePath overrideStartScript; // Used in attach to core and remote debugging
     QString startMessage; // First status message shown.
     Utils::FilePath debugInfoLocation; // Gdb "set-debug-file-directory".
     QStringList debugSourceLocation; // Gdb "directory"
     QString qtPackageSourceLocation;
+    Utils::FilePath qtSourceLocation;
     bool isSnapshot = false; // Set if created internally.
     ProjectExplorer::Abi toolChainAbi;
 
@@ -210,6 +215,7 @@ public:
     }
 
     QString partialVariable;
+    bool qmlFocusOnFrame = true; // QTCREATORBUG-29874
 };
 
 class Location
@@ -219,12 +225,14 @@ public:
     Location(quint64 address) { m_address = address; }
     Location(const Utils::FilePath &file) { m_fileName = file; }
     Location(const Utils::FilePath &file, int line, bool marker = true)
-        { m_lineNumber = line; m_fileName = file; m_needsMarker = marker; }
+        { m_textPosition = {line, -1}; m_fileName = file; m_needsMarker = marker; }
+    Location(const Utils::FilePath &file, const Utils::Text::Position &pos, bool marker = true)
+        { m_textPosition = pos; m_fileName = file; m_needsMarker = marker; }
     Location(const StackFrame &frame, bool marker = true);
     Utils::FilePath fileName() const { return m_fileName; }
     QString functionName() const { return m_functionName; }
     QString from() const { return m_from; }
-    int lineNumber() const { return m_lineNumber; }
+    Utils::Text::Position textPosition() const { return m_textPosition; }
     void setNeedsRaise(bool on) { m_needsRaise = on; }
     void setNeedsMarker(bool on) { m_needsMarker = on; }
     void setFileName(const Utils::FilePath &fileName) { m_fileName = fileName; }
@@ -240,7 +248,7 @@ private:
     bool m_needsMarker = false;
     bool m_needsRaise = true;
     bool m_hasDebugInfo = true;
-    int m_lineNumber = -1;
+    Utils::Text::Position m_textPosition;
     Utils::FilePath m_fileName;
     QString m_functionName;
     QString m_from;
@@ -262,7 +270,7 @@ public:
     QString runId() const;
 
     const DebuggerRunParameters &runParameters() const;
-    void setCompanionEngine(DebuggerEngine *engine);
+    void addCompanionEngine(DebuggerEngine *engine);
     void setSecondaryEngine();
 
     void start();
@@ -284,6 +292,8 @@ public:
 
     virtual bool canHandleToolTip(const DebuggerToolTipContext &) const;
     virtual void expandItem(const QString &iname); // Called when item in tree gets expanded.
+    virtual void reexpandItems(
+        const QSet<QString> &inames); // Called when items in tree need to be reexpanded.
     virtual void updateItem(const QString &iname); // Called for fresh watch items.
     void updateWatchData(const QString &iname); // FIXME: Merge with above.
     virtual void selectWatchData(const QString &iname);
@@ -446,6 +456,7 @@ public:
     void updateLocalsWindow(bool showReturn);
     void raiseWatchersWindow();
     QString debuggerName() const;
+    QString debuggerType() const;
 
     bool isRegistersWindowVisible() const;
     bool isPeripheralRegistersWindowVisible() const;
@@ -488,6 +499,7 @@ public:
 
 protected:
     void setDebuggerName(const QString &name);
+    void setDebuggerType(const QString &type);
     void notifyDebuggerProcessFinished(const Utils::ProcessResultData &resultData,
                                        const QString &backendName);
 
@@ -542,7 +554,7 @@ protected:
     void startDying() const;
 
     ProjectExplorer::IDeviceConstPtr device() const;
-    DebuggerEngine *companionEngine() const;
+    QList<DebuggerEngine *> companionEngines() const;
 
 private:
     friend class DebuggerPluginPrivate;

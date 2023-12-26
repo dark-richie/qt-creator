@@ -19,8 +19,6 @@ public:
 
     constexpr explicit BasicId() = default;
 
-    constexpr BasicId(const char *) = delete;
-
     static constexpr BasicId create(InternalIntegerType idNumber)
     {
         BasicId id;
@@ -56,7 +54,7 @@ public:
         return first.id - second.id;
     }
 
-    constexpr bool isValid() const { return id >= 0; }
+    constexpr bool isValid() const { return id > 0; }
 
     explicit operator bool() const { return isValid(); }
 
@@ -67,7 +65,7 @@ public:
     [[noreturn, deprecated]] InternalIntegerType operator&() const { throw std::exception{}; }
 
 private:
-    InternalIntegerType id = -1;
+    InternalIntegerType id = 0;
 };
 
 template<typename Container>
@@ -80,3 +78,14 @@ auto toIntegers(const Container &container)
 }
 
 } // namespace Sqlite
+
+namespace std {
+template<auto Type, typename InternalIntegerType>
+struct hash<Sqlite::BasicId<Type, InternalIntegerType>>
+{
+    auto operator()(const Sqlite::BasicId<Type, InternalIntegerType> &id) const
+    {
+        return std::hash<InternalIntegerType>{}(id.internalId());
+    }
+};
+} // namespace std

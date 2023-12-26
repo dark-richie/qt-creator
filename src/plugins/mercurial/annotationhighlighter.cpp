@@ -6,10 +6,9 @@
 
 namespace Mercurial::Internal {
 
-MercurialAnnotationHighlighter::MercurialAnnotationHighlighter(const ChangeNumbers &changeNumbers,
-                                                               QTextDocument *document)
-    : VcsBase::BaseAnnotationHighlighter(changeNumbers, document),
-    changeset(QLatin1String(Constants::CHANGESETID12))
+MercurialAnnotationHighlighter::MercurialAnnotationHighlighter(const VcsBase::Annotation &annotation)
+    : VcsBase::BaseAnnotationHighlighter(annotation)
+    , changeset(QLatin1String(Constants::CHANGESETID12))
 {
 }
 
@@ -18,7 +17,7 @@ QString MercurialAnnotationHighlighter::changeNumber(const QString &block) const
     const QRegularExpressionMatch match = changeset.match(block);
     if (match.hasMatch())
         return match.captured(1);
-    return QString();
+    return {};
 }
 
 } // Mercurial::Internal

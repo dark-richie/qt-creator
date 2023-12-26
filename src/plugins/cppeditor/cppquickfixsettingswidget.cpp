@@ -20,8 +20,6 @@
 #include <QSpinBox>
 #include <QtDebug>
 
-using namespace Utils;
-
 namespace CppEditor::Internal {
 
 class LineCountSpinBox : public QWidget
@@ -56,7 +54,7 @@ LineCountSpinBox::LineCountSpinBox(QWidget *parent)
     m_unitLabel = new QLabel(Tr::tr("lines"));
 
     using namespace Layouting;
-    Row { m_checkBox, m_opLabel, m_spinBox, m_unitLabel, }.attachTo(this, WithoutMargins);
+    Row { m_checkBox, m_opLabel, m_spinBox, m_unitLabel, noMargin }.attachTo(this);
 
     auto handleChange = [this] {
         updateFields();
@@ -88,9 +86,8 @@ void LineCountSpinBox::updateFields()
     m_unitLabel->setEnabled(enabled);
 }
 
-CppQuickFixSettingsWidget::CppQuickFixSettingsWidget(QWidget *parent)
-    : QWidget(parent)
-    , m_typeSplitter("\\s*,\\s*")
+CppQuickFixSettingsWidget::CppQuickFixSettingsWidget()
+    : m_typeSplitter("\\s*,\\s*")
 {
     m_lines_getterOutsideClass = new LineCountSpinBox;
     m_lines_getterInCppFile = new LineCountSpinBox;
@@ -193,24 +190,24 @@ e.g. name = "m_test_foo_":
     connect(m_listWidget_customTemplates, &QListWidget::currentItemChanged,
             this, &CppQuickFixSettingsWidget::currentCustomItemChanged);
 
-    connect(pushButton_addValueType, &QPushButton::clicked, [this] {
+    connect(pushButton_addValueType, &QPushButton::clicked, this, [this] {
         auto item = new QListWidgetItem("<type>", m_valueTypes);
         item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEditable | Qt::ItemIsEnabled
                        | Qt::ItemNeverHasChildren);
         m_valueTypes->scrollToItem(item);
         item->setSelected(true);
     });
-    connect(pushButton_addCustomTemplate, &QPushButton::clicked, [this] {
+    connect(pushButton_addCustomTemplate, &QPushButton::clicked, this, [this] {
         auto item = new QListWidgetItem("<type>", m_listWidget_customTemplates);
         item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemNeverHasChildren);
         m_listWidget_customTemplates->scrollToItem(item);
         m_listWidget_customTemplates->setCurrentItem(item);
         m_lineEdit_customTemplateTypes->setText("<type>");
     });
-    connect(m_pushButton_removeCustomTemplate, &QPushButton::clicked, [this] {
+    connect(m_pushButton_removeCustomTemplate, &QPushButton::clicked, this, [this] {
         delete m_listWidget_customTemplates->currentItem();
     });
-    connect(pushButton_removeValueType, &QPushButton::clicked, [this] {
+    connect(pushButton_removeValueType, &QPushButton::clicked, this, [this] {
         delete m_valueTypes->currentItem();
     });
 
@@ -223,7 +220,8 @@ e.g. name = "m_test_foo_":
         Tr::tr("Inside class:"), Tr::tr("Default"), Tr::tr("Default"), br,
         Tr::tr("Outside class:"), m_lines_setterOutsideClass, m_lines_getterOutsideClass, br,
         Tr::tr("In .cpp file:"), m_lines_setterInCppFile, m_lines_getterInCppFile, br,
-    }.attachTo(functionLocationsGrid, WithoutMargins);
+        noMargin,
+    }.attachTo(functionLocationsGrid);
 
     if (QGridLayout *gl = qobject_cast<QGridLayout*>(functionLocationsGrid->layout()))
         gl->setHorizontalSpacing(48);
@@ -319,6 +317,8 @@ e.g. name = "m_test_foo_":
     connect(m_radioButton_addUsingnamespace, &QRadioButton::clicked, then);
     connect(m_radioButton_generateMissingNamespace, &QRadioButton::clicked, then);
     connect(m_radioButton_rewriteTypes, &QRadioButton::clicked, then);
+
+    loadSettings(CppQuickFixSettings::instance());
 }
 
 void CppQuickFixSettingsWidget::loadSettings(CppQuickFixSettings *settings)
@@ -424,6 +424,13 @@ void CppQuickFixSettingsWidget::saveSettings(CppQuickFixSettings *settings)
         t.returnType = item->data(CustomDataRoles::ReturnType).toString();
         settings->customTemplates.push_back(t);
     }
+}
+
+void CppQuickFixSettingsWidget::apply()
+{
+    const auto s = CppQuickFixSettings::instance();
+    saveSettings(s);
+    s->saveAsGlobalSettings();
 }
 
 void CppQuickFixSettingsWidget::currentCustomItemChanged(QListWidgetItem *newItem,

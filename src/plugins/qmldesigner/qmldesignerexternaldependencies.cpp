@@ -5,7 +5,6 @@
 
 #include "qmldesignerplugin.h"
 
-#include <app/app_version.h>
 #include <edit3d/edit3dviewconfig.h>
 #include <itemlibraryimport.h>
 #include <projectexplorer/kit.h>
@@ -14,7 +13,8 @@
 #include <puppetenvironmentbuilder.h>
 #include <qmlpuppetpaths.h>
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
+#include <qmlprojectmanager/buildsystem/qmlbuildsystem.h>
 
 #include <coreplugin/icore.h>
 
@@ -59,20 +59,6 @@ QUrl ExternalDependencies::projectUrl() const
 QString ExternalDependencies::currentProjectDirPath() const
 {
     return QmlDesignerPlugin::instance()->documentManager().currentProjectDirPath().toString();
-}
-
-QList<QColor> ExternalDependencies::designerSettingsEdit3DViewBackgroundColor() const
-{
-    return Edit3DViewConfig::loadColor(DesignerSettingsKey::EDIT3DVIEW_BACKGROUND_COLOR);
-}
-
-QColor ExternalDependencies::designerSettingsEdit3DViewGridColor() const
-{
-    QList<QColor> gridColorList = Edit3DViewConfig::loadColor(DesignerSettingsKey::EDIT3DVIEW_GRID_COLOR);
-    if (!gridColorList.isEmpty())
-        return gridColorList.front();
-
-    return {};
 }
 
 QUrl ExternalDependencies::currentResourcePath() const
@@ -184,6 +170,104 @@ Utils::FilePath ExternalDependencies::qmlPuppetPath() const
     auto target = ProjectExplorer::ProjectManager::startupTarget();
     auto [workingDirectory, puppetPath] = QmlPuppetPaths::qmlPuppetPaths(target, m_designerSettings);
     return puppetPath;
+}
+
+namespace {
+
+QString qmlPath(ProjectExplorer::Target *target)
+{
+    auto kit = target->kit();
+
+    if (!kit)
+        return {};
+
+    auto qtVersion = QtSupport::QtKitAspect::qtVersion(kit);
+    if (!qtVersion)
+        return {};
+
+    return qtVersion->qmlPath().toString();
+}
+
+std::tuple<ProjectExplorer::Project *, ProjectExplorer::Target *, QmlProjectManager::QmlBuildSystem *>
+activeProjectEntries()
+{
+    auto project = ProjectExplorer::ProjectManager::startupProject();
+
+    if (!project)
+        return {};
+
+    auto target = project->activeTarget();
+
+    if (!target)
+        return {};
+
+    const auto qmlBuildSystem = qobject_cast<QmlProjectManager::QmlBuildSystem *>(
+        target->buildSystem());
+
+    if (qmlBuildSystem)
+        return std::make_tuple(project, target, qmlBuildSystem);
+
+    return {};
+}
+} // namespace
+
+QStringList ExternalDependencies::modulePaths() const
+{
+    auto [project, target, qmlBuildSystem] = activeProjectEntries();
+
+    if (project && target && qmlBuildSystem) {
+        QStringList modulePaths;
+
+        if (auto path = qmlPath(target); !path.isEmpty())
+            modulePaths.push_back(path);
+
+        modulePaths.append(qmlBuildSystem->absoluteImportPaths());
+        return modulePaths;
+    }
+
+    return {};
+}
+
+QStringList ExternalDependencies::projectModulePaths() const
+{
+    auto [project, target, qmlBuildSystem] = activeProjectEntries();
+
+    if (project && target && qmlBuildSystem) {
+        return qmlBuildSystem->absoluteImportPaths();
+    }
+
+    return {};
+}
+
+bool ExternalDependencies::isQt6Project() const
+{
+    auto [project, target, qmlBuildSystem] = activeProjectEntries();
+
+    return qmlBuildSystem && qmlBuildSystem->qt6Project();
+}
+
+bool ExternalDependencies::isQtForMcusProject() const
+{
+    // QmlBuildSystem
+    auto [project, target, qmlBuildSystem] = activeProjectEntries();
+    if (qmlBuildSystem)
+        return  qmlBuildSystem->qtForMCUs();
+
+    // CMakeBuildSystem
+    ProjectExplorer::Target *activeTarget = ProjectExplorer::ProjectManager::startupTarget();
+    return activeTarget && activeTarget->kit() && activeTarget->kit()->hasValue("McuSupport.McuTargetKitVersion");
+}
+
+QString ExternalDependencies::qtQuickVersion() const
+{
+    auto [project, target, qmlBuildSystem] = activeProjectEntries();
+
+    return qmlBuildSystem ? qmlBuildSystem->versionQtQuick() : QString{};
+}
+
+Utils::FilePath ExternalDependencies::resourcePath(const QString &relativePath) const
+{
+    return Core::ICore::resourcePath(relativePath);
 }
 
 } // namespace QmlDesigner

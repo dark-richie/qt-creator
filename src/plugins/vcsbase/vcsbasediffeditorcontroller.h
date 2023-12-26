@@ -9,7 +9,7 @@
 
 namespace Utils {
 class Environment;
-class QtcProcess;
+class Process;
 } // Utils
 
 namespace VcsBase {
@@ -18,8 +18,6 @@ class VcsBaseDiffEditorControllerPrivate;
 
 class VCSBASE_EXPORT VcsBaseDiffEditorController : public DiffEditor::DiffEditorController
 {
-    Q_OBJECT
-
 public:
     explicit VcsBaseDiffEditorController(Core::IDocument *document);
     ~VcsBaseDiffEditorController() override;
@@ -28,10 +26,9 @@ public:
     void setVcsBinary(const Utils::FilePath &path);
 
 protected:
-    Utils::Tasking::TreeStorage<QString> inputStorage() const;
-    Utils::Tasking::TaskItem postProcessTask();
+    Tasking::GroupItem postProcessTask(const Tasking::Storage<QString> &inputStorage);
 
-    void setupCommand(Utils::QtcProcess &process, const QStringList &args) const;
+    void setupCommand(Utils::Process &process, const QStringList &args) const;
 
 private:
     friend class VcsBaseDiffEditorControllerPrivate;

@@ -11,6 +11,8 @@
 #include <QPainter>
 #include <QPixmap>
 
+using namespace Utils;
+
 /*!
     \class Core::IFindFilter
     \inheaderfile coreplugin/find/ifindfilter.h
@@ -36,7 +38,7 @@
     A common way to present the search results to the user, is to use the
     shared \uicontrol{Search Results} pane.
 
-    \image qtcreator-searchresults.png
+    \image qtcreator-search-results.webp {Search Results view}
 
     If you want to implement a find filter that is doing a file based text
     search, you should use \l Core::BaseTextFind, which already implements all
@@ -130,7 +132,7 @@
 */
 
 /*!
-    \fn void Core::IFindFilter::findAll(const QString &txt, Core::FindFlags findFlags)
+    \fn void Core::IFindFilter::findAll(const QString &txt, Utils::FindFlags findFlags)
     This function is called when the user selected this find scope and
     initiated a search.
 
@@ -147,7 +149,7 @@
 */
 
 /*!
-    \fn void Core::IFindFilter::replaceAll(const QString &txt, Core::FindFlags findFlags)
+    \fn void Core::IFindFilter::replaceAll(const QString &txt, Utils::FindFlags findFlags)
     Override this function if you want to support search and replace.
 
     This function is called when the user selected this find scope and
@@ -252,8 +254,8 @@ QKeySequence IFindFilter::defaultShortcut() const
 
     Depending on the returned value, the default find option widgets are
     enabled or disabled.
-    The default is Core::FindCaseSensitively, Core::FindRegularExpression
-    and Core::FindWholeWords.
+    The default is Utils::FindCaseSensitively, Utils::FindRegularExpression
+    and Uitls::FindWholeWords.
 */
 FindFlags IFindFilter::supportedFindFlags() const
 {

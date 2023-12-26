@@ -13,7 +13,8 @@ ignorewords += \
     MinGW
 
 headerdirs =
-sourcedirs = ../src
+sourcedirs = ../src \
+    $$DOC_BUILD_DIR
 
 imagedirs = ../images
 
@@ -27,6 +28,7 @@ depends +=    qtwidgets \
               qtcore \
               qtqml \
               qtquick \
+              qtquickcontrols \
               qmake \
               qtdesigner \
               qtdoc \
@@ -34,6 +36,7 @@ depends +=    qtwidgets \
               qthelp \
               qtquicktimeline \
               qtlinguist \
+              qtpositioning \
               qtscxml \
               qtsensors \
               qttestlib \
@@ -70,4 +73,9 @@ macro.see                       = "\\sa"
 macro.function                  = "\\fn"
 
 navigation.landingpage = "$IDE_DISPLAY_NAME Manual"
+
+# Auto-generate navigation linking based on "All Topics":
+navigation.toctitles = "All Topics"
+navigation.toctitles.inclusive = false
+
 buildversion = "$IDE_DISPLAY_NAME Manual $QTC_VERSION"

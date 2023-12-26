@@ -5,12 +5,9 @@
 
 #include "projectexplorer_export.h"
 
-#include "projectexplorerconstants.h"
 #include "toolchain.h"
 #include "abi.h"
 #include "headerpath.h"
-
-#include <utils/fileutils.h>
 
 #include <functional>
 #include <memory>
@@ -19,34 +16,23 @@
 namespace ProjectExplorer {
 
 namespace Internal {
-class ClangToolChainFactory;
-class ClangToolChainConfigWidget;
-class GccToolChainConfigWidget;
-class GccToolChainFactory;
-class MingwToolChainFactory;
-class LinuxIccToolChainFactory;
+class GccToolchainConfigWidget;
+class GccToolchainFactory;
+
+const QStringList gccPredefinedMacrosOptions(Utils::Id languageId);
 }
 
 // --------------------------------------------------------------------------
-// GccToolChain
+// GccToolchain
 // --------------------------------------------------------------------------
 
-inline const QStringList languageOption(Utils::Id languageId)
-{
-    if (languageId == Constants::C_LANGUAGE_ID)
-        return {"-x", "c"};
-    return {"-x", "c++"};
-}
-
-inline const QStringList gccPredefinedMacrosOptions(Utils::Id languageId)
-{
-    return languageOption(languageId) + QStringList({"-E", "-dM"});
-}
-
-class PROJECTEXPLORER_EXPORT GccToolChain : public ToolChain
+class PROJECTEXPLORER_EXPORT GccToolchain : public Toolchain
 {
 public:
-    GccToolChain(Utils::Id typeId);
+    enum SubType { RealGcc, Clang, MinGW, LinuxIcc };
+
+    GccToolchain(Utils::Id typeId, SubType subType = RealGcc);
+    ~GccToolchain() override;
 
     QString originalTargetTriple() const override;
     Utils::FilePath installDir() const override;
@@ -66,14 +52,14 @@ public:
     QStringList suggestedMkspecList() const override;
     QList<Utils::OutputLineParser *> createOutputParsers() const override;
 
-    QVariantMap toMap() const override;
-    bool fromMap(const QVariantMap &data) override;
+    void toMap(Utils::Store &data) const override;
+    void fromMap(const Utils::Store &data) override;
 
-    std::unique_ptr<ToolChainConfigWidget> createConfigurationWidget() override;
+    std::unique_ptr<ToolchainConfigWidget> createConfigurationWidget() override;
 
-    bool operator ==(const ToolChain &) const override;
+    bool operator ==(const Toolchain &) const override;
 
-    void resetToolChain(const Utils::FilePath &);
+    void resetToolchain(const Utils::FilePath &);
     void setPlatformCodeGenFlags(const QStringList &);
     QStringList extraCodeModelFlags() const override;
     QStringList platformCodeGenFlags() const;
@@ -93,6 +79,11 @@ public:
         Abis supportedAbis;
         QString originalTargetTriple;
     };
+    GccToolchain *asGccToolchain() final { return this; }
+
+    bool matchesCompilerCommand(const Utils::FilePath &command) const override;
+
+    void setPriority(int priority) { m_priority = priority; }
 
 protected:
     using CacheItem = QPair<QStringList, Macros>;
@@ -111,7 +102,7 @@ protected:
     virtual QString detectVersion() const;
     virtual Utils::FilePath detectInstallDir() const;
 
-    // Reinterpret options for compiler drivers inheriting from GccToolChain (e.g qcc) to apply -Wp option
+    // Reinterpret options for compiler drivers inheriting from GccToolchain (e.g qcc) to apply -Wp option
     // that passes the initial options directly down to the gcc compiler
     using OptionsReinterpreter = std::function<QStringList(const QStringList &options)>;
     void setOptionsReinterpreter(const OptionsReinterpreter &optionsReinterpreter);
@@ -134,27 +125,13 @@ protected:
                                       const QStringList &args,
                                       const Utils::Environment &env);
 
-    class WarningFlagAdder
-    {
-    public:
-        WarningFlagAdder(const QString &flag, Utils::WarningFlags &flags);
-        void operator ()(const char name[], Utils::WarningFlags flagsSet);
+    int priority() const override { return m_priority; }
 
-        bool triggered() const;
-    private:
-        QByteArray m_flagUtf8;
-        Utils::WarningFlags &m_flags;
-        bool m_doesEnable = false;
-        bool m_triggered = false;
-    };
+    QString sysRoot() const override;
 
 private:
+    void syncAutodetectedWithParentToolchains();
     void updateSupportedAbis() const;
-    static QStringList gccPrepareArguments(const QStringList &flags,
-                                           const Utils::FilePath &sysRoot,
-                                           const QStringList &platformCodeGenFlags,
-                                           Utils::Id languageId,
-                                           OptionsReinterpreter reinterpretOptions);
 
 protected:
     QStringList m_platformCodeGenFlags;
@@ -164,160 +141,26 @@ protected:
     mutable ExtraHeaderPathsFunction m_extraHeaderPathsFunction = [](HeaderPaths &) {};
 
 private:
+    SubType m_subType = RealGcc;
     mutable Abis m_supportedAbis;
     mutable QString m_originalTargetTriple;
     mutable HeaderPaths m_headerPaths;
     mutable QString m_version;
     mutable Utils::FilePath m_installDir;
 
-    friend class Internal::GccToolChainConfigWidget;
-    friend class Internal::GccToolChainFactory;
-    friend class ToolChainFactory;
-};
+    friend class Internal::GccToolchainConfigWidget;
+    friend class Internal::GccToolchainFactory;
+    friend class ToolchainFactory;
 
-// --------------------------------------------------------------------------
-// ClangToolChain
-// --------------------------------------------------------------------------
-
-class PROJECTEXPLORER_EXPORT ClangToolChain : public GccToolChain
-{
-public:
-    ClangToolChain();
-    explicit ClangToolChain(Utils::Id typeId);
-    ~ClangToolChain() override;
-
-    bool matchesCompilerCommand(const Utils::FilePath &command) const override;
-
-    Utils::FilePath makeCommand(const Utils::Environment &environment) const override;
-
-    Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const override;
-    Utils::WarningFlags warningFlags(const QStringList &cflags) const override;
-
-    QList<Utils::OutputLineParser *> createOutputParsers() const override;
-
-    QStringList suggestedMkspecList() const override;
-    void addToEnvironment(Utils::Environment &env) const override;
-
-    QString originalTargetTriple() const override;
-    QString sysRoot() const override;
-
-    BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(
-            const Utils::Environment &env) const override;
-
-    std::unique_ptr<ToolChainConfigWidget> createConfigurationWidget() override;
-
-    QVariantMap toMap() const override;
-    bool fromMap(const QVariantMap &data) override;
-
-    void setPriority(int priority) { m_priority = priority; }
-    int priority() const override { return m_priority; }
-
-protected:
-    Utils::LanguageExtensions defaultLanguageExtensions() const override;
-    void syncAutodetectedWithParentToolchains();
-
-private:
     // "resolved" on macOS from /usr/bin/clang(++) etc to <DeveloperDir>/usr/bin/clang(++)
-    // which is used for comparison with matchesCompileCommand
+    // which is used for comparison with matchesCompilerCommand
     mutable std::optional<Utils::FilePath> m_resolvedCompilerCommand;
-    QByteArray m_parentToolChainId;
+    QByteArray m_parentToolchainId;
     int m_priority = PriorityNormal;
     QMetaObject::Connection m_mingwToolchainAddedConnection;
     QMetaObject::Connection m_thisToolchainRemovedConnection;
-
-    friend class Internal::ClangToolChainFactory;
-    friend class Internal::ClangToolChainConfigWidget;
-    friend class ToolChainFactory;
 };
 
-// --------------------------------------------------------------------------
-// MingwToolChain
-// --------------------------------------------------------------------------
+namespace Internal { void setupGccToolchains(); }
 
-class PROJECTEXPLORER_EXPORT MingwToolChain : public GccToolChain
-{
-public:
-    Utils::FilePath makeCommand(const Utils::Environment &environment) const override;
-
-    QStringList suggestedMkspecList() const override;
-
-private:
-    MingwToolChain();
-
-    friend class Internal::MingwToolChainFactory;
-    friend class ToolChainFactory;
-};
-
-// --------------------------------------------------------------------------
-// LinuxIccToolChain
-// --------------------------------------------------------------------------
-
-class PROJECTEXPLORER_EXPORT LinuxIccToolChain : public GccToolChain
-{
-public:
-    Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const override;
-    QList<Utils::OutputLineParser *> createOutputParsers() const override;
-
-    QStringList suggestedMkspecList() const override;
-
-private:
-    LinuxIccToolChain();
-
-    friend class Internal::LinuxIccToolChainFactory;
-    friend class ToolChainFactory;
-};
-
-// --------------------------------------------------------------------------
-// Factories
-// --------------------------------------------------------------------------
-
-namespace Internal {
-class GccToolChainFactory : public ToolChainFactory
-{
-public:
-    GccToolChainFactory();
-
-    Toolchains autoDetect(const ToolchainDetector &detector) const override;
-    Toolchains detectForImport(const ToolChainDescription &tcd) const override;
-
-protected:
-    enum class DetectVariants { Yes, No };
-    using ToolchainChecker = std::function<bool(const ToolChain *)>;
-    Toolchains autoDetectToolchains(
-            const QString &compilerName, DetectVariants detectVariants, const Utils::Id language,
-            const Utils::Id requiredTypeId, const ToolchainDetector &detector,
-            const ToolchainChecker &checker = {}) const;
-    Toolchains autoDetectToolChain(
-            const ToolChainDescription &tcd,
-            const ToolchainChecker &checker = {}) const;
-};
-
-class ClangToolChainFactory : public GccToolChainFactory
-{
-public:
-    ClangToolChainFactory();
-
-    Toolchains autoDetect(const ToolchainDetector &detector) const final;
-    Toolchains detectForImport(const ToolChainDescription &tcd) const final;
-};
-
-class MingwToolChainFactory : public GccToolChainFactory
-{
-public:
-    MingwToolChainFactory();
-
-    Toolchains autoDetect(const ToolchainDetector &detector) const final;
-    Toolchains detectForImport(const ToolChainDescription &tcd) const final;
-};
-
-class LinuxIccToolChainFactory : public GccToolChainFactory
-{
-public:
-    LinuxIccToolChainFactory();
-
-    Toolchains autoDetect(const ToolchainDetector &detector) const final;
-    Toolchains detectForImport(const ToolChainDescription &tcd) const final;
-};
-
-} // namespace Internal
 } // namespace ProjectExplorer

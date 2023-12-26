@@ -1,9 +1,11 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
+#include "webassemblytoolchain.h"
+
 #include "webassemblyconstants.h"
 #include "webassemblyemsdk.h"
-#include "webassemblytoolchain.h"
+#include "webassemblysettings.h"
 #include "webassemblytr.h"
 
 #include <projectexplorer/devicesupport/devicemanager.h>
@@ -12,7 +14,7 @@
 #include <projectexplorer/projectmacro.h>
 #include <projectexplorer/toolchainmanager.h>
 
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
@@ -24,8 +26,7 @@ using namespace ProjectExplorer;
 using namespace QtSupport;
 using namespace Utils;
 
-namespace WebAssembly {
-namespace Internal {
+namespace WebAssembly::Internal {
 
 static const Abi &toolChainAbi()
 {
@@ -40,7 +41,13 @@ static const Abi &toolChainAbi()
 
 static void addRegisteredMinGWToEnvironment(Environment &env)
 {
-    const ToolChain *toolChain = ToolChainManager::toolChain([](const ToolChain *t){
+    if (!ToolchainManager::isLoaded()) {
+        // Avoid querying the ToolchainManager before it is loaded, which is the case during
+        // toolchain restoration. The compiler version can be determined without MinGW in path.
+        return;
+    }
+
+    const Toolchain *toolChain = ToolchainManager::toolchain([](const Toolchain *t){
         return t->typeId() == ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID;
     });
     if (toolChain)
@@ -49,13 +56,14 @@ static void addRegisteredMinGWToEnvironment(Environment &env)
 
 void WebAssemblyToolChain::addToEnvironment(Environment &env) const
 {
-    WebAssemblyEmSdk::addToEnvironment(WebAssemblyEmSdk::registeredEmSdk(), env);
+    const FilePath emSdk = settings().emSdk();
+    WebAssemblyEmSdk::addToEnvironment(emSdk, env);
     if (env.osType() == OsTypeWindows)
-        addRegisteredMinGWToEnvironment(env);
+        addRegisteredMinGWToEnvironment(env); // qmake based builds require [mingw32-]make.exe
 }
 
 WebAssemblyToolChain::WebAssemblyToolChain() :
-    GccToolChain(Constants::WEBASSEMBLY_TOOLCHAIN_TYPEID)
+    GccToolchain(Constants::WEBASSEMBLY_TOOLCHAIN_TYPEID)
 {
     setSupportedAbis({toolChainAbi()});
     setTargetAbi(toolChainAbi());
@@ -80,7 +88,7 @@ FilePath WebAssemblyToolChain::makeCommand(const Environment &environment) const
 
 bool WebAssemblyToolChain::isValid() const
 {
-    return GccToolChain::isValid()
+    return GccToolchain::isValid()
             && QVersionNumber::fromString(version()) >= minimumSupportedEmSdkVersion();
 }
 
@@ -92,11 +100,12 @@ const QVersionNumber &WebAssemblyToolChain::minimumSupportedEmSdkVersion()
 
 static Toolchains doAutoDetect(const ToolchainDetector &detector)
 {
-    const FilePath sdk = WebAssemblyEmSdk::registeredEmSdk();
+    const FilePath sdk = settings().emSdk();
     if (!WebAssemblyEmSdk::isValid(sdk))
         return {};
 
-    if (detector.device->type() != ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
+    if (detector.device
+        && detector.device->type() != ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
         // Only detect toolchains from the emsdk installation device
         const FilePath deviceRoot = detector.device->rootPath();
         if (deviceRoot.host() != sdk.host())
@@ -111,7 +120,7 @@ static Toolchains doAutoDetect(const ToolchainDetector &detector)
                             ProjectExplorer::Constants::CXX_LANGUAGE_ID}) {
         auto toolChain = new WebAssemblyToolChain;
         toolChain->setLanguage(languageId);
-        toolChain->setDetection(ToolChain::AutoDetection);
+        toolChain->setDetection(Toolchain::AutoDetection);
         const bool cLanguage = languageId == ProjectExplorer::Constants::C_LANGUAGE_ID;
         const QString script = QLatin1String(cLanguage ? "emcc" : "em++")
                 + QLatin1String(sdk.osType() == OsTypeWindows ? ".bat" : "");
@@ -130,17 +139,17 @@ static Toolchains doAutoDetect(const ToolchainDetector &detector)
 void WebAssemblyToolChain::registerToolChains()
 {
     // Remove old toolchains
-    for (ToolChain *tc : ToolChainManager::findToolChains(toolChainAbi())) {
-         if (tc->detection() != ToolChain::AutoDetection)
+    for (Toolchain *tc : ToolchainManager::findToolchains(toolChainAbi())) {
+         if (tc->detection() != Toolchain::AutoDetection)
              continue;
-         ToolChainManager::deregisterToolChain(tc);
+         ToolchainManager::deregisterToolchain(tc);
     };
 
     // Create new toolchains and register them
     ToolchainDetector detector({}, {}, {});
     const Toolchains toolchains = doAutoDetect(detector);
     for (auto toolChain : toolchains)
-        ToolChainManager::registerToolChain(toolChain);
+        ToolchainManager::registerToolchain(toolChain);
 
     // Let kits pick up the new toolchains
     for (Kit *kit : KitManager::kits()) {
@@ -155,23 +164,31 @@ void WebAssemblyToolChain::registerToolChains()
 
 bool WebAssemblyToolChain::areToolChainsRegistered()
 {
-    return !ToolChainManager::findToolChains(toolChainAbi()).isEmpty();
+    return !ToolchainManager::findToolchains(toolChainAbi()).isEmpty();
 }
 
-WebAssemblyToolChainFactory::WebAssemblyToolChainFactory()
+class WebAssemblyToolchainFactory final : public ToolchainFactory
 {
-    setDisplayName(Tr::tr("Emscripten"));
-    setSupportedToolChainType(Constants::WEBASSEMBLY_TOOLCHAIN_TYPEID);
-    setSupportedLanguages({ProjectExplorer::Constants::C_LANGUAGE_ID,
-                           ProjectExplorer::Constants::CXX_LANGUAGE_ID});
-    setToolchainConstructor([] { return new WebAssemblyToolChain; });
-    setUserCreatable(true);
-}
+public:
+    WebAssemblyToolchainFactory()
+    {
+        setDisplayName(Tr::tr("Emscripten"));
+        setSupportedToolchainType(Constants::WEBASSEMBLY_TOOLCHAIN_TYPEID);
+        setSupportedLanguages({ProjectExplorer::Constants::C_LANGUAGE_ID,
+                               ProjectExplorer::Constants::CXX_LANGUAGE_ID});
+        setToolchainConstructor([] { return new WebAssemblyToolChain; });
+        setUserCreatable(true);
+    }
 
-Toolchains WebAssemblyToolChainFactory::autoDetect(const ToolchainDetector &detector) const
+    Toolchains autoDetect(const ToolchainDetector &detector) const
+    {
+        return doAutoDetect(detector);
+    }
+};
+
+void setupWebAssemblyToolchain()
 {
-    return doAutoDetect(detector);
+    static WebAssemblyToolchainFactory theWebAssemblyToolchainFactory;
 }
 
-} // namespace Internal
-} // namespace WebAssembly
+} // WebAssembly::Internal

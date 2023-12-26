@@ -18,31 +18,26 @@ class ProjectStorage;
 template<typename ProjectStorage, typename Mutex>
 class SourcePathCache;
 
-class QmlTypesParser : public QmlTypesParserInterface
+class QmlTypesParser final : public QmlTypesParserInterface
 {
 public:
     using ProjectStorage = QmlDesigner::ProjectStorage<Sqlite::Database>;
-    using PathCache = QmlDesigner::SourcePathCache<ProjectStorage, NonLockingMutex>;
 
-#ifdef QDS_HAS_QMLDOM
-    QmlTypesParser(PathCache &pathCache, ProjectStorage &storage)
-        : m_pathCache{pathCache}
-        , m_storage{storage}
+#ifdef QDS_BUILD_QMLPARSER
+    QmlTypesParser(ProjectStorage &storage)
+        : m_storage{storage}
     {}
 #else
-    QmlTypesParser(PathCache &, ProjectStorage &)
-    {}
+    QmlTypesParser(ProjectStorage &) {}
 #endif
 
     void parse(const QString &sourceContent,
-               Storage::Synchronization::Imports &imports,
+               Storage::Imports &imports,
                Storage::Synchronization::Types &types,
                const Storage::Synchronization::ProjectData &projectData) override;
 
 private:
-    // m_pathCache and m_storage are only used when compiled for QDS
-#ifdef QDS_HAS_QMLDOM
-    PathCache &m_pathCache;
+#ifdef QDS_BUILD_QMLPARSER
     ProjectStorage &m_storage;
 #endif
 };

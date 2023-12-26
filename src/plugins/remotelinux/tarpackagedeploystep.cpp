@@ -12,12 +12,12 @@
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
+#include <utils/process.h>
 #include <utils/processinterface.h>
-#include <utils/qtcprocess.h>
 
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace RemoteLinux::Internal {
 
@@ -31,7 +31,7 @@ public:
     {
         setWidgetExpandedByDefault(false);
 
-        setInternalInitializer([this] {
+        setInternalInitializer([this]() -> expected_str<void> {
             const BuildStep *tarCreationStep = nullptr;
 
             for (BuildStep *step : deployConfiguration()->stepList()->steps()) {
@@ -43,7 +43,7 @@ public:
                 }
             }
             if (!tarCreationStep)
-                return CheckResult::failure(Tr::tr("No tarball creation step found."));
+                return make_unexpected(Tr::tr("No tarball creation step found."));
 
             m_packageFilePath =
                 FilePath::fromVariant(tarCreationStep->data(Constants::TarPackageFilePathId));
@@ -53,10 +53,9 @@ public:
 
 private:
     QString remoteFilePath() const;
-    bool isDeploymentNecessary() const final;
-    Group deployRecipe() final;
-    TaskItem uploadTask();
-    TaskItem installTask();
+    GroupItem deployRecipe() final;
+    GroupItem uploadTask();
+    GroupItem installTask();
 
     FilePath m_packageFilePath;
 };
@@ -66,69 +65,79 @@ QString TarPackageDeployStep::remoteFilePath() const
     return QLatin1String("/tmp/") + m_packageFilePath.fileName();
 }
 
-bool TarPackageDeployStep::isDeploymentNecessary() const
+GroupItem TarPackageDeployStep::uploadTask()
 {
-    return hasLocalFileChanged(DeployableFile(m_packageFilePath, {}));
-}
-
-TaskItem TarPackageDeployStep::uploadTask()
-{
-    const auto setupHandler = [this](FileTransfer &transfer) {
+    const auto onSetup = [this](FileTransfer &transfer) {
         const FilesToTransfer files {{m_packageFilePath,
                         deviceConfiguration()->filePath(remoteFilePath())}};
         transfer.setFilesToTransfer(files);
         connect(&transfer, &FileTransfer::progress, this, &TarPackageDeployStep::addProgressMessage);
         addProgressMessage(Tr::tr("Uploading package to device..."));
     };
-    const auto doneHandler = [this](const FileTransfer &) {
-        addProgressMessage(Tr::tr("Successfully uploaded package file."));
+    const auto onDone = [this](const FileTransfer &transfer, DoneWith result) {
+        if (result == DoneWith::Success)
+            addProgressMessage(Tr::tr("Successfully uploaded package file."));
+        else
+            addErrorMessage(transfer.resultData().m_errorString);
     };
-    const auto errorHandler = [this](const FileTransfer &transfer) {
-        const ProcessResultData result = transfer.resultData();
-        addErrorMessage(result.m_errorString);
-    };
-    return Transfer(setupHandler, doneHandler, errorHandler);
+    return FileTransferTask(onSetup, onDone);
 }
 
-TaskItem TarPackageDeployStep::installTask()
+GroupItem TarPackageDeployStep::installTask()
 {
-    const auto setupHandler = [this](QtcProcess &process) {
+    const auto onSetup = [this](Process &process) {
         const QString cmdLine = QLatin1String("cd / && tar xvf ") + remoteFilePath()
                 + " && (rm " + remoteFilePath() + " || :)";
         process.setCommand({deviceConfiguration()->filePath("/bin/sh"), {"-c", cmdLine}});
-        QtcProcess *proc = &process;
-        connect(proc, &QtcProcess::readyReadStandardOutput, this, [this, proc] {
+        Process *proc = &process;
+        connect(proc, &Process::readyReadStandardOutput, this, [this, proc] {
             handleStdOutData(proc->readAllStandardOutput());
         });
-        connect(proc, &QtcProcess::readyReadStandardError, this, [this, proc] {
+        connect(proc, &Process::readyReadStandardError, this, [this, proc] {
             handleStdErrData(proc->readAllStandardError());
         });
         addProgressMessage(Tr::tr("Installing package to device..."));
     };
-    const auto doneHandler = [this](const QtcProcess &) {
-        saveDeploymentTimeStamp(DeployableFile(m_packageFilePath, {}), {});
-        addProgressMessage(Tr::tr("Successfully installed package file."));
-    };
-    const auto errorHandler = [this](const QtcProcess &process) {
+    const auto onDone = [this](const Process &process, DoneWith result) {
+        if (result == DoneWith::Success) {
+            saveDeploymentTimeStamp(DeployableFile(m_packageFilePath, {}), {});
+            addProgressMessage(Tr::tr("Successfully installed package file."));
+            return;
+        }
         addErrorMessage(Tr::tr("Installing package failed.") + process.errorString());
     };
-    return Process(setupHandler, doneHandler, errorHandler);
+    return ProcessTask(onSetup, onDone);
 }
 
-Group TarPackageDeployStep::deployRecipe()
+GroupItem TarPackageDeployStep::deployRecipe()
 {
-    return Group { uploadTask(), installTask() };
+    const auto onSetup = [this] {
+        if (hasLocalFileChanged(DeployableFile(m_packageFilePath, {})))
+            return SetupResult::Continue;
+        addSkipDeploymentMessage();
+        return SetupResult::StopWithSuccess;
+    };
+    return Group { onGroupSetup(onSetup), uploadTask(), installTask() };
 }
 
 
 // TarPackageDeployStepFactory
 
-TarPackageDeployStepFactory::TarPackageDeployStepFactory()
+class TarPackageDeployStepFactory final : public BuildStepFactory
 {
-    registerStep<TarPackageDeployStep>(Constants::TarPackageDeployStepId);
-    setDisplayName(Tr::tr("Deploy tarball via SFTP upload"));
-    setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
-    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+public:
+    TarPackageDeployStepFactory()
+    {
+        registerStep<TarPackageDeployStep>(Constants::TarPackageDeployStepId);
+        setDisplayName(Tr::tr("Deploy tarball via SFTP upload"));
+        setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+    }
+};
+
+void setupTarPackageDeployStep()
+{
+    static TarPackageDeployStepFactory theTarPackageDeployStepFactory;
 }
 
 } // RemoteLinux::Internal

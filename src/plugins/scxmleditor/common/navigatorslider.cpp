@@ -29,17 +29,19 @@ NavigatorSlider::NavigatorSlider(QWidget *parent)
         btn->setAutoRepeatInterval(10);
     }
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
     Row {
+        spacing(0),
         zoomOut,
         m_slider,
         zoomIn,
         Space(20),
-    }.setSpacing(0).attachTo(this, WithoutMargins);
+        noMargin,
+    }.attachTo(this);
 
     connect(zoomOut, &QToolButton::clicked, this, &NavigatorSlider::zoomOut);
     connect(zoomIn, &QToolButton::clicked, this, &NavigatorSlider::zoomIn);
-    connect(m_slider, &QSlider::valueChanged, this, [=](int newValue){
+    connect(m_slider, &QSlider::valueChanged, this, [this](int newValue) {
         emit valueChanged(newValue);
     });
 }

@@ -229,7 +229,7 @@ void McuSupportOptionsWidget::updateStatus()
                                      : Tr::tr("A kit for the selected target can be created."));
         } else {
             m_kitCreationInfoLabel->setType(Utils::InfoLabel::NotOk);
-            m_kitCreationInfoLabel->setText(Tr::tr("Provide the package paths in order to create a kit "
+            m_kitCreationInfoLabel->setText(Tr::tr("Provide the package paths to create a kit "
                                             "for your target."));
         }
     }
@@ -243,7 +243,7 @@ void McuSupportOptionsWidget::updateStatus()
         if (m_statusInfoLabel->isVisible()) {
             m_statusInfoLabel->setType(Utils::InfoLabel::NotOk);
             m_statusInfoLabel->setText(Tr::tr("No CMake tool was detected. Add a CMake tool in the "
-                                       "<a href=\"cmake\">CMake options</a> and press Apply."));
+                                       "<a href=\"cmake\">CMake options</a> and select Apply."));
         }
     }
 }
@@ -316,6 +316,9 @@ void McuSupportOptionsWidget::apply()
     m_settingsHandler->setAutomaticKitCreation(m_options.automaticKitCreationEnabled());
     m_options.sdkRepository.expandVariablesAndWildcards();
 
+    if (m_mcuTargetsComboBox->count() == 0)
+        return;
+
     QMessageBox warningPopup(QMessageBox::Icon::Warning,
                              Tr::tr("Warning"),
                              Tr::tr("Unable to apply changes in Devices > MCU."),
@@ -350,10 +353,17 @@ void McuSupportOptionsWidget::populateMcuTargetsComboBox()
 {
     m_options.populatePackagesAndTargets();
     m_mcuTargetsComboBox->clear();
+    int initialPlatformIndex = 0;
+    int targetsCounter = -1;
     m_mcuTargetsComboBox->addItems(
-        Utils::transform<QStringList>(m_options.sdkRepository.mcuTargets, [](const McuTargetPtr &t) {
+        Utils::transform<QStringList>(m_options.sdkRepository.mcuTargets, [&](const McuTargetPtr &t) {
+            if (t->platform().name == m_settingsHandler->initialPlatformName())
+                initialPlatformIndex = m_options.sdkRepository.mcuTargets.indexOf(t);
+            targetsCounter++;
             return McuKitManager::generateKitNameFromTarget(t.get());
         }));
+    if (targetsCounter != -1)
+        m_mcuTargetsComboBox->setCurrentIndex(initialPlatformIndex);
     updateStatus();
 }
 

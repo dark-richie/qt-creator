@@ -8,8 +8,11 @@
 #include <QString>
 #include <QList>
 
+#include <optional>
+
 QT_BEGIN_NAMESPACE
 class QTextCursor;
+class QTextDocument;
 QT_END_NAMESPACE
 
 namespace Utils {
@@ -20,7 +23,6 @@ public:
     struct EditOp {
         enum Type
         {
-            Unset,
             Replace,
             Move,
             Insert,
@@ -29,15 +31,28 @@ public:
             Copy
         };
 
-        EditOp() = default;
-        EditOp(Type t): type(t) {}
+        EditOp(Type t, const QString &text = {});
 
-        Type type = Unset;
+        Type type() const { return m_type; }
+        QString text() const { return m_text; }
+
+        bool hasFormat1() const { return m_format1.has_value(); }
+        bool format1() const { return hasFormat1() && *m_format1; }
+        void setFormat1(bool f) { m_format1 = f; }
+        bool hasFormat2() const { return m_format2.has_value(); }
+        bool format2() const { return hasFormat2() && *m_format2; }
+        void setFormat2(bool f) { m_format2 = f; }
+
         int pos1 = 0;
         int pos2 = 0;
         int length1 = 0;
         int length2 = 0;
-        QString text;
+
+    private:
+        Type m_type;
+        QString m_text;
+        std::optional<bool> m_format1;
+        std::optional<bool> m_format2;
     };
 
     struct Range {
@@ -57,6 +72,7 @@ public:
     bool isEmpty() const;
 
     QList<EditOp> operationList() const;
+    QList<EditOp> &operationList();
 
     void clear();
 
@@ -76,6 +92,7 @@ public:
 
     void apply(QString *s);
     void apply(QTextCursor *textCursor);
+    void apply(QTextDocument *document);
 
 private:
     // length-based API.
@@ -100,6 +117,8 @@ private:
     QList<EditOp> m_operationList;
     bool m_error;
 };
+
+using EditOperations = QList<ChangeSet::EditOp>;
 
 inline bool operator<(const ChangeSet::Range &r1, const ChangeSet::Range &r2)
 {

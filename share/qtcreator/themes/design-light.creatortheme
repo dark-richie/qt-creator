@@ -40,6 +40,7 @@ graniteGrey=ff343434
 ashGrey=ff434343
 midnightGrey=ff333333
 dawnGrey=ff2a2a2a
+coalGrey=ff282828
 offBlack=ff202020
 nearBlack=ff1b1b1b
 fullBlack=ff000000
@@ -61,7 +62,8 @@ highlightHover=ff74CBFC
 [Colors]
 ;DS controls theme START
 
-;NEW FOR QtDS 4.0
+;NEW FOR QtDS 4
+;4.0
 DScontrolBackground_toolbarIdle=offWhite
 DScontrolBackground_toolbarHover=offWhite
 DScontrolBackground_topToolbarHover=concreteGrey
@@ -81,7 +83,47 @@ DSstateBackgroundColor_hover=concreteGrey
 DSstateControlBackgroundColor_globalHover=concreteGrey
 DSstateControlBackgroundColor_hover=smokeGrey
 DSpanelBackground=dawnGrey
-;END NEW FOR QtDS 4.0
+
+;4.3
+DSpopoutBackground=offWhite
+DSpopoutControlBackground_idle=offWhite
+DSpopoutControlBackground_hover=lightWhite
+DSpopoutControlBackground_globalHover=lightWhite
+DSpopoutControlBackground_interaction=highlightBlue
+DSpopoutControlBackground_disabled=offWhite
+DSpopoutPopupBackground=lightWhite
+
+DSpopoutControlBorder_idle=slateGrey
+DSpopoutControlBorder_hover=concreteGrey
+DSpopoutControlBorder_interaction=highlightBlue
+DSpopoutControlBorder_disabled=offWhite
+
+DSpopoutButtonBackground_idle=offWhite
+DSpopoutButtonBackground_hover=lightWhite
+DSpopoutButtonBackground_interaction=highlightBlue
+DSpopoutButtonBackground_disabled=offWhite
+
+DSpopoutButtonBorder_idle=smokeGrey
+DSpopoutButtonBorder_hover=shadowGrey
+DSpopoutButtonBorder_interaction=highlightBlue
+DSpopoutButtonBorder_disabled=offWhite
+
+;4.4
+DSconnectionCodeEditor=lightWhite
+DSconnectionEditorMicroToolbar=concreteGrey
+DSconnectionEditorButtonBackground_hover=lightWhite
+DSconnectionEditorButtonBorder_hover=duskGrey
+DSpillText=fullWhite
+DSpillTextSelected=fullBlack
+DspillTextEdit=fullBlack
+DSpillDefaultBackgroundIdle=shadowGrey
+DSpillDefaultBackgroundHover=smokeGrey
+DSpillOperatorBackgroundIdle=ff6b2a7b
+DSpillOperatorBackgroundHover=ff7e478b
+DSpillLiteralBackgroundIdle=ff447953
+DSpillLiteralBackgroundHover=ff61866B
+
+;END NEW FOR QtDS 4
 
 DSpanelBackground=ffeaeaea
 
@@ -143,8 +185,9 @@ DSsliderHandleHover=ff606060
 DSsliderHandleFocus=ff0492c9
 DSsliderHandleInteraction=ff2aafd3
 
-DSscrollBarTrack=ffb5b4b4
-DSscrollBarHandle=ff9b9b9b
+DSscrollBarTrack=smokeGrey
+DSscrollBarHandle=shadowGrey
+DSscrollBarHandle_idle=slateGrey
 
 DSsectionHeadBackground=ffd8d8d8
 
@@ -172,9 +215,8 @@ DStableHeaderText=ff00ff00
 
 DSdockContainerBackground=ff323232
 DSdockContainerSplitter=ff323232
-DSdockAreaBackground=ff262728
-
-DSdockWidgetBackground=ff00ff00
+DSdockAreaBackground=ffeaeaea
+DSdockWidgetBackground=ffeaeaea
 DSdockWidgetSplitter=ff595959
 DSdockWidgetTitleBar=ffeaeaea
 
@@ -368,6 +410,27 @@ Debugger_WatchItem_ValueChanged=ffbf0303
 
 Debugger_Breakpoint_TextMarkColor=ffff4040
 
+; Qt Creator Color Tokens - light mode
+Token_Basic_Black=ff131313
+Token_Basic_White=fff2f2f2
+Token_Accent_Default=ff28c878
+Token_Accent_Muted=ff23b26a
+Token_Accent_Subtle=ff1f9b5d
+Token_Background_Default=fff4f4f4
+Token_Background_Muted=ffe7e7e7
+Token_Background_Hover=ffdddddd
+Token_Background_Subtle=ffcfcfcf
+Token_Text_Default=ff393939
+Token_Text_Muted=ff787878
+Token_Text_Subtle=ffb2b2b2
+Token_Stroke_Strong=ff464646
+Token_Stroke_Muted=ff838383
+Token_Stroke_Subtle=ffd7d7d7
+Token_Notification_Alert=ffeb991f
+Token_Notification_Success=ff23b26a
+Token_Notification_Neutral=ff0e7887
+Token_Notification_Danger=ffdc1343
+
 Welcome_TextColor=ff000000
 Welcome_ForegroundPrimaryColor=ff404040
 Welcome_ForegroundSecondaryColor=ff727272
@@ -398,6 +461,7 @@ VcsBase_FileUnmerged_TextColor=ffee0000
 Bookmarks_TextMarkColor=ffa0a0ff
 
 TextEditor_SearchResult_ScrollBarColor=ff00c000
+TextEditor_Selection_ScrollBarColor=ffcccccc
 TextEditor_CurrentLine_ScrollBarColor=ff404040
 
 ProjectExplorer_TaskError_TextMarkColor=error

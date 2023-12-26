@@ -3,13 +3,8 @@
 
 #pragma once
 
-#include <QtGlobal>
+#include "nanotraceglobals.h"
 
-#if defined(NANOTRACE_LIBRARY)
-#  define NANOTRACESHARED_EXPORT Q_DECL_EXPORT
-#else
-#  define NANOTRACESHARED_EXPORT Q_DECL_IMPORT
-#endif
 
 #include <chrono>
 #include <string>
@@ -50,7 +45,7 @@
 namespace Nanotrace
 {
 
-using Units = std::chrono::nanoseconds;
+using Units = std::chrono::microseconds;
 using Clock = std::chrono::high_resolution_clock;
 using TimePoint = std::chrono::time_point< Clock >;
 

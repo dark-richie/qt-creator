@@ -66,27 +66,32 @@ public:
     void switchToTextModeDeferred();
     void emitCurrentTextEditorChanged(Core::IEditor *editor);
 
-    void emitAssetChanged(const QString &assetPath);
-
     static double formEditorDevicePixelRatio();
 
     static void contextHelp(const Core::IContext::HelpCallback &callback, const QString &id);
 
     static void emitUsageStatistics(const QString &identifier);
     static void emitUsageStatisticsContextAction(const QString &identifier);
-    static void emitUsageStatisticsHelpRequested(const QString &identifier);
     static void emitUsageStatisticsTime(const QString &identifier, int elapsed);
+    static void emitUsageStatisticsUsageDuration(const QString &identifier, int elapsed);
 
     static AsynchronousImageCache &imageCache();
 
     static void registerPreviewImageProvider(QQmlEngine *engine);
 
     static void trackWidgetFocusTime(QWidget *widget, const QString &identifier);
+    static void registerCombinedTracedPoints(const QString &identifierFirst,
+                                             const QString &identifierSecond,
+                                             const QString &newIdentifier,
+                                             int maxDuration = 10000);
 
 signals:
     void usageStatisticsNotifier(const QString &identifier);
     void usageStatisticsUsageTimer(const QString &identifier, int elapsed);
-    void usageStatisticsInsertFeedback(const QString &identifier, const QString &feedback, int rating);
+    void usageStatisticsUsageDuration(const QString &identifier, int elapsed);
+    void usageStatisticsInsertFeedback(const QString &identifier,
+                                       const QString &feedback,
+                                       int rating);
     void assetChanged(const QString &assetPath);
 
 private slots:
@@ -95,7 +100,11 @@ private slots:
     void handleFeedback(const QString &feedback, int rating);
 
 private: // functions
+    void lauchFeedbackPopupInternal(const QString &identifier);
     void integrateIntoQtCreator(QWidget *modeWidget);
+    void clearDesigner();
+    void resetDesignerDocument();
+    void setupDesigner();
     void showDesigner();
     void hideDesigner();
     void changeEditor();
@@ -109,12 +118,14 @@ private: // functions
     RewriterView *rewriterView() const;
     Model *currentModel() const;
     QQuickWidget *m_feedbackWidget = nullptr;
+    static QmlDesignerPluginPrivate *privateInstance();
+    void enforceDelayedInitialize();
 
 private: // variables
     QmlDesignerPluginPrivate *d = nullptr;
     static QmlDesignerPlugin *m_instance;
     QElapsedTimer m_usageTimer;
-    StudioConfigSettingsPage m_settingsPage;
+    bool m_delayedInitialized = false;
 };
 
 } // namespace QmlDesigner

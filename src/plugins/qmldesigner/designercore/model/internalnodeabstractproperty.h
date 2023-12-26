@@ -14,13 +14,8 @@ class InternalNodeAbstractProperty : public InternalProperty
     friend InternalNode;
 
 public:
-    using Pointer = QSharedPointer<InternalNodeAbstractProperty>;
-    using WeakPointer = QWeakPointer<InternalNodeAbstractProperty>;
-
-    bool isNodeAbstractProperty() const override;
-
-    virtual QList<InternalNodePointer> allSubNodes() const = 0;
-    virtual QList<InternalNodePointer> directSubNodes() const = 0;
+    using Pointer = std::shared_ptr<InternalNodeAbstractProperty>;
+    using WeakPointer = std::weak_ptr<InternalNodeAbstractProperty>;
 
     virtual bool isEmpty() const = 0;
     virtual int count() const = 0;
@@ -28,10 +23,10 @@ public:
 
     bool isValid() const override;
 
-    using InternalProperty::remove; // keep the virtual remove(...) function around
-
 protected:
-    InternalNodeAbstractProperty(const PropertyName &name, const InternalNodePointer &propertyOwner);
+    InternalNodeAbstractProperty(const PropertyName &name,
+                                 const InternalNodePointer &propertyOwner,
+                                 PropertyType propertyType);
     virtual void remove(const InternalNodePointer &node) = 0;
     virtual void add(const InternalNodePointer &node) = 0;
 };

@@ -5,7 +5,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/temporaryfile.h>
 
 #include <QDebug>
@@ -98,7 +98,7 @@ EnvironmentItems QnxUtils::qnxEnvironmentFromEnvFile(const FilePath &filePath)
     tmpFile->writeFileContents(content.toUtf8());
 
     // running wrapper script
-    QtcProcess process;
+    Process process;
     if (isWindows)
         process.setCommand({filePath.withNewPath("cmd.exe"), {"/C", tmpFile->path()}});
     else

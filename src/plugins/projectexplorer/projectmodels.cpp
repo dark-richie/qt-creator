@@ -10,14 +10,12 @@
 #include "projectexplorertr.h"
 #include "projectmanager.h"
 #include "projecttree.h"
-#include "session.h"
 #include "target.h"
-
-#include <app/app_version.h>
 
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/iversioncontrol.h>
+#include <coreplugin/session.h>
 #include <coreplugin/vcsmanager.h>
 
 #include <utils/utilsicons.h>
@@ -25,8 +23,8 @@
 #include <utils/dropsupport.h>
 #include <utils/fsengine/fileiconprovider.h>
 #include <utils/pathchooser.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 #include <utils/theme/theme.h>
 
@@ -35,11 +33,12 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFont>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLoggingCategory>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QLoggingCategory>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QVBoxLayout>
@@ -191,9 +190,10 @@ QVariant FlatModel::data(const QModelIndex &index, int role) const
 {
     const Node * const node = nodeForIndex(index);
     if (!node)
-        return QVariant();
+        return {};
 
     const FolderNode * const folderNode = node->asFolderNode();
+    const FileNode * const fileNode = node->asFileNode();
     const ContainerNode * const containerNode = node->asContainerNode();
     const Project * const project = containerNode ? containerNode->project() : nullptr;
     const Target * const target = project ? project->activeTarget() : nullptr;
@@ -247,9 +247,10 @@ QVariant FlatModel::data(const QModelIndex &index, int role) const
         return node->filePath().toString();
     case Project::isParsingRole:
         return project && bs ? bs->isParsing() && !project->needsConfiguration() : false;
+    case Project::UseUnavailableMarkerRole:
+        return fileNode ? fileNode->useUnavailableMarker() : false;
     }
-
-    return QVariant();
+    return {};
 }
 
 Qt::ItemFlags FlatModel::flags(const QModelIndex &index) const
@@ -374,20 +375,15 @@ void FlatModel::addOrRebuildProjectModel(Project *project)
 
     container->forAllChildren([this](WrapperNode *node) {
         if (node->m_node) {
-            const QString path = node->m_node->filePath().toString();
-            const QString displayName = node->m_node->displayName();
-            ExpandData ed(path, displayName);
-            if (m_toExpand.contains(ed))
+            if (m_toExpand.contains(expandDataForNode(node->m_node)))
                 emit requestExpansion(node->index());
         } else {
             emit requestExpansion(node->index());
         }
     });
 
-    const QString path = container->m_node->filePath().toString();
-    const QString displayName = container->m_node->displayName();
-    ExpandData ed(path, displayName);
-    if (m_toExpand.contains(ed))
+
+    if (m_toExpand.contains(expandDataForNode(container->m_node)))
         emit requestExpansion(container->index());
 }
 
@@ -426,10 +422,8 @@ void FlatModel::onExpanded(const QModelIndex &idx)
 
 ExpandData FlatModel::expandDataForNode(const Node *node) const
 {
-    QTC_ASSERT(node, return ExpandData());
-    const QString path = node->filePath().toString();
-    const QString displayName = node->displayName();
-    return ExpandData(path, displayName);
+    QTC_ASSERT(node, return {});
+    return {node->filePath().toString(), node->priority()};
 }
 
 void FlatModel::handleProjectAdded(Project *project)
@@ -476,7 +470,7 @@ void FlatModel::saveExpandData()
 {
     // TODO if there are multiple ProjectTreeWidgets, the last one saves the data
     QList<QVariant> data = Utils::transform<QList>(m_toExpand, &ExpandData::toSettings);
-    SessionManager::setValue(QLatin1String("ProjectTree.ExpandData"), data);
+    SessionManager::setValue("ProjectTree.ExpandData", data);
 }
 
 void FlatModel::addFolderNode(WrapperNode *parent, FolderNode *folderNode, QSet<Node *> *seen)
@@ -499,8 +493,7 @@ void FlatModel::addFolderNode(WrapperNode *parent, FolderNode *folderNode, QSet<
                     }
                 }
             }
-            if (!isHidden && !seen->contains(subFolderNode)) {
-                seen->insert(subFolderNode);
+            if (!isHidden && Utils::insert(*seen, subFolderNode)) {
                 auto node = new WrapperNode(subFolderNode);
                 parent->appendChild(node);
                 addFolderNode(node, subFolderNode, seen);
@@ -509,10 +502,8 @@ void FlatModel::addFolderNode(WrapperNode *parent, FolderNode *folderNode, QSet<
                 addFolderNode(parent, subFolderNode, seen);
             }
         } else if (FileNode *fileNode = node->asFileNode()) {
-            if (!seen->contains(fileNode)) {
-                seen->insert(fileNode);
+            if (Utils::insert(*seen, fileNode))
                 parent->appendChild(new WrapperNode(fileNode));
-            }
         }
     }
 
@@ -581,7 +572,7 @@ public:
         setWindowTitle(Tr::tr("Choose Drop Action"));
         const bool offerFileIo = !defaultTargetDir.isEmpty();
         auto * const layout = new QVBoxLayout(this);
-        const QString idename(Core::Constants::IDE_DISPLAY_NAME);
+        const QString idename(QGuiApplication::applicationDisplayName());
         layout->addWidget(new QLabel(Tr::tr("You just dragged some files from one project node to "
                                         "another.\nWhat should %1 do now?").arg(idename), this));
         auto * const copyButton = new QRadioButton(this);
@@ -935,4 +926,3 @@ const QLoggingCategory &FlatModel::logger()
 
 } // namespace Internal
 } // namespace ProjectExplorer
-

@@ -7,6 +7,7 @@
 #include <qmldesignerplugin.h>
 
 #include <bindingproperty.h>
+#include <model/modelutils.h>
 #include <nodeabstractproperty.h>
 #include <nodelistproperty.h>
 #include <nodemetainfo.h>
@@ -65,7 +66,7 @@ void DebugView::modelAboutToBeDetached(Model *model)
     AbstractView::modelAboutToBeDetached(model);
 }
 
-void DebugView::importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports)
+void DebugView::importsChanged(const Imports &addedImports, const Imports &removedImports)
 {
     if (isDebugViewEnabled()) {
         QString message;
@@ -93,9 +94,9 @@ void DebugView::nodeCreated(const ModelNode &createdNode)
         message << createdNode.majorVersion() << "." << createdNode.minorVersion();
         message << createdNode.nodeSource();
         message << "MetaInfo " << createdNode.metaInfo().isValid() << " ";
-        if (createdNode.metaInfo().isValid()) {
-            message << createdNode.metaInfo().majorVersion() << "." << createdNode.metaInfo().minorVersion();
-            message << createdNode.metaInfo().componentFileName();
+        if (auto metaInfo = createdNode.metaInfo()) {
+            message << metaInfo.majorVersion() << "." << metaInfo.minorVersion();
+            message << ModelUtils::componentFilePath(createdNode);
         }
         log("::nodeCreated:", message.readAll());
     }
@@ -282,9 +283,10 @@ void DebugView::selectedNodesChanged(const QList<ModelNode> &selectedNodes /*sel
         message << lineBreak;
 
         if (selectedNode.metaInfo().isValid()) {
-            for (const NodeMetaInfo &metaInfo : selectedNode.metaInfo().classHierarchy())
+            for (const NodeMetaInfo &metaInfo : selectedNode.metaInfo().selfAndPrototypes()) {
                 message << metaInfo.typeName() << " " << metaInfo.majorVersion() << "."
                         << metaInfo.minorVersion() << lineBreak;
+            }
 
             message << lineBreak;
             message << selectedNode.metaInfo().typeName();

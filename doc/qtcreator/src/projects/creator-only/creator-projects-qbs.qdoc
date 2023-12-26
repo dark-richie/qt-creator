@@ -1,12 +1,18 @@
-// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*!
-    \previouspage creator-project-cmake.html
     \page creator-project-qbs.html
-    \nextpage creator-projects-autotools.html
+    \previouspage creator-reference.html
 
-    \title Setting Up Qbs
+    \ingroup creator-reference-build-systems
+
+    \target qbs-build-system
+    \title Qbs
+
+    \brief \l{Qbs Manual}{Qbs} is an all-in-one build tool that generates a build
+    graph from a high-level project description (like qmake or CMake do) and
+    executes the commands in the low-level build graph (like make does).
 
     To use Qbs to build a project, you must create a .qbs file for the project.
     You can use \QC to create a C or C++ project that is built with Qbs.
@@ -17,8 +23,8 @@
     with the build and run kit. \QC automatically creates a Qbs profile for each
     kit. You can edit the build profiles by adding new keys and values.
 
-    To check which Qbs version is being used, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol Qbs > \uicontrol General.
+    To check which Qbs version is being used, select \preferences >
+    \uicontrol Qbs > \uicontrol General.
 
     \section1 Building Qbs
 
@@ -34,7 +40,21 @@
 
     \endlist
 
-    \section1 Specifying Qbs Settings
+    \sa {Select the build system}, {Open projects},
+    {qbs-preferences}{Preferences: Qbs}, {Qbs Build Configuration},
+    {Specifying Run Settings}
+*/
+
+/*!
+    \page creator-preferences-qbs.html
+    \previouspage creator-reference.html
+
+    \ingroup creator-reference-preferences
+
+    \target qbs-preferences
+    \title Qbs
+
+    \brief Set preferences for Qbs and Qbs profiles.
 
     By default, Qbs profiles are stored in the \c qbs directory in the \QC
     settings directory to ensure that different \QC instances do not overwrite
@@ -44,7 +64,7 @@
     To specify settings for Qbs:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Qbs.
+        \li Select \preferences > \uicontrol Qbs.
             \image qtcreator-options-qbs.png "Qbs preferences"
         \li Deselect the \uicontrol {Use \QC settings directory for Qbs} check
             box to store Qbs profiles in the Qbs settings directory.
@@ -59,15 +79,10 @@
             \image creator-qbs-profiles.png "Qbs Profiles tab"
         \li In the \uicontrol Kit field, select a build and run kit to view
             the properties of the associated profile. To modify the properties,
-            select \uicontrol Edit > \uicontrol Preferences > \uicontrol Kits.
-            For more information, see \l{Editing Qbs Profiles}.
+            select \preferences > \uicontrol Kits.
+            For more information, see \l{Edit Qbs profiles}.
     \endlist
 
-    \section1 Related Topics
-
-    \list
-        \li \l {Opening Projects}
-        \li \l {Qbs Build Configuration}
-        \li \l {Specifying Run Settings}
-    \endlist
+    \sa {Open projects}, {qbs-build-system}{Build Systems: Qbs},
+    {Qbs Build Configuration}, {Specifying Run Settings}
 */

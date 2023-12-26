@@ -6,6 +6,7 @@
 #include "searchresultwindow.h"
 
 #include <utils/infobar.h>
+#include <utils/searchresultitem.h>
 
 #include <QWidget>
 
@@ -17,6 +18,7 @@ class QToolButton;
 class QCheckBox;
 QT_END_NAMESPACE
 
+namespace Utils { class InfoLabel; }
 namespace Core {
 
 namespace Internal {
@@ -33,9 +35,10 @@ public:
     QWidget *additionalReplaceWidget() const;
     void setAdditionalReplaceWidget(QWidget *widget);
 
-    void addResults(const QList<SearchResultItem> &items, SearchResult::AddMode mode);
+    void addResults(const Utils::SearchResultItems &items, SearchResult::AddMode mode);
 
     int count() const;
+    bool isSearching() const { return m_searching; }
 
     void setSupportsReplace(bool replaceSupported, const QString &group);
     bool supportsReplace() const;
@@ -51,7 +54,7 @@ public:
 
     void notifyVisibilityChanged(bool visible);
 
-    void setTextEditorFont(const QFont &font, const SearchResultColors &colors);
+    void setTextEditorFont(const QFont &font, const Utils::SearchResultColors &colors);
     void setTabWidth(int tabWidth);
 
     void setAutoExpandResults(bool expand);
@@ -69,14 +72,16 @@ public:
     bool hasFilter() const;
     void showFilterWidget(QWidget *parent);
     void setReplaceEnabled(bool enabled);
+    Utils::SearchResultItems items(bool checkedOnly) const;
 
 public slots:
     void finishSearch(bool canceled, const QString &reason);
     void sendRequestPopup();
 
 signals:
-    void activated(const Core::SearchResultItem &item);
-    void replaceButtonClicked(const QString &replaceText, const QList<Core::SearchResultItem> &checkedItems, bool preserveCase);
+    void activated(const Utils::SearchResultItem &item);
+    void replaceButtonClicked(const QString &replaceText,
+                              const Utils::SearchResultItems &checkedItems, bool preserveCase);
     void replaceTextChanged(const QString &replaceText);
     void searchAgainRequested();
     void canceled();
@@ -90,7 +95,7 @@ signals:
     void navigateStateChanged();
 
 private:
-    void handleJumpToSearchResult(const SearchResultItem &item);
+    void handleJumpToSearchResult(const Utils::SearchResultItem &item);
     void handleReplaceButton();
     void doReplace();
     void cancel();
@@ -100,7 +105,6 @@ private:
     void continueAfterSizeWarning();
     void cancelAfterSizeWarning();
 
-    QList<SearchResultItem> checkedItems() const;
     void updateMatchesFoundLabel();
 
     SearchResultTreeView *m_searchResultTreeView = nullptr;
@@ -120,7 +124,7 @@ private:
     QWidget *m_descriptionContainer = nullptr;
     QLabel *m_label = nullptr;
     QLabel *m_searchTerm = nullptr;
-    QLabel *m_messageLabel = nullptr;
+    Utils::InfoLabel *m_messageLabel = nullptr;
     QToolButton *m_cancelButton = nullptr;
     QLabel *m_matchesFoundLabel = nullptr;
     bool m_preserveCaseSupported = true;

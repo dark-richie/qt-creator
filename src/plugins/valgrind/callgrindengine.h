@@ -8,10 +8,10 @@
 #include "callgrind/callgrindparsedata.h"
 #include "callgrind/callgrindparser.h"
 
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
+#include <utils/processinterface.h>
 
-namespace Valgrind {
-namespace Internal {
+namespace Valgrind::Internal {
 
 class CallgrindToolRunner : public ValgrindToolRunner
 {
@@ -48,7 +48,7 @@ public:
     Q_ENUM(Option)
 
 protected:
-    QStringList toolArguments() const override;
+    void addToolArguments(Utils::CommandLine &cmd) const override;
     QString progressTitle() const override;
 
 signals:
@@ -73,8 +73,8 @@ private:
 
     bool m_markAsPaused = false;
 
-    std::unique_ptr<Utils::QtcProcess> m_controllerProcess;
-    ProjectExplorer::Runnable m_valgrindRunnable;
+    std::unique_ptr<Utils::Process> m_controllerProcess;
+    Utils::ProcessRunData m_valgrindRunnable;
     qint64 m_pid = 0;
 
     Option m_lastOption = Unknown;
@@ -89,5 +89,4 @@ private:
     QString m_argumentForToggleCollect;
 };
 
-} // namespace Internal
-} // namespace Valgrind
+} // namespace Valgrind::Internal

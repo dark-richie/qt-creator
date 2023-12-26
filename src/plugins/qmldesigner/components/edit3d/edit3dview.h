@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 #pragma once
 
-#include "itemlibraryinfo.h"
+#include "edit3dactions.h"
+#include <itemlibraryentry.h>
 #include <qmldesignercomponents_global.h>
 
 #include <abstractview.h>
@@ -22,31 +23,42 @@ QT_END_NAMESPACE
 
 namespace QmlDesigner {
 
+class BakeLights;
 class Edit3DWidget;
-class Edit3DAction;
-class Edit3DCameraAction;
+class SnapConfiguration;
 
 class QMLDESIGNERCOMPONENTS_EXPORT Edit3DView : public AbstractView
 {
     Q_OBJECT
 
 public:
+    struct SplitToolState
+    {
+        int matOverride = 0;
+        bool showWireframe = false;
+    };
+
     Edit3DView(ExternalDependenciesInterface &externalDependencies);
 
     WidgetInfo widgetInfo() override;
 
     Edit3DWidget *edit3DWidget() const;
 
-    void selectedNodesChanged(const QList<ModelNode> &selectedNodeList, const QList<ModelNode> &lastSelectedNodeList) override;
     void renderImage3DChanged(const QImage &img) override;
     void updateActiveScene3D(const QVariantMap &sceneState) override;
     void modelAttached(Model *model) override;
     void modelAboutToBeDetached(Model *model) override;
-    void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports) override;
-    void customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
+    void customNotification(const AbstractView *view, const QString &identifier,
+                            const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
     void nodeAtPosReady(const ModelNode &modelNode, const QVector3D &pos3d) override;
+    void nodeReparented(const ModelNode &node, const NodeAbstractProperty &newPropertyParent,
+                        const NodeAbstractProperty &oldPropertyParent,
+                        PropertyChangeFlags propertyChange) override;
+    void nodeRemoved(const ModelNode &removedNode, const NodeAbstractProperty &parentProperty,
+                     PropertyChangeFlags propertyChange) override;
 
-    void sendInputEvent(QInputEvent *e) const;
+    void sendInputEvent(QEvent *e) const;
     void edit3DViewResized(const QSize &size) const;
 
     QSize canvasSize() const;
@@ -57,20 +69,32 @@ public:
     QVector<Edit3DAction *> visibilityToggleActions() const;
     QVector<Edit3DAction *> backgroundColorActions() const;
     Edit3DAction *edit3DAction(View3DActionType type) const;
+    Edit3DBakeLightsAction *bakeLightsAction() const;
 
     void addQuick3DImport();
     void startContextMenu(const QPoint &pos);
     void dropMaterial(const ModelNode &matNode, const QPointF &pos);
     void dropBundleMaterial(const QPointF &pos);
+    void dropBundleEffect(const QPointF &pos);
     void dropTexture(const ModelNode &textureNode, const QPointF &pos);
     void dropComponent(const ItemLibraryEntry &entry, const QPointF &pos);
     void dropAsset(const QString &file, const QPointF &pos);
+
+    bool isBakingLightsSupported() const;
+
+    void syncSnapAuxPropsToSettings();
+
+    const QList<SplitToolState> &splitToolStates() const;
+    void setSplitToolState(int splitIndex, const SplitToolState &state);
+
+    int activeSplit() const;
 
 private slots:
     void onEntriesChanged();
 
 private:
     enum class NodeAtPosReqType {
+        BundleEffectDrop,
         BundleMaterialDrop,
         ComponentDrop,
         MaterialDrop,
@@ -86,12 +110,15 @@ private:
     void checkImports();
     void handleEntriesChanged();
     void showMaterialPropertiesView();
+    void updateAlignActionStates();
 
-    Edit3DAction *createSelectBackgroundColorAction(QAction *syncBackgroundColorAction);
-    Edit3DAction *createGridColorSelectionAction();
-    Edit3DAction *createResetColorAction(QAction *syncBackgroundColorAction);
-    Edit3DAction *createSyncBackgroundColorAction();
-    Edit3DAction *createSeekerSliderAction();
+    void createSelectBackgroundColorAction(QAction *syncEnvBackgroundAction);
+    void createGridColorSelectionAction();
+    void createResetColorAction(QAction *syncEnvBackgroundAction);
+    void createSyncEnvBackgroundAction();
+    void createSeekerSliderAction();
+
+    QPoint resolveToolbarPopupPos(Edit3DAction *action) const;
 
     QPointer<Edit3DWidget> m_edit3DWidget;
     QVector<Edit3DAction *> m_leftActions;
@@ -99,29 +126,40 @@ private:
     QVector<Edit3DAction *> m_visibilityToggleActions;
     QVector<Edit3DAction *> m_backgroundColorActions;
 
-    QMap<View3DActionType, QSharedPointer<Edit3DAction>> m_edit3DActions;
-    Edit3DAction *m_selectionModeAction = nullptr;
-    Edit3DAction *m_moveToolAction = nullptr;
-    Edit3DAction *m_rotateToolAction = nullptr;
-    Edit3DAction *m_scaleToolAction = nullptr;
-    Edit3DAction *m_fitAction = nullptr;
-    Edit3DCameraAction *m_alignCamerasAction = nullptr;
-    Edit3DCameraAction *m_alignViewAction = nullptr;
-    Edit3DAction *m_cameraModeAction = nullptr;
-    Edit3DAction *m_orientationModeAction = nullptr;
-    Edit3DAction *m_editLightAction = nullptr;
-    Edit3DAction *m_showGridAction = nullptr;
-    Edit3DAction *m_showSelectionBoxAction = nullptr;
-    Edit3DAction *m_showIconGizmoAction = nullptr;
-    Edit3DAction *m_showCameraFrustumAction = nullptr;
-    Edit3DAction *m_showParticleEmitterAction = nullptr;
-    Edit3DAction *m_resetAction = nullptr;
-    Edit3DAction *m_particleViewModeAction = nullptr;
-    Edit3DAction *m_particlesPlayAction = nullptr;
-    Edit3DAction *m_particlesRestartAction = nullptr;
-    Edit3DAction *m_visibilityTogglesAction = nullptr;
-    Edit3DAction *m_backgrondColorMenuAction = nullptr;
-    Edit3DAction *m_seekerAction = nullptr;
+    QMap<View3DActionType, Edit3DAction *> m_edit3DActions;
+    std::unique_ptr<Edit3DAction> m_selectionModeAction;
+    std::unique_ptr<Edit3DAction> m_moveToolAction;
+    std::unique_ptr<Edit3DAction> m_rotateToolAction;
+    std::unique_ptr<Edit3DAction> m_scaleToolAction;
+    std::unique_ptr<Edit3DAction> m_fitAction;
+    std::unique_ptr<Edit3DAction> m_alignCamerasAction;
+    std::unique_ptr<Edit3DAction> m_alignViewAction;
+    std::unique_ptr<Edit3DAction> m_cameraModeAction;
+    std::unique_ptr<Edit3DAction> m_orientationModeAction;
+    std::unique_ptr<Edit3DAction> m_editLightAction;
+    std::unique_ptr<Edit3DAction> m_showGridAction;
+    std::unique_ptr<Edit3DAction> m_showSelectionBoxAction;
+    std::unique_ptr<Edit3DAction> m_showIconGizmoAction;
+    std::unique_ptr<Edit3DAction> m_showCameraFrustumAction;
+    std::unique_ptr<Edit3DAction> m_showParticleEmitterAction;
+    std::unique_ptr<Edit3DAction> m_particleViewModeAction;
+    std::unique_ptr<Edit3DAction> m_particlesPlayAction;
+    std::unique_ptr<Edit3DAction> m_particlesRestartAction;
+    std::unique_ptr<Edit3DParticleSeekerAction> m_seekerAction;
+    std::unique_ptr<Edit3DAction> m_syncEnvBackgroundAction;
+    std::unique_ptr<Edit3DAction> m_selectBackgroundColorAction;
+    std::unique_ptr<Edit3DAction> m_selectGridColorAction;
+    std::unique_ptr<Edit3DAction> m_resetColorAction;
+    std::unique_ptr<Edit3DAction> m_splitViewAction;
+
+    // View3DActionType::Empty actions
+    std::unique_ptr<Edit3DAction> m_resetAction;
+    std::unique_ptr<Edit3DAction> m_visibilityTogglesAction;
+    std::unique_ptr<Edit3DAction> m_backgroundColorMenuAction;
+    std::unique_ptr<Edit3DAction> m_snapToggleAction;
+    std::unique_ptr<Edit3DAction> m_snapConfigAction;
+    std::unique_ptr<Edit3DBakeLightsAction> m_bakeLightsAction;
+
     int particlemode;
     ModelCache<QImage> m_canvasCache;
     ModelNode m_droppedModelNode;
@@ -130,6 +168,12 @@ private:
     NodeAtPosReqType m_nodeAtPosReqType;
     QPoint m_contextMenuPos;
     QTimer m_compressionTimer;
+    QPointer<BakeLights> m_bakeLights;
+    bool m_isBakingLightsSupported = false;
+    QPointer<SnapConfiguration> m_snapConfiguration;
+    int m_activeSplit = 0;
+
+    QList<SplitToolState> m_splitToolStates;
 
     friend class Edit3DAction;
 };

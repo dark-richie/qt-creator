@@ -14,8 +14,6 @@
 #include <QObject>
 #include <QPointer>
 
-#include <memory>
-
 QT_BEGIN_NAMESPACE
 class QMenu;
 class QTimer;
@@ -50,10 +48,13 @@ public:
     static ClangdClient *clientForProject(const ProjectExplorer::Project *project);
     static ClangdClient *clientForFile(const Utils::FilePath &file);
 
+    static void updateStaleIndexEntries();
+
 private:
     void followSymbol(const CppEditor::CursorInEditor &data,
-                      const Utils::LinkHandler &processLinkCallback, bool resolveTarget,
-                      bool inNextSplit) override;
+                      const Utils::LinkHandler &processLinkCallback,
+                      CppEditor::FollowSymbolMode mode,
+                      bool resolveTarget, bool inNextSplit) override;
     void followSymbolToType(const CppEditor::CursorInEditor &data,
                             const Utils::LinkHandler &processLinkCallback,
                             bool inNextSplit) override;
@@ -81,11 +82,7 @@ private:
                                         int lineNumber,
                                         QMenu *menu);
 
-    void onProjectPartsUpdated(ProjectExplorer::Project *project);
-    void onProjectPartsRemoved(const QStringList &projectPartIds);
     void onClangdSettingsChanged();
-
-    void reinitializeBackendDocuments(const QStringList &projectPartIds);
 
     void connectTextDocumentToTranslationUnit(TextEditor::TextDocument *textDocument);
     void connectToWidgetsMarkContextMenuRequested(QWidget *editorWidget);
@@ -100,7 +97,7 @@ private:
     Utils::FutureSynchronizer m_generatorSynchronizer;
     QList<QPointer<ClangdClient>> m_clientsToRestart;
     QTimer * const m_clientRestartTimer;
-    QHash<Utils::FilePath, QString> m_queuedShadowDocuments;
+    QHash<Utils::FilePath, QString> m_potentialShadowDocuments;
 };
 
 } // namespace Internal

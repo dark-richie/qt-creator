@@ -13,8 +13,8 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/taskprogress.h>
 #include <utils/infobar.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QDate>
 #include <QLabel>
@@ -43,6 +43,7 @@ const char InstallQtUpdates[] = "UpdateInfo.InstallQtUpdates";
 const char M_MAINTENANCE_TOOL[] = "QtCreator.Menu.Tools.MaintenanceTool";
 
 using namespace Core;
+using namespace Tasking;
 using namespace Utils;
 
 namespace UpdateInfo {
@@ -117,40 +118,36 @@ void UpdateInfoPlugin::startCheckForUpdates()
 
     emit checkForUpdatesRunningChanged(true);
 
-    using namespace Tasking;
-
-    const auto doSetup = [this](QtcProcess &process, const QStringList &args) {
+    const auto doSetup = [this](Process &process, const QStringList &args) {
         process.setCommand({d->m_maintenanceTool, args});
-    };
-    const auto doCleanup = [this] {
-        d->m_taskTree.release()->deleteLater();
-        checkForUpdatesStopped();
+        process.setLowPriority();
     };
 
-    const auto setupUpdate = [doSetup](QtcProcess &process) {
+    const auto onUpdateSetup = [doSetup](Process &process) {
         doSetup(process, {"ch", "-g", "*=false,ifw.package.*=true"});
     };
-    const auto updateDone = [this](const QtcProcess &process) {
+    const auto onUpdateDone = [this](const Process &process) {
         d->m_updateOutput = process.cleanedStdOut();
     };
 
-    QList<TaskItem> tasks { Process(setupUpdate, updateDone) };
+    QList<GroupItem> tasks { ProcessTask(onUpdateSetup, onUpdateDone, CallDoneIf::Success) };
     if (d->m_settings.checkForQtVersions) {
-        const auto setupPackages = [doSetup](QtcProcess &process) {
+        const auto onPackagesSetup = [doSetup](Process &process) {
             doSetup(process, {"se", "qt[.]qt[0-9][.][0-9]+$", "-g", "*=false,ifw.package.*=true"});
         };
-        const auto packagesDone = [this](const QtcProcess &process) {
+        const auto onPackagesDone = [this](const Process &process) {
             d->m_packagesOutput = process.cleanedStdOut();
         };
-        tasks << Process(setupPackages, packagesDone);
+        tasks << ProcessTask(onPackagesSetup, onPackagesDone, CallDoneIf::Success);
     }
 
     d->m_taskTree.reset(new TaskTree(Group{tasks}));
-    connect(d->m_taskTree.get(), &TaskTree::done, this, [this, doCleanup] {
-        checkForUpdatesFinished();
-        doCleanup();
+    connect(d->m_taskTree.get(), &TaskTree::done, this, [this](DoneWith result) {
+        if (result == DoneWith::Success)
+            checkForUpdatesFinished();
+        d->m_taskTree.release()->deleteLater();
+        checkForUpdatesStopped();
     });
-    connect(d->m_taskTree.get(), &TaskTree::errorOccurred, this, doCleanup);
     d->m_progress = new TaskProgress(d->m_taskTree.get());
     d->m_progress->setHalfLifeTimePerTask(30000); // 30 seconds
     d->m_progress->setDisplayName(Tr::tr("Checking for Updates"));
@@ -338,8 +335,8 @@ bool UpdateInfoPlugin::initialize(const QStringList & /* arguments */, QString *
 void UpdateInfoPlugin::loadSettings() const
 {
     UpdateInfoPluginPrivate::Settings def;
-    QSettings *settings = ICore::settings();
-    const QString updaterKey = QLatin1String(UpdaterGroup) + '/';
+    QtcSettings *settings = ICore::settings();
+    const Key updaterKey = Key(UpdaterGroup) + '/';
     d->m_maintenanceTool = FilePath::fromSettings(settings->value(updaterKey + MaintenanceToolKey));
     d->m_lastCheckDate = settings->value(updaterKey + LastCheckDateKey, QDate()).toDate();
     d->m_settings.automaticCheck
@@ -461,7 +458,7 @@ QDate UpdateInfoPlugin::nextCheckDate(CheckUpdateInterval interval) const
 
 void UpdateInfoPlugin::startMaintenanceTool(const QStringList &args) const
 {
-    QtcProcess::startDetached(CommandLine{d->m_maintenanceTool, args});
+    Process::startDetached(CommandLine{d->m_maintenanceTool, args});
 }
 
 void UpdateInfoPlugin::startUpdater() const

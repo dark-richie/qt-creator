@@ -223,7 +223,7 @@ QStringList getUninitializedVariables(const Snapshot &snapshot,
 
 QString cppFunctionAt(const FilePath &filePath, int line, int column)
 {
-    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const Snapshot snapshot = CppModelManager::snapshot();
     if (const Document::Ptr document = snapshot.document(filePath))
         return document->functionAt(line, column);
 
@@ -240,7 +240,7 @@ QString cppExpressionAt(TextEditorWidget *editorWidget, int pos,
         function->clear();
 
     const FilePath filePath = editorWidget->textDocument()->filePath();
-    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const Snapshot snapshot = CppModelManager::snapshot();
     const Document::Ptr document = snapshot.document(filePath);
     QTextCursor tc = editorWidget->textCursor();
     QString expr;
@@ -315,14 +315,14 @@ ContextData getLocationContext(TextDocument *document, int lineNumber)
                 if (ln > 0) {
                     data.type = LocationByFile;
                     data.fileName = Utils::FilePath::fromString(fileName);
-                    data.lineNumber = ln;
+                    data.textPosition.line = ln;
                 }
             }
         }
     } else {
         data.type = LocationByFile;
         data.fileName = document->filePath();
-        data.lineNumber = lineNumber;
+        data.textPosition.line = lineNumber;
     }
     return data;
 }
@@ -376,18 +376,18 @@ static void setValueAnnotationsHelper(BaseTextEditor *textEditor,
     TextEditorWidget *widget = textEditor->editorWidget();
     TextDocument *textDocument = widget->textDocument();
     const FilePath filePath = loc.fileName();
-    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const Snapshot snapshot = CppModelManager::snapshot();
     const Document::Ptr cppDocument = snapshot.document(filePath);
     if (!cppDocument) // For non-C++ documents.
         return;
 
-    const int firstLine = firstRelevantLine(cppDocument, loc.lineNumber(), 1);
+    const int firstLine = firstRelevantLine(cppDocument, loc.textPosition().line, 1);
     if (firstLine < 1)
         return;
 
     CPlusPlus::ExpressionUnderCursor expressionUnderCursor(cppDocument->languageFeatures());
     QTextCursor tc = widget->textCursor();
-    for (int lineNumber = loc.lineNumber(); lineNumber >= firstLine; --lineNumber) {
+    for (int lineNumber = loc.textPosition().line; lineNumber >= firstLine; --lineNumber) {
         const QTextBlock block = textDocument->document()->findBlockByNumber(lineNumber - 1);
         tc.setPosition(block.position());
         for (; !tc.atBlockEnd(); tc.movePosition(QTextCursor::NextCharacter)) {

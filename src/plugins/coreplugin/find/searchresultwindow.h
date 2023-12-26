@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include "searchresultcolor.h"
-#include "searchresultitem.h"
+#include "../ioutputpane.h"
 
-#include <coreplugin/ioutputpane.h>
+#include <utils/searchresultitem.h>
 
 #include <QVariant>
 #include <QStringList>
@@ -19,9 +18,10 @@ class QFont;
 QT_END_NAMESPACE
 
 namespace Core {
+
 namespace Internal {
-    class SearchResultWindowPrivate;
-    class SearchResultWidget;
+class SearchResultWindowPrivate;
+class SearchResultWidget;
 }
 class SearchResultWindow;
 
@@ -31,7 +31,7 @@ class CORE_EXPORT SearchResultFilter : public QObject
 
 public:
     virtual QWidget *createWidget() = 0;
-    virtual bool matches(const SearchResultItem &item) const = 0;
+    virtual bool matches(const Utils::SearchResultItem &item) const = 0;
 
 signals:
     void filterChanged();
@@ -43,7 +43,8 @@ class CORE_EXPORT SearchResult : public QObject
 
 public:
     enum AddMode {
-        AddSorted,
+        AddSortedByContent,
+        AddSortedByPosition,
         AddOrdered
     };
 
@@ -57,10 +58,11 @@ public:
     void setAdditionalReplaceWidget(QWidget *widget);
     void makeNonInteractive(const std::function<void()> &callback);
     bool isInteractive() const { return !m_finishedHandler; }
+    Utils::SearchResultItems allItems() const;
 
 public slots:
-    void addResult(const SearchResultItem &item);
-    void addResults(const QList<SearchResultItem> &items, AddMode mode);
+    void addResult(const Utils::SearchResultItem &item);
+    void addResults(const Utils::SearchResultItems &items, AddMode mode);
     void setFilter(SearchResultFilter *filter); // Takes ownership
     void finishSearch(bool canceled, const QString &reason = {});
     void setTextToReplace(const QString &textToReplace);
@@ -70,15 +72,15 @@ public slots:
     void popup();
 
 signals:
-    void activated(const Core::SearchResultItem &item);
-    void replaceButtonClicked(const QString &replaceText, const QList<Core::SearchResultItem> &checkedItems, bool preserveCase);
+    void activated(const Utils::SearchResultItem &item);
+    void replaceButtonClicked(const QString &replaceText,
+                              const Utils::SearchResultItems &checkedItems, bool preserveCase);
     void replaceTextChanged(const QString &replaceText);
     void canceled();
     void paused(bool paused);
     void visibilityChanged(bool visible);
     void countChanged(int count);
     void searchAgainRequested();
-    void requestEnabledCheck();
 
 private:
     SearchResult(Internal::SearchResultWidget *widget);
@@ -112,8 +114,6 @@ public:
     QWidget *outputWidget(QWidget *) override;
     QList<QWidget*> toolBarWidgets() const override;
 
-    QString displayName() const override;
-    int priorityInStatusBar() const override;
     void visibilityChanged(bool visible) override;
     bool hasFocus() const override;
     bool canFocus() const override;
@@ -125,7 +125,7 @@ public:
     void goToPrev() override;
     bool canNavigate() const override;
 
-    void setTextEditorFont(const QFont &font, const SearchResultColors &colors);
+    void setTextEditorFont(const QFont &font, const Utils::SearchResultColors &colors);
     void setTabWidth(int width);
     void openNewSearchPanel();
 

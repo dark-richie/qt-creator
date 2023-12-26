@@ -15,13 +15,13 @@
 namespace MesonProjectManager {
 namespace Internal {
 
-class ToolKitAspectWidget final : public ProjectExplorer::KitAspectWidget
+class ToolKitAspectWidget final : public ProjectExplorer::KitAspect
 {
 public:
     enum class ToolType { Meson, Ninja };
 
     ToolKitAspectWidget(ProjectExplorer::Kit *kit,
-                        const ProjectExplorer::KitAspect *ki,
+                        const ProjectExplorer::KitAspectFactory *factory,
                         ToolType type);
     ~ToolKitAspectWidget();
 
@@ -36,16 +36,15 @@ private:
 
     void makeReadOnly() override { m_toolsComboBox->setEnabled(false); }
 
-    void addToLayout(Utils::Layouting::LayoutBuilder &builder) override
+    void addToLayoutImpl(Layouting::LayoutItem &parent) override
     {
         addMutableAction(m_toolsComboBox);
-        builder.addItem(m_toolsComboBox);
-        builder.addItem(m_manageButton);
+        parent.addItem(m_toolsComboBox);
     }
 
     void refresh() override
     {
-        const auto id = [this]() {
+        const auto id = [this] {
             if (m_type == ToolType::Meson)
                 return MesonToolKitAspect::mesonToolId(m_kit);
             return NinjaToolKitAspect::ninjaToolId(m_kit);
@@ -58,7 +57,6 @@ private:
     }
 
     QComboBox *m_toolsComboBox;
-    QWidget *m_manageButton;
     ToolType m_type;
 };
 

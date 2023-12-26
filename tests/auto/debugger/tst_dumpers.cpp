@@ -1203,6 +1203,7 @@ void tst_Dumpers::initTestCase()
         QProcess debugger;
         debugger.start(m_debuggerBinary, {"-i", "mi", "-quiet", "-nx"});
         bool ok = debugger.waitForStarted();
+        QVERIFY(ok);
         debugger.write("set confirm off\npython print 43\nshow version\nquit\n");
         ok = debugger.waitForFinished();
         QVERIFY(ok);
@@ -1251,7 +1252,7 @@ void tst_Dumpers::initTestCase()
         QString cdbextPath = qEnvironmentVariable("QTC_CDBEXT_PATH");
         if (cdbextPath.isEmpty())
             cdbextPath = QString(CDBEXT_PATH "\\qtcreatorcdbext64");
-        QVERIFY(QFile::exists(cdbextPath + "\\qtcreatorcdbext.dll"));
+        QVERIFY(QFileInfo::exists(cdbextPath + "\\qtcreatorcdbext.dll"));
         env.set("_NT_DEBUGGER_EXTENSION_PATH", cdbextPath);
         env.prependOrSetPath(Utils::FilePath::fromString(m_qmakeBinary).parentDir());
         m_makeBinary = env.searchInPath("nmake.exe").toString();
@@ -1299,8 +1300,20 @@ void tst_Dumpers::initTestCase()
         qCDebug(lcDumpers) << "Lldb version       :" << output << ba << m_debuggerVersion;
         QVERIFY(m_debuggerVersion);
 
-        m_env = QProcessEnvironment::systemEnvironment();
-        m_makeBinary = "make";
+        QByteArray envBat = qgetenv("QTC_MSVC_ENV_BAT");
+        if (!envBat.isEmpty()) {
+            QMap <QString, QString> envPairs;
+            Utils::Environment env = Utils::Environment::systemEnvironment();
+            QVERIFY(generateEnvironmentSettings(env, QString::fromLatin1(envBat), QString(), envPairs));
+
+            env.prependOrSetPath(Utils::FilePath::fromString(m_qmakeBinary).parentDir());
+
+            m_env = env.toProcessEnvironment();
+            m_makeBinary = env.searchInPath("nmake.exe").toString();
+        } else {
+            m_env = QProcessEnvironment::systemEnvironment();
+            m_makeBinary = "make";
+        }
     }
 }
 
@@ -1547,8 +1560,7 @@ void tst_Dumpers::dumper()
                 "\n#define NOMINMAX\n#include <windows.h>") +
             "\n#endif"
             "\n#if defined(_MSC_VER)"
-                "\nvoid qtcDebugBreakFunction() { return; }"
-                "\n#define BREAK qtcDebugBreakFunction();"
+                "\n#define BREAK DebugBreak();"
                 "\n\nvoid unused(const void *first,...) { (void) first; }"
             "\n#else"
                 "\n#include <stdint.h>";
@@ -1779,8 +1791,7 @@ void tst_Dumpers::dumper()
              << "-G"
              << "-xn"
              << "0x4000001f"
-             << "-c"
-             << "bm doit!qtcDebugBreakFunction;g"
+             << "-g"
              << "doit.exe";
         cmds += ".symopt+0x8000\n"
                 "!qtcreatorcdbext.script sys.path.insert(1, '" + dumperDir + "')\n"
@@ -1801,11 +1812,16 @@ void tst_Dumpers::dumper()
         fullLldb.open(QIODevice::WriteOnly);
         fullLldb.write((exe + ' ' + args.join(' ') + '\n').toUtf8());
 
+#ifdef Q_OS_WIN
+        const QString exeSuffix(".exe");
+#else
+        const QString exeSuffix;
+#endif
         cmds = "sc import sys\n"
                "sc sys.path.insert(1, '" + dumperDir + "')\n"
                "sc from lldbbridge import *\n"
               // "sc print(dir())\n"
-               "sc Tester('" + t->buildPath.toLatin1() + "/doit', {" + dumperOptions +
+               "sc Tester('" + t->buildPath.toLatin1() + "/doit" + exeSuffix + "', {" + dumperOptions +
                     "'fancy':1,'forcens':1,"
                     "'autoderef':1,'dyntype':1,'passexceptions':1,"
                     "'testing':1,'qobjectnames':1,"
@@ -2259,7 +2275,10 @@ void tst_Dumpers::dumper_data()
 
 
     QTest::newRow("QDateTime")
-            << Data("#include <QDateTime>",
+            << Data("#include <QDateTime>\n"
+                    "#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)\n"
+                    "#include <QTimeZone>\n"
+                    "#endif",
 
                     "QDate d0;\n"
                     "QDate d1;\n"
@@ -2269,9 +2288,12 @@ void tst_Dumpers::dumper_data()
                     "QTime t1(13, 15, 32);\n"
 
                     "QDateTime dt0;\n"
-                    "QDateTime dt1(QDate(1980, 1, 1), QTime(13, 15, 32), Qt::UTC);",
+                    "QDateTime dt1(QDate(1980, 1, 1), QTime(13, 15, 32), Qt::UTC);\n"
+                    "#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)\n"
+                    "QDateTime dt2(QDate(1980, 1, 1), QTime(13, 15, 32), QTimeZone(60 * 60));\n"
+                    "#endif\n",
 
-                    "&d0, &d1, &t0, &t1, &dt0, &dt1")
+                    "&d0, &d1, &t0, &t1, &dt0, &dt1, &dt2")
 
                + CoreProfile()
 
@@ -2296,6 +2318,7 @@ void tst_Dumpers::dumper_data()
                + Check("dt0", "(invalid)", "@QDateTime")
                + Check("dt1", Value4("Tue Jan 1 13:15:32 1980"), "@QDateTime")
                + Check("dt1", Value5("Tue Jan 1 13:15:32 1980 GMT"), "@QDateTime")
+               + Check("dt1", Value6("Tue Jan 1 13:15:32 1980 GMT"), "@QDateTime")
                + Check("dt1.(ISO)",
                     "\"1980-01-01T13:15:32Z\"", "@QString") % NeedsInferiorCall
                + Check("dt1.(Locale)", AnyValue, "@QString") % NeedsInferiorCall
@@ -2305,11 +2328,13 @@ void tst_Dumpers::dumper_data()
                + Check("dt1.toString",
                     Value4("\"Tue Jan 1 13:15:32 1980\""), "@QString") % NeedsInferiorCall
                + Check("dt1.toString",
-                    Value5("\"Tue Jan 1 13:15:32 1980 GMT\""), "@QString") % NeedsInferiorCall;
+                    Value5("\"Tue Jan 1 13:15:32 1980 GMT\""), "@QString") % NeedsInferiorCall
                //+ Check("dt1.toUTC",
                //     Value4("Tue Jan 1 13:15:32 1980"), "@QDateTime") % Optional()
                //+ Check("dt1.toUTC",
                //     Value5("Tue Jan 1 13:15:32 1980 GMT"), "@QDateTime") % Optional();
+               + Check("dt2", Value5("Tue Jan 1 13:15:32 1980 UTC+01:00"), "@QDateTime")
+               + Check("dt2", Value6("Tue Jan 1 13:15:32 1980 UTC+01:00"), "@QDateTime");
 
 
     QTest::newRow("QFileInfo")
@@ -2504,7 +2529,7 @@ void tst_Dumpers::dumper_data()
                     "#include <QPainter>\n",
 
                     "QApplication app(argc, argv);\n"
-                    "QImage im(QSize(200, 200), QImage::Format_RGB32);\n"
+                    "QImage im(QSize(200, 199), QImage::Format_RGB32);\n"
                     "im.fill(QColor(200, 100, 130).rgba());\n\n"
                     "QPainter pain;\n"
                     "pain.begin(&im);\n"
@@ -2515,9 +2540,12 @@ void tst_Dumpers::dumper_data()
 
                + GuiProfile()
 
-               + Check("im", "(200x200)", "@QImage")
+               + Check("im", "(200x199)", "@QImage")
+               + Check("im.width", "200", "int")
+               + Check("im.height", "199", "int")
+               + Check("im.data", ValuePattern("0x[[:xdigit:]]{2,}"), "void *")
                + Check("pain", AnyValue, "@QPainter")
-               + Check("pm", "(200x200)", "@QPixmap");
+               + Check("pm", "(200x199)", "@QPixmap");
 
 
     QTest::newRow("QLinkedList")
@@ -5014,16 +5042,18 @@ void tst_Dumpers::dumper_data()
                     "#include <string>\n" + fooData +
 
                     "static Foo *alloc_foo() { return new Foo; }\n"
-                    "static void free_foo(Foo *f) { delete f; }\n",
+                    "static void free_foo(Foo *f) { delete f; }\n"
+                    "class Bar : public Foo { public: int bar = 42;};\n",
 
                     "std::unique_ptr<int> p0;\n\n"
                     "std::unique_ptr<int> p1(new int(32));\n\n"
                     "std::unique_ptr<Foo> p2(new Foo);\n\n"
                     "std::unique_ptr<std::string> p3(new std::string(\"ABC\"));\n"
 
-                    "std::unique_ptr<Foo, void(*)(Foo*)> p4{alloc_foo(), free_foo};",
+                    "std::unique_ptr<Foo, void(*)(Foo*)> p4{alloc_foo(), free_foo};\n"
+                    "std::unique_ptr<Foo> p5(new Bar);",
 
-                    "&p0, &p1, &p2, &p3, &p4")
+                    "&p0, &p1, &p2, &p3, &p4, &p5")
 
                + CoreProfile()
                + Cxx11Profile()
@@ -5033,7 +5063,8 @@ void tst_Dumpers::dumper_data()
                + Check("p1", "32", "std::unique_ptr<int, std::default_delete<int> >")
                + Check("p2", Pointer(), "std::unique_ptr<Foo, std::default_delete<Foo> >")
                + Check("p3", "\"ABC\"", "std::unique_ptr<std::string, std::default_delete<std::string> >")
-               + Check("p4.b", "2", "int");
+               + Check("p4.b", "2", "int")
+               + Check("p5.bar", "42", "int");
 
 
     QTest::newRow("StdOnce")
@@ -5611,7 +5642,7 @@ void tst_Dumpers::dumper_data()
 
                + Cxx17Profile()
 
-               + Check("o1", "<uninitialized>", "std::optional<bool>")
+               + Check("o1", "<empty>", "std::optional<bool>")
                + Check("o2", "1", "bool") // 1 -> true is done on display
                + Check("o3", "<3 items>", "std::vector<int>")
                + Check("o3.1", "[1]", "2", "int");

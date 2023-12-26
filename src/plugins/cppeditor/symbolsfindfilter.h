@@ -6,7 +6,6 @@
 #include "searchsymbols.h"
 
 #include <coreplugin/find/ifindfilter.h>
-#include <coreplugin/find/searchresultitem.h>
 #include <coreplugin/find/searchresultwindow.h>
 
 #include <QFutureWatcher>
@@ -16,10 +15,9 @@
 #include <QRadioButton>
 
 namespace Core { class SearchResult; }
+namespace Utils { class SearchResultItem; }
 
 namespace CppEditor {
-class CppModelManager;
-
 namespace Internal {
 
 class SymbolsFindFilter : public Core::IFindFilter
@@ -30,17 +28,17 @@ public:
     using SearchScope = SymbolSearcher::SearchScope;
 
 public:
-    explicit SymbolsFindFilter(CppModelManager *manager);
+    SymbolsFindFilter();
 
     QString id() const override;
     QString displayName() const override;
     bool isEnabled() const override;
 
-    void findAll(const QString &txt, Core::FindFlags findFlags) override;
+    void findAll(const QString &txt, Utils::FindFlags findFlags) override;
 
     QWidget *createConfigWidget() override;
-    void writeSettings(QSettings *settings) override;
-    void readSettings(QSettings *settings) override;
+    void writeSettings(Utils::QtcSettings *settings) override;
+    void readSettings(Utils::QtcSettings *settings) override;
 
     void setSymbolsToSearch(const SearchSymbols::SymbolTypes &types) { m_symbolsToSearch = types; }
     SearchSymbols::SymbolTypes symbolsToSearch() const { return m_symbolsToSearch; }
@@ -52,22 +50,21 @@ signals:
     void symbolsToSearchChanged();
 
 private:
-    void openEditor(const Core::SearchResultItem &item);
+    void openEditor(const Utils::SearchResultItem &item);
 
-    void addResults(QFutureWatcher<Core::SearchResultItem> *watcher, int begin, int end);
-    void finish(QFutureWatcher<Core::SearchResultItem> *watcher);
+    void addResults(QFutureWatcher<Utils::SearchResultItem> *watcher, int begin, int end);
+    void finish(QFutureWatcher<Utils::SearchResultItem> *watcher);
     void cancel(Core::SearchResult *search);
     void setPaused(Core::SearchResult *search, bool paused);
     void onTaskStarted(Utils::Id type);
     void onAllTasksFinished(Utils::Id type);
 
     QString label() const;
-    QString toolTip(Core::FindFlags findFlags) const;
+    QString toolTip(Utils::FindFlags findFlags) const;
     void startSearch(Core::SearchResult *search);
 
-    CppModelManager *m_manager;
     bool m_enabled;
-    QMap<QFutureWatcher<Core::SearchResultItem> *, QPointer<Core::SearchResult> > m_watchers;
+    QMap<QFutureWatcher<Utils::SearchResultItem> *, QPointer<Core::SearchResult> > m_watchers;
     QPointer<Core::SearchResult> m_currentSearch;
     SearchSymbols::SymbolTypes m_symbolsToSearch;
     SearchScope m_scope;

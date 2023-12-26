@@ -9,6 +9,7 @@
 #include "cmaketoolmanager.h"
 
 #include <coreplugin/dialogs/ioptionspage.h>
+#include <coreplugin/icore.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
 #include <utils/detailswidget.h>
@@ -113,13 +114,17 @@ public:
         CMakeTool cmake(m_autodetected ? CMakeTool::AutoDetection
                                        : CMakeTool::ManualDetection, m_id);
         cmake.setFilePath(m_executable);
-        m_isSupported = cmake.hasFileApi();
+        m_isSupported = cmake.hasFileApi(true);
 
         m_tooltip = Tr::tr("Version: %1").arg(cmake.versionDisplay());
         m_tooltip += "<br>" + Tr::tr("Supports fileApi: %1").arg(m_isSupported ? Tr::tr("yes") : Tr::tr("no"));
         m_tooltip += "<br>" + Tr::tr("Detection source: \"%1\"").arg(m_detectionSource);
 
         m_versionDisplay = cmake.versionDisplay();
+
+        // Make sure to always have the right version in the name for Qt SDK CMake installations
+        if (m_name.startsWith("CMake") && m_name.endsWith("(Qt)"))
+            m_name = QString("CMake %1 (Qt)").arg(m_versionDisplay);
     }
 
     CMakeToolTreeItem() = default;
@@ -409,14 +414,14 @@ CMakeToolItemConfigWidget::CMakeToolItemConfigWidget(CMakeToolItemModel *model)
     m_binaryChooser = new PathChooser(this);
     m_binaryChooser->setExpectedKind(PathChooser::ExistingCommand);
     m_binaryChooser->setMinimumWidth(400);
-    m_binaryChooser->setHistoryCompleter(QLatin1String("Cmake.Command.History"));
+    m_binaryChooser->setHistoryCompleter("Cmake.Command.History");
     m_binaryChooser->setCommandVersionArguments({"--version"});
     m_binaryChooser->setAllowPathFromDevice(true);
 
     m_qchFileChooser = new PathChooser(this);
     m_qchFileChooser->setExpectedKind(PathChooser::File);
     m_qchFileChooser->setMinimumWidth(400);
-    m_qchFileChooser->setHistoryCompleter(QLatin1String("Cmake.qchFile.History"));
+    m_qchFileChooser->setHistoryCompleter("Cmake.qchFile.History");
     m_qchFileChooser->setPromptDialogFilter("*.qch");
     m_qchFileChooser->setPromptDialogTitle(Tr::tr("CMake .qch File"));
 
@@ -453,6 +458,9 @@ void CMakeToolItemConfigWidget::onBinaryPathEditingFinished()
 
 void CMakeToolItemConfigWidget::updateQchFilePath()
 {
+    // QDS does not want automatic detection of cmake help file
+    if (Core::ICore::isQtDesignStudio())
+        return;
     if (m_qchFileChooser->filePath().isEmpty())
         m_qchFileChooser->setFilePath(CMakeTool::searchQchFile(m_binaryChooser->filePath()));
 }

@@ -102,7 +102,7 @@
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Add Bookmark</source>
         <translation>Dodaj zaznamek</translation>
@@ -6752,28 +6752,28 @@ enojen »Vstopi« za oddajo signala pa vas bo privedel neposredno do ustrezne pr
         <translation>Upravljalnik sej</translation>
     </message>
     <message>
-        <source>&amp;New</source>
-        <translation>&amp;Nova</translation>
+        <source>&amp;New...</source>
+        <translation>&amp;Nova...</translation>
     </message>
     <message>
-        <source>&amp;Rename</source>
-        <translation>Pre&amp;imenuj</translation>
+        <source>&amp;Rename...</source>
+        <translation>Pre&amp;imenuj...</translation>
     </message>
     <message>
-        <source>C&amp;lone</source>
-        <translation>&amp;Podvoji</translation>
+        <source>C&amp;lone...</source>
+        <translation>&amp;Podvoji...</translation>
     </message>
     <message>
-        <source>&amp;Delete</source>
-        <translation>&amp;Izbriši</translation>
+        <source>&amp;Delete...</source>
+        <translation>&amp;Izbriši...</translation>
     </message>
     <message>
         <source>&amp;Open</source>
         <translation>&amp;Odpri</translation>
     </message>
     <message>
-        <source>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;What is a Session?&lt;/a&gt;</source>
-        <translation>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;Kaj je seja?&lt;/a&gt;</translation>
+        <source>What is a Session?</source>
+        <translation>Kaj je seja?</translation>
     </message>
     <message>
         <source>New session name</source>
@@ -7426,8 +7426,8 @@ v sistem za nadzor različic (%2)?</translation>
         <translation>Napaka med shranjevanjem seje</translation>
     </message>
     <message>
-        <source>Could not save session to file %1</source>
-        <translation>Ni bilo moč shraniti seje v datoteko %1</translation>
+        <source>Could not save session to file &quot;%1&quot;</source>
+        <translation>Ni bilo moč shraniti seje v datoteko &quot;%1&quot;</translation>
     </message>
     <message>
         <source>Untitled</source>
@@ -15893,8 +15893,8 @@ Projekte programov QML izvede pregledovalnik QML in jih ni potrebno zgraditi.</t
         <translation>Ni moč zagnati »%1«: %2</translation>
     </message>
     <message>
-        <source>A timeout occurred running &apos;%1&apos;</source>
-        <translation>Med poganjanjem »%1« je potekel čas</translation>
+        <source>A timeout occurred running &quot;%1&quot;.</source>
+        <translation>Med poganjanjem »%1« je potekel čas.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; crashed.</source>
@@ -18442,14 +18442,6 @@ Potreben je Qt 4.7.4 ali novejši in nabor komponent za vašo različico Qt.</tr
         <translation>Skupina: </translation>
     </message>
     <message>
-        <source>Add</source>
-        <translation>Dodaj</translation>
-    </message>
-    <message>
-        <source>Remove</source>
-        <translation>Odstrani</translation>
-    </message>
-    <message>
         <source>Revert Built-in</source>
         <translation>Povrni vgrajene</translation>
     </message>
@@ -19894,8 +19886,8 @@ Seznam za strežnik je: %2.</translation>
         <translation>Razlike v »%1«</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+D</source>
-        <translation>ALT+Z,Alt+D</translation>
+        <source>Alt+Z,Alt+D</source>
+        <translation>Alt+Z,Alt+D</translation>
     </message>
     <message>
         <source>Log Current File</source>
@@ -19906,8 +19898,8 @@ Seznam za strežnik je: %2.</translation>
         <translation>Dnevnik za »%1«</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+L</source>
-        <translation>ALT+Z,Alt+L</translation>
+        <source>Alt+Z,Alt+L</source>
+        <translation>Alt+Z,Alt+L</translation>
     </message>
     <message>
         <source>Status Current File</source>
@@ -19918,8 +19910,8 @@ Seznam za strežnik je: %2.</translation>
         <translation>Stanje za »%1«</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+S</source>
-        <translation>ALT+Z,Alt+S</translation>
+        <source>Alt+Z,Alt+S</source>
+        <translation>Alt+Z,Alt+S</translation>
     </message>
     <message>
         <source>Add</source>
@@ -19978,8 +19970,8 @@ Seznam za strežnik je: %2.</translation>
         <translation>Zapiši ...</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+C</source>
-        <translation>ALT+Z,Alt+C</translation>
+        <source>Alt+Z,Alt+C</source>
+        <translation>Alt+Z,Alt+C</translation>
     </message>
     <message>
         <source>Create Repository...</source>

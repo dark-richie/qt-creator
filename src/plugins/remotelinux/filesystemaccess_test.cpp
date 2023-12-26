@@ -11,7 +11,9 @@
 #include <utils/filepath.h>
 #include <utils/filestreamer.h>
 #include <utils/filestreamermanager.h>
+#include <utils/process.h>
 #include <utils/processinterface.h>
+#include <utils/scopedtimer.h>
 
 #include <QDebug>
 #include <QFile>
@@ -31,7 +33,7 @@ static const char TEST_DIR[] = "/tmp/testdir";
 
 static const FilePath baseFilePath()
 {
-    return FilePath::fromString("ssh://" + SshTest::userAtHost() + QString(TEST_DIR));
+    return FilePath::fromString("ssh://" + SshTest::userAtHostAndPort() + QString(TEST_DIR));
 }
 
 TestLinuxDeviceFactory::TestLinuxDeviceFactory()
@@ -53,7 +55,7 @@ TestLinuxDeviceFactory::TestLinuxDeviceFactory()
 FilePath createFile(const QString &name)
 {
     FilePath testFilePath = baseFilePath() / name;
-    FilePath dummyFilePath = FilePath::fromString("ssh://" + SshTest::userAtHost() + "/dev/null");
+    FilePath dummyFilePath = FilePath::fromString("ssh://" + SshTest::userAtHostAndPort() + "/dev/null");
     dummyFilePath.copyFile(testFilePath);
     return testFilePath;
 }
@@ -179,6 +181,21 @@ void FileSystemAccessTest::testCreateRemoteFile()
     QCOMPARE(testFilePath.fileContents().value_or(QByteArray()), data);
     QVERIFY(testFilePath.removeFile());
     QVERIFY(!testFilePath.exists());
+}
+
+void FileSystemAccessTest::testWorkingDirectory()
+{
+    const FilePath dir = baseFilePath() / "testdir with space and 'various' \"quotes\" here";
+    QVERIFY(dir.ensureWritableDir());
+    Process proc;
+    proc.setCommand({"pwd", {}});
+    proc.setWorkingDirectory(dir);
+    proc.start();
+    QVERIFY(proc.waitForFinished());
+    const QString out = proc.readAllStandardOutput().trimmed();
+    QCOMPARE(out, dir.path());
+    const QString err = proc.readAllStandardOutput();
+    QVERIFY(err.isEmpty());
 }
 
 void FileSystemAccessTest::testDirStatus()
@@ -374,8 +391,7 @@ void FileSystemAccessTest::testFileStreamer_data()
 
 void FileSystemAccessTest::testFileStreamer()
 {
-    QElapsedTimer timer;
-    timer.start();
+    QTC_SCOPED_TIMER("testFileStreamer");
 
     QFETCH(QString, fileName);
     QFETCH(QByteArray, data);
@@ -416,7 +432,7 @@ void FileSystemAccessTest::testFileStreamer()
             streamer.setDestination(localSourcePath);
             streamer.setWriteData(data);
         };
-        return Streamer(setup);
+        return FileStreamerTask(setup);
     };
     const auto remoteWriter = [&] {
         const auto setup = [&](FileStreamer &streamer) {
@@ -424,35 +440,35 @@ void FileSystemAccessTest::testFileStreamer()
             streamer.setDestination(remoteSourcePath);
             streamer.setWriteData(data);
         };
-        return Streamer(setup);
+        return FileStreamerTask(setup);
     };
     const auto localReader = [&] {
-        const auto setup = [&](FileStreamer &streamer) {
+        const auto onSetup = [&](FileStreamer &streamer) {
             streamer.setStreamMode(StreamMode::Reader);
             streamer.setSource(localSourcePath);
         };
         const auto onDone = [&](const FileStreamer &streamer) {
             localData = streamer.readData();
         };
-        return Streamer(setup, onDone);
+        return FileStreamerTask(onSetup, onDone, CallDoneIf::Success);
     };
     const auto remoteReader = [&] {
-        const auto setup = [&](FileStreamer &streamer) {
+        const auto onSetup = [&](FileStreamer &streamer) {
             streamer.setStreamMode(StreamMode::Reader);
             streamer.setSource(remoteSourcePath);
         };
         const auto onDone = [&](const FileStreamer &streamer) {
             remoteData = streamer.readData();
         };
-        return Streamer(setup, onDone);
+        return FileStreamerTask(onSetup, onDone, CallDoneIf::Success);
     };
     const auto transfer = [](const FilePath &source, const FilePath &dest,
                              std::optional<QByteArray> *result) {
-        const auto setupTransfer = [=](FileStreamer &streamer) {
+        const auto onTransferSetup = [=](FileStreamer &streamer) {
             streamer.setSource(source);
             streamer.setDestination(dest);
         };
-        const auto setupReader = [=](FileStreamer &streamer) {
+        const auto onReaderSetup = [=](FileStreamer &streamer) {
             streamer.setStreamMode(StreamMode::Reader);
             streamer.setSource(dest);
         };
@@ -460,8 +476,8 @@ void FileSystemAccessTest::testFileStreamer()
             *result = streamer.readData();
         };
         const Group root {
-            Streamer(setupTransfer),
-            Streamer(setupReader, onReaderDone)
+            FileStreamerTask(onTransferSetup),
+            FileStreamerTask(onReaderSetup, onReaderDone, CallDoneIf::Success)
         };
         return root;
     };
@@ -487,35 +503,8 @@ void FileSystemAccessTest::testFileStreamer()
         }
     };
 
-    QEventLoop eventLoop;
-    TaskTree taskTree(root);
-    int doneCount = 0;
-    int errorCount = 0;
-    connect(&taskTree, &TaskTree::done, this, [&doneCount, &eventLoop] {
-        ++doneCount;
-        eventLoop.quit();
-    });
-    connect(&taskTree, &TaskTree::errorOccurred, this, [&errorCount, &eventLoop] {
-        ++errorCount;
-        eventLoop.quit();
-    });
-    taskTree.start();
-    QVERIFY(taskTree.isRunning());
-
-    QTimer timeoutTimer;
-    bool timedOut = false;
-    connect(&timeoutTimer, &QTimer::timeout, &eventLoop, [&eventLoop, &timedOut] {
-        timedOut = true;
-        eventLoop.quit();
-    });
-    timeoutTimer.setInterval(10000);
-    timeoutTimer.setSingleShot(true);
-    timeoutTimer.start();
-    eventLoop.exec();
-    QCOMPARE(timedOut, false);
-    QCOMPARE(taskTree.isRunning(), false);
-    QCOMPARE(doneCount, 1);
-    QCOMPARE(errorCount, 0);
+    using namespace std::chrono_literals;
+    QCOMPARE(TaskTree::runBlocking(root, 10000ms), DoneWith::Success);
 
     QVERIFY(localData);
     QCOMPARE(*localData, data);
@@ -530,8 +519,6 @@ void FileSystemAccessTest::testFileStreamer()
     QCOMPARE(*remoteLocalData, data);
     QVERIFY(remoteRemoteData);
     QCOMPARE(*remoteRemoteData, data);
-
-    qDebug() << "Elapsed time:" << timer.elapsed() << "ms.";
 }
 
 void FileSystemAccessTest::testFileStreamerManager_data()
@@ -541,8 +528,7 @@ void FileSystemAccessTest::testFileStreamerManager_data()
 
 void FileSystemAccessTest::testFileStreamerManager()
 {
-    QElapsedTimer timer;
-    timer.start();
+    QTC_SCOPED_TIMER("testFileStreamerManager");
 
     QFETCH(QString, fileName);
     QFETCH(QByteArray, data);
@@ -644,8 +630,6 @@ void FileSystemAccessTest::testFileStreamerManager()
     QCOMPARE(*remoteLocalData, data);
     QVERIFY(remoteRemoteData);
     QCOMPARE(*remoteRemoteData, data);
-
-    qDebug() << "Elapsed time:" << timer.elapsed() << "ms.";
 }
 
 } // Internal

@@ -1,16 +1,15 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-import QtQuick 2.15
-import QtQuick.Layouts 1.15
-import QtQuickDesignerTheme 1.0
-import HelperWidgets 2.0
+import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuickDesignerTheme
+import HelperWidgets
+import StudioTheme as StudioTheme
 
-import StudioTheme 1.0 as StudioTheme
 import ContentLibraryBackend
-
-import WebFetcher 1.0
+import WebFetcher
 
 Item {
     id: root
@@ -45,8 +44,6 @@ Item {
         anchors.fill: parent
         spacing: 1
 
-        Item { width: 1; height: 5 } // spacer
-
         DownloadPane {
             id: downloadPane
             width: root.width - 10
@@ -59,7 +56,7 @@ Item {
         Image {
             id: img
 
-            width: root.width - 10
+            width: root.width
             height: img.width
             anchors.horizontalCenter: parent.horizontalCenter
             source: modelData.bundleMaterialIcon
@@ -95,7 +92,7 @@ Item {
                 icon: StudioTheme.Constants.plus
                 tooltip: qsTr("Add an instance to project")
                 buttonSize: 22
-                property color c: StudioTheme.Values.themeIconColor
+                property color c: "white"
                 normalColor: Qt.hsla(c.hslHue, c.hslSaturation, c.hslLightness, .2)
                 hoverColor: Qt.hsla(c.hslHue, c.hslSaturation, c.hslLightness, .3)
                 pressColor: Qt.hsla(c.hslHue, c.hslSaturation, c.hslLightness, .4)
@@ -108,7 +105,7 @@ Item {
                 onClicked: {
                     ContentLibraryBackend.materialsModel.addToProject(modelData)
                 }
-            } // IconButton
+            }
 
             IconButton {
                 id: downloadIcon
@@ -118,7 +115,7 @@ Item {
 
                 iconColor: root.downloadState === "unavailable" || root.downloadState === "failed"
                            ? StudioTheme.Values.themeRedLight
-                           : StudioTheme.Values.themeTextColor
+                           : "white"
 
                 iconSize: 22
                 iconScale: downloadIcon.containsMouse ? 1.2 : 1
@@ -154,29 +151,33 @@ Item {
                     root.downloadState = ""
                     downloader.start()
                 }
-            } // IconButton
-        } // Image
+            }
+        }
 
-        TextInput {
+        Text {
             id: matName
 
-            text: modelData.bundleMaterialName
-
             width: img.width
-            clip: true
             anchors.horizontalCenter: parent.horizontalCenter
             horizontalAlignment: TextInput.AlignHCenter
 
+            text: modelData.bundleMaterialName
+            elide: Text.ElideRight
             font.pixelSize: StudioTheme.Values.myFontSize
-
-            readOnly: true
-            selectByMouse: !matName.readOnly
-
             color: StudioTheme.Values.themeTextColor
-            selectionColor: StudioTheme.Values.themeTextSelectionColor
-            selectedTextColor: StudioTheme.Values.themeTextSelectedTextColor
         }
-    } // Column
+    }
+
+    Timer {
+        id: delayedFinish
+        interval: 200
+
+        onTriggered: {
+            downloadPane.endDownload()
+
+            root.downloadState = "downloaded"
+        }
+    }
 
     MultiFileDownloader {
         id: downloader
@@ -191,9 +192,7 @@ Item {
         }
 
         onFinishedChanged: {
-            downloadPane.endDownload()
-
-            root.downloadState = "downloaded"
+            delayedFinish.restart()
         }
 
         onDownloadCanceled: {
@@ -214,6 +213,6 @@ Item {
             probeUrl: false
             downloadEnabled: true
             targetFilePath: downloader.nextTargetPath
-        } // FileDownloader
-    } // MultiFileDownloader
+        }
+    }
 }

@@ -3,11 +3,12 @@
 
 #include "mcusupportplugin.h"
 
-#include "mcukitinformation.h"
+#include "mcubuildstep.h"
 #include "mcukitmanager.h"
 #include "mcuqmlprojectnode.h"
 #include "mcusupportconstants.h"
 #include "mcusupportdevice.h"
+#include "mcusupportimportprovider.h"
 #include "mcusupportoptions.h"
 #include "mcusupportoptionspage.h"
 #include "mcusupportrunconfiguration.h"
@@ -17,6 +18,7 @@
 #include "test/unittest.h"
 #endif
 
+#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
@@ -33,9 +35,15 @@
 
 #include <cmakeprojectmanager/cmakeprojectconstants.h>
 
+#include <qmljs/qmljsmodelmanagerinterface.h>
+#include <qmljstools/qmljstoolsconstants.h>
+
 #include <utils/filepath.h>
 #include <utils/infobar.h>
 
+#include <QAction>
+#include <QDateTime>
+#include <QDesktopServices>
 #include <QTimer>
 
 using namespace Core;
@@ -44,6 +52,7 @@ using namespace ProjectExplorer;
 namespace McuSupport::Internal {
 
 const char setupMcuSupportKits[] = "SetupMcuSupportKits";
+const char qdsMcuDocInfoEntry[] = "McuDocInfoEntry";
 
 void printMessage(const QString &message, bool important)
 {
@@ -82,9 +91,7 @@ void updateMCUProjectTree(ProjectExplorer::Project *p)
         auto qmlProjectNode = std::make_unique<McuQmlProjectNode>(FilePath(node->filePath()),
                                                                   inputsJsonFile);
 
-        auto qmlProjectNodePtr = qmlProjectNode.get();
-        const_cast<ProjectNode *>(node)->addNode(std::move(qmlProjectNode));
-        ProjectExplorer::ProjectTree::emitSubtreeChanged(qmlProjectNodePtr);
+        const_cast<ProjectNode *>(node)->replaceSubtree(nullptr, std::move(qmlProjectNode));
     });
 };
 
@@ -97,7 +104,8 @@ public:
     SettingsHandler::Ptr m_settingsHandler{new SettingsHandler};
     McuSupportOptions m_options{m_settingsHandler};
     McuSupportOptionsPage optionsPage{m_options, m_settingsHandler};
-    McuDependenciesKitAspect environmentPathsKitAspect;
+    MCUBuildStepFactory mcuBuildStepFactory;
+    McuSupportImportProvider mcuImportProvider;
 }; // class McuSupportPluginPrivate
 
 static McuSupportPluginPrivate *dd{nullptr};
@@ -108,6 +116,24 @@ McuSupportPlugin::~McuSupportPlugin()
     dd = nullptr;
 }
 
+static bool isQtMCUsProject(ProjectExplorer::Project *p)
+{
+    if (!Core::ICore::isQtDesignStudio())
+        // should be unreachable
+        printMessage("Testing if the QDS project is an MCU project outside the QDS", true);
+
+    if (!p || !p->rootProjectNode())
+        return false;
+
+    ProjectExplorer::Target *target = p->activeTarget();
+    if (!target)
+        return false;
+
+    const bool isMcuProject = target->additionalData("CustomQtForMCUs").toBool();
+
+    return isMcuProject;
+}
+
 void McuSupportPlugin::initialize()
 {
     setObjectName("McuSupportPlugin");
@@ -116,6 +142,62 @@ void McuSupportPlugin::initialize()
     connect(ProjectManager::instance(),
             &ProjectManager::projectFinishedParsing,
             updateMCUProjectTree);
+
+    // Temporary fix for CodeModel/Checker race condition
+    // Remove after https://bugreports.qt.io/browse/QTCREATORBUG-29269 is closed
+
+    if (!Core::ICore::isQtDesignStudio()) {
+        connect(
+            QmlJS::ModelManagerInterface::instance(),
+            &QmlJS::ModelManagerInterface::documentUpdated,
+            [lasttime = QTime::currentTime()](QmlJS::Document::Ptr doc) mutable {
+                // Prevent inifinite recall loop
+                auto currenttime = QTime::currentTime();
+                if (lasttime.msecsTo(currenttime) < 1000) {
+                    lasttime = currenttime;
+                    return;
+                }
+                lasttime = currenttime;
+
+                if (!doc)
+                    return;
+                //Reset code model only for QtMCUs documents
+                const Project *project = ProjectManager::projectForFile(doc->path());
+                if (!project)
+                    return;
+                const QList<Target *> targets = project->targets();
+                bool isMcuDocument
+                    = std::any_of(std::begin(targets), std::end(targets), [](const Target *target) {
+                          if (!target || !target->kit()
+                              || !target->kit()->hasValue(Constants::KIT_MCUTARGET_KITVERSION_KEY))
+                              return false;
+                          return true;
+                      });
+                if (!isMcuDocument)
+                    return;
+
+                Core::ActionManager::command(QmlJSTools::Constants::RESET_CODEMODEL)
+                    ->action()
+                    ->trigger();
+            });
+    } else {
+        // Only in design studio
+        connect(ProjectManager::instance(),
+                &ProjectManager::projectFinishedParsing,
+                [&](ProjectExplorer::Project *p) {
+                    if (!isQtMCUsProject(p) || !ICore::infoBar()->canInfoBeAdded(qdsMcuDocInfoEntry))
+                        return;
+                    Utils::InfoBarEntry docInfo(qdsMcuDocInfoEntry,
+                                                Tr::tr("Read about Using QtMCUs in the Qt Design Studio"),
+                                                Utils::InfoBarEntry::GlobalSuppression::Enabled);
+                    docInfo.addCustomButton(Tr::tr("Go to the Documentation"), [] {
+                        ICore::infoBar()->suppressInfo(qdsMcuDocInfoEntry);
+                        QDesktopServices::openUrl(
+                            QUrl("https://doc.qt.io/qtdesignstudio/studio-on-mcus.html"));
+                    });
+                    ICore::infoBar()->addInfo(docInfo);
+                });
+    }
 
     dd->m_options.registerQchFiles();
     dd->m_options.registerExamples();
@@ -130,7 +212,7 @@ void McuSupportPlugin::extensionsInitialized()
 {
     ProjectExplorer::DeviceManager::instance()->addDevice(McuSupportDevice::create());
 
-    connect(KitManager::instance(), &KitManager::kitsLoaded, [this]() {
+    connect(KitManager::instance(), &KitManager::kitsLoaded, [this] {
         McuKitManager::removeOutdatedKits();
         McuKitManager::createAutomaticKits(dd->m_settingsHandler);
         McuKitManager::fixExistingKits(dd->m_settingsHandler);
@@ -166,7 +248,7 @@ void McuSupportPlugin::askUserAboutMcuSupportKitsUpgrade(const SettingsHandler::
         return;
 
     Utils::InfoBarEntry info(upgradeMcuSupportKits,
-                             Tr::tr("New version of Qt for MCUs detected. Upgrade existing Kits?"),
+                             Tr::tr("New version of Qt for MCUs detected. Upgrade existing kits?"),
                              Utils::InfoBarEntry::GlobalSuppression::Enabled);
     using McuKitManager::UpgradeOption;
     static UpgradeOption selectedOption = UpgradeOption::Keep;
@@ -219,4 +301,10 @@ void McuSupportPlugin::askUserAboutRemovingUninstalledTargetsKits()
     ICore::infoBar()->addInfo(info);
 }
 
+void McuSupportPlugin::updateDeployStep(ProjectExplorer::Target *target, bool enabled)
+{
+    MCUBuildStepFactory::updateDeployStep(target, enabled);
+}
+
 } // namespace McuSupport::Internal
+

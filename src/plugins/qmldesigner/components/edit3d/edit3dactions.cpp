@@ -2,17 +2,14 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "edit3dactions.h"
-#include "edit3dview.h"
 
-#include <viewmanager.h>
-#include <nodeinstanceview.h>
-#include <nodemetainfo.h>
-#include <qmldesignerplugin.h>
+#include "bakelights.h"
+#include "edit3dview.h"
+#include "nodemetainfo.h"
+#include "qmldesignerconstants.h"
 #include "seekerslider.h"
 
 #include <utils/algorithm.h>
-
-#include <QDebug>
 
 namespace QmlDesigner {
 
@@ -28,10 +25,8 @@ Edit3DActionTemplate::Edit3DActionTemplate(const QString &description,
 
 void Edit3DActionTemplate::actionTriggered(bool b)
 {
-    if (m_type != View3DActionType::Empty && m_type != View3DActionType::SelectBackgroundColor
-        && m_type != View3DActionType::SelectGridColor) {
+    if (m_type != View3DActionType::Empty)
         m_view->emitView3DAction(m_type, b);
-    }
 
     if (m_action)
         m_action(m_selectionContext);
@@ -101,25 +96,6 @@ bool Edit3DAction::isEnabled(const SelectionContext &selectionContext) const
     return isVisible(selectionContext);
 }
 
-Edit3DCameraAction::Edit3DCameraAction(const QByteArray &menuId,
-                                       View3DActionType type,
-                                       const QString &description,
-                                       const QKeySequence &key,
-                                       bool checkable,
-                                       bool checked,
-                                       const QIcon &icon,
-                                       Edit3DView *view,
-                                       SelectionContextOperation selectionAction)
-    : Edit3DAction(menuId, type, description, key, checkable, checked, icon, view, selectionAction)
-{
-}
-
-bool Edit3DCameraAction::isEnabled(const SelectionContext &selectionContext) const
-{
-    return Utils::anyOf(selectionContext.selectedModelNodes(),
-                        [](const ModelNode &node) { return node.metaInfo().isQtQuick3DCamera(); });
-}
-
 Edit3DParticleSeekerAction::Edit3DParticleSeekerAction(const QByteArray &menuId,
                                                        View3DActionType type,
                                                        Edit3DView *view)
@@ -145,6 +121,35 @@ bool Edit3DParticleSeekerAction::isVisible(const SelectionContext &) const
 bool Edit3DParticleSeekerAction::isEnabled(const SelectionContext &) const
 {
     return m_seeker->isEnabled();
+}
+
+Edit3DBakeLightsAction::Edit3DBakeLightsAction(const QIcon &icon,
+                                               Edit3DView *view,
+                                               SelectionContextOperation selectionAction)
+    : Edit3DAction(QmlDesigner::Constants::EDIT3D_BAKE_LIGHTS,
+                   View3DActionType::Empty,
+                   QCoreApplication::translate("BakeLights", "Bake Lights"),
+                   QKeySequence(),
+                   false,
+                   false,
+                   icon,
+                   view,
+                   selectionAction,
+                   QCoreApplication::translate("BakeLights", "Bake lights for the current 3D scene."))
+    , m_view(view)
+{
+
+}
+
+bool Edit3DBakeLightsAction::isVisible(const SelectionContext &) const
+{
+    return m_view->isBakingLightsSupported();
+}
+
+bool Edit3DBakeLightsAction::isEnabled(const SelectionContext &) const
+{
+    return m_view->isBakingLightsSupported()
+            && !BakeLights::resolveView3dId(m_view).isEmpty();
 }
 
 }

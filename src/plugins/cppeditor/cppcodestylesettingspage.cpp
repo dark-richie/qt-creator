@@ -11,8 +11,13 @@
 #include "cpppointerdeclarationformatter.h"
 #include "cpptoolssettings.h"
 
-#include <coreplugin/icore.h>
 #include <cppeditor/cppeditorconstants.h>
+
+#include <cplusplus/Overview.h>
+#include <cplusplus/pp.h>
+
+#include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/codestyleeditor.h>
 #include <texteditor/displaysettings.h>
 #include <texteditor/fontsettings.h>
@@ -23,17 +28,14 @@
 #include <texteditor/tabsettingswidget.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorsettings.h>
+
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
-
-#include <cplusplus/Overview.h>
-#include <cplusplus/pp.h>
-
-#include <extensionsystem/pluginmanager.h>
 
 #include <QCheckBox>
 #include <QTabWidget>
 #include <QTextBlock>
+#include <QVBoxLayout>
 
 using namespace TextEditor;
 using namespace Utils;
@@ -75,8 +77,7 @@ static void applyRefactorings(QTextDocument *textDocument, TextEditorWidget *edi
     Utils::ChangeSet change = formatter.format(cppDocument->translationUnit()->ast());
 
     // Apply change
-    QTextCursor cursor(textDocument);
-    change.apply(&cursor);
+    change.apply(textDocument);
 }
 
 // ------------------ CppCodeStyleSettingsWidget
@@ -161,11 +162,8 @@ public:
         , m_bindStarToLeftSpecifier(createCheckBox(Tr::tr("Left const/volatile")))
         , m_bindStarToRightSpecifier(createCheckBox(Tr::tr("Right const/volatile"),
                                                     Tr::tr("This does not apply to references.")))
-        , m_categoryTab(new QTabWidget)
         , m_tabSettingsWidget(new TabSettingsWidget)
     {
-        m_categoryTab->setProperty("_q_custom_style_disabled", true);
-
         QSizePolicy sizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
         sizePolicy.setHorizontalStretch(0);
         sizePolicy.setVerticalStretch(0);
@@ -175,10 +173,17 @@ public:
         QObject::connect(m_tabSettingsWidget, &TabSettingsWidget::settingsChanged,
                          q, &CppCodeStylePreferencesWidget::slotTabSettingsChanged);
 
-        using namespace Utils::Layouting;
+        using namespace Layouting;
+
+        QWidget *contentGroupWidget = nullptr;
+        QWidget *bracesGroupWidget = nullptr;
+        QWidget *switchGroupWidget = nullptr;
+        QWidget *alignmentGroupWidget = nullptr;
+        QWidget *typesGroupWidget = nullptr;
 
         const Group contentGroup {
             title(Tr::tr("Indent")),
+            bindTo(&contentGroupWidget),
             Column {
                 m_indentAccessSpecifiers,
                 m_indentDeclarationsRelativeToAccessSpecifiers,
@@ -191,6 +196,7 @@ public:
 
         const Group bracesGroup {
             title(Tr::tr("Indent Braces")),
+            bindTo(&bracesGroupWidget),
             Column {
                 m_indentClassBraces,
                 m_indentNamespaceBraces,
@@ -203,6 +209,7 @@ public:
 
         const Group switchGroup {
             title(Tr::tr("Indent within \"switch\"")),
+            bindTo(&switchGroupWidget),
             Column {
                 m_indentSwitchLabels,
                 m_indentCaseStatements,
@@ -214,6 +221,7 @@ public:
 
         const Group alignmentGroup {
             title(Tr::tr("Align")),
+            bindTo(&alignmentGroupWidget),
             Column {
                 m_alignAssignments,
                 m_extraPaddingConditions,
@@ -223,6 +231,7 @@ public:
 
         const Group typesGroup {
             title(Tr::tr("Bind '*' and '&&' in types/declarations to")),
+            bindTo(&typesGroupWidget),
             Column {
                 m_bindStarToIdentifier,
                 m_bindStarToTypeName,
@@ -233,7 +242,8 @@ public:
         };
 
         Row {
-            TabWidget { m_categoryTab, {
+            TabWidget {
+                bindTo(&m_categoryTab),
                 Tab { Tr::tr("General"),
                     Row { Column { m_tabSettingsWidget, st }, createPreview(0) }
                 },
@@ -242,15 +252,17 @@ public:
                 Tab { Tr::tr("\"switch\""), Row { switchGroup, createPreview(3) } },
                 Tab { Tr::tr("Alignment"), Row { alignmentGroup, createPreview(4) } },
                 Tab { Tr::tr("Pointers and References"), Row { typesGroup, createPreview(5) } }
-            } }
+            }
         }.attachTo(q);
 
+        m_categoryTab->setProperty("_q_custom_style_disabled", true);
+
         m_controllers.append(m_tabSettingsWidget);
-        m_controllers.append(contentGroup.widget);
-        m_controllers.append(bracesGroup.widget);
-        m_controllers.append(switchGroup.widget);
-        m_controllers.append(alignmentGroup.widget);
-        m_controllers.append(typesGroup.widget);
+        m_controllers.append(contentGroupWidget);
+        m_controllers.append(bracesGroupWidget);
+        m_controllers.append(switchGroupWidget);
+        m_controllers.append(alignmentGroupWidget);
+        m_controllers.append(typesGroupWidget);
     }
 
     QCheckBox *createCheckBox(const QString &text, const QString &toolTip = {})
@@ -414,7 +426,8 @@ void CppCodeStylePreferencesWidget::setCodeStyleSettings(const CppCodeStyleSetti
 
 void CppCodeStylePreferencesWidget::slotCurrentPreferencesChanged(ICodeStylePreferences *preferences, bool preview)
 {
-    const bool enable = !preferences->isReadOnly() && !preferences->isTemporarilyReadOnly();
+    const bool enable = !preferences->isReadOnly() && (!preferences->isTemporarilyReadOnly()
+                                                       || preferences->isAdditionalTabDisabled());
     for (QWidget *widget : d->m_controllers)
         widget->setEnabled(enable);
 
@@ -456,7 +469,7 @@ void CppCodeStylePreferencesWidget::updatePreview()
 {
     CppCodeStylePreferences *cppCodeStylePreferences = m_preferences
             ? m_preferences
-            : CppToolsSettings::instance()->cppCodeStyle();
+            : CppToolsSettings::cppCodeStyle();
     const CppCodeStyleSettings ccss = cppCodeStylePreferences->currentCodeStyleSettings();
     const TabSettings ts = cppCodeStylePreferences->currentTabSettings();
     QtStyleCodeFormatter formatter(ts, ccss);
@@ -548,20 +561,14 @@ void CppCodeStylePreferencesWidget::finish()
     emit finishEmitted();
 }
 
-// ------------------ CppCodeStyleSettingsPage
+// CppCodeStyleSettingsPageWidget
 
-CppCodeStyleSettingsPage::CppCodeStyleSettingsPage()
+class CppCodeStyleSettingsPageWidget : public Core::IOptionsPageWidget
 {
-    setId(Constants::CPP_CODE_STYLE_SETTINGS_ID);
-    setDisplayName(Tr::tr("Code Style"));
-    setCategory(Constants::CPP_SETTINGS_CATEGORY);
-}
-
-QWidget *CppCodeStyleSettingsPage::widget()
-{
-    if (!m_widget) {
-        CppCodeStylePreferences *originalCodeStylePreferences = CppToolsSettings::instance()
-                                                                    ->cppCodeStyle();
+public:
+    CppCodeStyleSettingsPageWidget()
+    {
+        CppCodeStylePreferences *originalCodeStylePreferences = CppToolsSettings::cppCodeStyle();
         m_pageCppCodeStylePreferences = new CppCodeStylePreferences();
         m_pageCppCodeStylePreferences->setDelegatingPool(
             originalCodeStylePreferences->delegatingPool());
@@ -571,40 +578,45 @@ QWidget *CppCodeStyleSettingsPage::widget()
             originalCodeStylePreferences->currentDelegate());
         // we set id so that it won't be possible to set delegate to the original prefs
         m_pageCppCodeStylePreferences->setId(originalCodeStylePreferences->id());
-        m_widget = TextEditorSettings::codeStyleFactory(CppEditor::Constants::CPP_SETTINGS_ID)
-                       ->createCodeStyleEditor(m_pageCppCodeStylePreferences);
+
+        m_codeStyleEditor = TextEditorSettings::codeStyleFactory(CppEditor::Constants::CPP_SETTINGS_ID)
+                                ->createCodeStyleEditor(m_pageCppCodeStylePreferences);
+
+        auto hbox = new QVBoxLayout(this);
+        hbox->addWidget(m_codeStyleEditor);
     }
-    return m_widget;
-}
 
-void CppCodeStyleSettingsPage::apply()
-{
-    if (m_widget) {
-        QSettings *s = Core::ICore::settings();
-
-        CppCodeStylePreferences *originalCppCodeStylePreferences = CppToolsSettings::instance()->cppCodeStyle();
+    void apply() final
+    {
+        CppCodeStylePreferences *originalCppCodeStylePreferences = CppToolsSettings::cppCodeStyle();
         if (originalCppCodeStylePreferences->codeStyleSettings() != m_pageCppCodeStylePreferences->codeStyleSettings()) {
             originalCppCodeStylePreferences->setCodeStyleSettings(m_pageCppCodeStylePreferences->codeStyleSettings());
-            originalCppCodeStylePreferences->toSettings(QLatin1String(CppEditor::Constants::CPP_SETTINGS_ID), s);
+            originalCppCodeStylePreferences->toSettings(CppEditor::Constants::CPP_SETTINGS_ID);
         }
         if (originalCppCodeStylePreferences->tabSettings() != m_pageCppCodeStylePreferences->tabSettings()) {
             originalCppCodeStylePreferences->setTabSettings(m_pageCppCodeStylePreferences->tabSettings());
-            originalCppCodeStylePreferences->toSettings(QLatin1String(CppEditor::Constants::CPP_SETTINGS_ID), s);
+            originalCppCodeStylePreferences->toSettings(CppEditor::Constants::CPP_SETTINGS_ID);
         }
         if (originalCppCodeStylePreferences->currentDelegate() != m_pageCppCodeStylePreferences->currentDelegate()) {
             originalCppCodeStylePreferences->setCurrentDelegate(m_pageCppCodeStylePreferences->currentDelegate());
-            originalCppCodeStylePreferences->toSettings(QLatin1String(CppEditor::Constants::CPP_SETTINGS_ID), s);
+            originalCppCodeStylePreferences->toSettings(CppEditor::Constants::CPP_SETTINGS_ID);
         }
 
-        m_widget->apply();
+        m_codeStyleEditor->apply();
     }
-}
 
-void CppCodeStyleSettingsPage::finish()
+    CppCodeStylePreferences *m_pageCppCodeStylePreferences = nullptr;
+    CodeStyleEditorWidget *m_codeStyleEditor;
+};
+
+// CppCodeStyleSettingsPage
+
+CppCodeStyleSettingsPage::CppCodeStyleSettingsPage()
 {
-    if (m_widget)
-        m_widget->finish();
-    delete m_widget;
+    setId(Constants::CPP_CODE_STYLE_SETTINGS_ID);
+    setDisplayName(Tr::tr("Code Style"));
+    setCategory(Constants::CPP_SETTINGS_CATEGORY);
+    setWidgetCreator([] { return new CppCodeStyleSettingsPageWidget; });
 }
 
 } // namespace CppEditor::Internal

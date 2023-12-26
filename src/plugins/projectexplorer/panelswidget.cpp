@@ -32,7 +32,7 @@ const int BELOW_CONTENTS_MARGIN = 16;
 // PanelsWidget
 ///
 
-PanelsWidget::PanelsWidget(QWidget *parent) : QWidget(parent)
+PanelsWidget::PanelsWidget(QWidget *parent, bool addStretch) : QWidget(parent)
 {
     m_root = new QWidget(nullptr);
     m_root->setFocusPolicy(Qt::NoFocus);
@@ -53,7 +53,8 @@ PanelsWidget::PanelsWidget(QWidget *parent) : QWidget(parent)
     m_layout->setSpacing(0);
 
     topLayout->addLayout(m_layout);
-    topLayout->addStretch(100);
+    if (addStretch)
+        topLayout->addStretch(1);
 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -72,7 +73,7 @@ PanelsWidget::PanelsWidget(const QString &displayName, QWidget *widget)
 }
 
 PanelsWidget::PanelsWidget(const QString &displayName, ProjectSettingsWidget *widget)
-    : PanelsWidget(nullptr)
+    : PanelsWidget(nullptr, !widget->expanding())
 {
     addPropertiesPanel(displayName);
     addGlobalSettingsProperties(widget);
@@ -99,10 +100,7 @@ void PanelsWidget::addPropertiesPanel(const QString &displayName)
     auto nameLabel = new QLabel(m_root);
     nameLabel->setText(displayName);
     nameLabel->setContentsMargins(0, ABOVE_HEADING_MARGIN, 0, 0);
-    QFont f = nameLabel->font();
-    f.setBold(true);
-    f.setPointSizeF(f.pointSizeF() * 1.6);
-    nameLabel->setFont(f);
+    nameLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH3));
     m_layout->addWidget(nameLabel);
     m_layout->addWidget(Layouting::createHr());
 }

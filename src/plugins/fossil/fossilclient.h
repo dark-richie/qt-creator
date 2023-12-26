@@ -11,15 +11,13 @@
 
 #include <QList>
 
-namespace Fossil {
-namespace Internal {
+namespace Fossil::Internal {
 
 class FossilSettings;
 class FossilPluginPrivate;
 
 class FossilClient : public VcsBase::VcsBaseClient
 {
-    Q_OBJECT
 public:
     enum SupportedFeature {
         AnnotateBlameFeature = 0x2,
@@ -41,7 +39,7 @@ public:
     static unsigned makeVersionNumber(int major, int minor, int patch);
     static QString makeVersionString(unsigned version);
 
-    explicit FossilClient(FossilSettings *settings);
+    FossilClient();
     FossilSettings &settings() const;
 
     unsigned int synchronousBinaryVersion() const;
@@ -107,10 +105,10 @@ private:
     VcsBase::VcsBaseEditorConfig *createLogEditor(VcsBase::VcsBaseEditorWidget *editor);
 
     friend class FossilPluginPrivate;
-    FossilSettings *m_settings = nullptr;
 };
+
+FossilClient &fossilClient();
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(FossilClient::SupportedFeatures)
 
-} // namespace Internal
-} // namespace Fossil
+} // namespace Fossil::Internal

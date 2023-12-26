@@ -4,6 +4,7 @@
 #include "qmltaskmanager.h"
 #include "qmljseditorconstants.h"
 
+#include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/taskhub.h>
@@ -12,7 +13,7 @@
 #include <qmljs/qmljsconstants.h>
 #include <qmljs/qmljslink.h>
 #include <qmljs/qmljscheck.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 
 #include <QDebug>
 #include <QtConcurrentRun>
@@ -87,7 +88,7 @@ void QmlTaskManager::collectMessages(QPromise<FileErrorMessages> &promise,
                                                    fileName,
                                                    Constants::TASK_CATEGORY_QML_ANALYSIS);
 
-                    Check checker(document, context);
+                    Check checker(document, context, Core::ICore::settings());
                     result.tasks += convertToTasks(checker(),
                                                    fileName,
                                                    Constants::TASK_CATEGORY_QML_ANALYSIS);

@@ -12,10 +12,13 @@
 #include <QToolButton>
 
 #include <coreplugin/icore.h>
+
 #include <utils/layoutbuilder.h>
 #include <utils/utilsicons.h>
 
-using namespace ScxmlEditor::Common;
+using namespace Utils;
+
+namespace ScxmlEditor::Common {
 
 ColorSettings::ColorSettings(QWidget *parent)
     : QFrame(parent)
@@ -29,14 +32,14 @@ ColorSettings::ColorSettings(QWidget *parent)
     auto removeTheme = new QToolButton;
     removeTheme->setIcon(Utils::Icons::MINUS.icon());
     removeTheme->setAutoRaise(true);
-    const QSettings *s = Core::ICore::settings();
+    const QtcSettings *s = Core::ICore::settings();
     m_colorThemes = s->value(Constants::C_SETTINGS_COLORSETTINGS_COLORTHEMES).toMap();
     m_comboColorThemes->addItems(m_colorThemes.keys());
     m_comboColorThemes->setCurrentText(
                 s->value(Constants::C_SETTINGS_COLORSETTINGS_CURRENTCOLORTHEME).toString());
     selectTheme(m_comboColorThemes->currentIndex());
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
     Column {
         Row {
             m_comboColorThemes,
@@ -44,7 +47,8 @@ ColorSettings::ColorSettings(QWidget *parent)
             removeTheme,
         },
         m_colorThemeView,
-    }.attachTo(this, WithoutMargins);
+        noMargin
+    }.attachTo(this);
 
     connect(m_comboColorThemes, &QComboBox::currentIndexChanged,
             this, &ColorSettings::selectTheme);
@@ -56,7 +60,7 @@ ColorSettings::ColorSettings(QWidget *parent)
 
 void ColorSettings::save()
 {
-    QSettings *s = Core::ICore::settings();
+    QtcSettings *s = Core::ICore::settings();
     s->setValue(Constants::C_SETTINGS_COLORSETTINGS_COLORTHEMES, m_colorThemes);
     s->setValue(Constants::C_SETTINGS_COLORSETTINGS_CURRENTCOLORTHEME, m_comboColorThemes->currentText());
 }
@@ -109,3 +113,5 @@ void ColorSettings::removeTheme()
             m_colorThemeView->setEnabled(false);
     }
 }
+
+} // ScxmlEditor::Common

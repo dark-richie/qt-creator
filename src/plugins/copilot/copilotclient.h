@@ -6,6 +6,7 @@
 #include "copilothoverhandler.h"
 #include "requests/checkstatus.h"
 #include "requests/getcompletions.h"
+#include "requests/seteditorinfo.h"
 #include "requests/signinconfirm.h"
 #include "requests/signininitiate.h"
 #include "requests/signout.h"
@@ -46,9 +47,15 @@ public:
         const QString &userCode,
         std::function<void(const SignInConfirmRequest::Response &response)> callback);
 
-    GetCompletionResponse lastCompletion(TextEditor::TextEditorWidget *editor) const;
+    bool canOpenProject(ProjectExplorer::Project *project) override;
+
+    bool isEnabled(ProjectExplorer::Project *project);
+
+    void proxyAuthenticationFailed();
 
 private:
+    void requestSetEditorInfo();
+
     QMap<TextEditor::TextEditorWidget *, GetCompletionRequest> m_runningRequests;
     struct ScheduleData
     {
@@ -57,7 +64,7 @@ private:
     };
     QMap<TextEditor::TextEditorWidget *, ScheduleData> m_scheduledRequests;
     CopilotHoverHandler m_hoverHandler;
-    QHash<TextEditor::TextEditorWidget *, GetCompletionResponse> m_lastCompletions;
+    bool m_isAskingForPassword{false};
 };
 
 } // namespace Copilot::Internal

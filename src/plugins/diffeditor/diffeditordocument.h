@@ -8,8 +8,6 @@
 #include <coreplugin/patchtool.h>
 #include <coreplugin/textdocument.h>
 
-QT_FORWARD_DECLARE_CLASS(QMenu)
-
 namespace DiffEditor {
 
 class DiffEditorController;
@@ -60,7 +58,6 @@ public:
     QString fallbackSaveAsFileName() const override;
 
     bool isSaveAsAllowed() const override;
-    bool save(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
     void reload();
     bool reload(QString *errorString, ReloadFlag flag, ChangeType type) override;
     OpenResult open(QString *errorString, const Utils::FilePath &filePath,
@@ -74,6 +71,9 @@ signals:
     void temporaryStateChanged();
     void documentChanged();
     void descriptionChanged();
+
+protected:
+    bool saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
 
 private:
     void beginReload();

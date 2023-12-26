@@ -6,7 +6,7 @@
 #include "makefileparse.h"
 #include "qmakebuildconfiguration.h"
 #include "qmakebuildinfo.h"
-#include "qmakekitinformation.h"
+#include "qmakekitaspect.h"
 #include "qmakenodes.h"
 #include "qmakeproject.h"
 #include "qmakeprojectmanagerconstants.h"
@@ -26,7 +26,6 @@
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kit.h>
 #include <projectexplorer/makestep.h>
-#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectexplorertr.h>
 #include <projectexplorer/runconfiguration.h>
@@ -34,11 +33,12 @@
 #include <projectexplorer/toolchain.h>
 
 #include <qtsupport/qtbuildaspects.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtversionmanager.h>
 
+#include <utils/process.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QDebug>
 #include <QInputDialog>
@@ -53,23 +53,12 @@ using namespace QmakeProjectManager::Internal;
 
 namespace QmakeProjectManager {
 
-class RunSystemAspect : public TriStateAspect
-{
-    Q_OBJECT
-public:
-    RunSystemAspect() : TriStateAspect(Tr::tr("Run"), Tr::tr("Ignore"), Tr::tr("Use global setting"))
-    {
-        setSettingsKey("RunSystemFunction");
-        setDisplayName(Tr::tr("qmake system() behavior when parsing:"));
-    }
-};
-
 QmakeExtraBuildInfo::QmakeExtraBuildInfo()
 {
-    const BuildPropertiesSettings &settings = ProjectExplorerPlugin::buildPropertiesSettings();
-    config.separateDebugInfo = settings.separateDebugInfo.value();
-    config.linkQmlDebuggingQQ2 = settings.qmlDebugging.value();
-    config.useQtQuickCompiler = settings.qtQuickCompiler.value();
+    const BuildPropertiesSettings &settings = buildPropertiesSettings();
+    config.separateDebugInfo = settings.separateDebugInfo();
+    config.linkQmlDebuggingQQ2 = settings.qmlDebugging();
+    config.useQtQuickCompiler = settings.qtQuickCompiler();
 }
 
 // --------------------------------------------------------------------
@@ -103,7 +92,7 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
     appendInitialCleanStep(Constants::MAKESTEP_BS_ID);
 
     setInitializer([this, target](const BuildInfo &info) {
-        auto qmakeStep = buildSteps()->firstOfType<QMakeStep>();
+        QMakeStep *qmakeStep = buildSteps()->firstOfType<QMakeStep>();
         QTC_ASSERT(qmakeStep, return);
 
         const QmakeExtraBuildInfo qmakeExtra = info.extraInfo.value<QmakeExtraBuildInfo>();
@@ -117,11 +106,11 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
 
         QString additionalArguments = qmakeExtra.additionalArguments;
         if (!additionalArguments.isEmpty())
-            qmakeStep->setUserArguments(additionalArguments);
+            qmakeStep->userArguments.setArguments(additionalArguments);
 
-        aspect<SeparateDebugInfoAspect>()->setValue(qmakeExtra.config.separateDebugInfo);
-        aspect<QmlDebuggingAspect>()->setValue(qmakeExtra.config.linkQmlDebuggingQQ2);
-        aspect<QtQuickCompilerAspect>()->setValue(qmakeExtra.config.useQtQuickCompiler);
+        separateDebugInfo.setValue(qmakeExtra.config.separateDebugInfo);
+        qmlDebugging.setValue(qmakeExtra.config.linkQmlDebuggingQQ2);
+        useQtQuickCompiler.setValue(qmakeExtra.config.useQtQuickCompiler);
 
         setQMakeBuildConfiguration(config);
 
@@ -160,33 +149,38 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
             this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(this, &QmakeBuildConfiguration::qmakeBuildConfigurationChanged,
             this, &QmakeBuildConfiguration::updateProblemLabel);
-    connect(&QmakeSettings::instance(), &QmakeSettings::settingsChanged,
+    connect(&settings(), &AspectContainer::changed,
             this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(target, &Target::parsingFinished, this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(target, &Target::kitChanged, this, &QmakeBuildConfiguration::updateProblemLabel);
 
-    const auto separateDebugInfoAspect = addAspect<SeparateDebugInfoAspect>();
-    connect(separateDebugInfoAspect, &SeparateDebugInfoAspect::changed, this, [this] {
+    connect(&separateDebugInfo, &BaseAspect::changed, this, [this] {
         emit separateDebugInfoChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    const auto qmlDebuggingAspect = addAspect<QmlDebuggingAspect>(this);
-    connect(qmlDebuggingAspect, &QmlDebuggingAspect::changed, this, [this] {
+    qmlDebugging.setBuildConfiguration(this);
+    connect(&qmlDebugging, &BaseAspect::changed, this, [this] {
         emit qmlDebuggingChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    const auto qtQuickCompilerAspect = addAspect<QtQuickCompilerAspect>(this);
-    connect(qtQuickCompilerAspect, &QtQuickCompilerAspect::changed, this, [this] {
+    useQtQuickCompiler.setBuildConfiguration(this);
+    connect(&useQtQuickCompiler, &QtQuickCompilerAspect::changed, this, [this] {
         emit useQtQuickCompilerChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    addAspect<RunSystemAspect>();
+    runSystemFunctions.setSettingsKey("RunSystemFunction");
+    runSystemFunctions.setDisplayStyle(SelectionAspect::DisplayStyle::ComboBox);
+    runSystemFunctions.setDisplayName(Tr::tr("qmake system() behavior when parsing:"));
+    runSystemFunctions.addOption(Tr::tr("Run"));
+    runSystemFunctions.addOption(Tr::tr("Ignore"));
+    runSystemFunctions.addOption(Tr::tr("Use global setting"));
+    runSystemFunctions.setDefaultValue(2);
 }
 
 QmakeBuildConfiguration::~QmakeBuildConfiguration()
@@ -194,22 +188,21 @@ QmakeBuildConfiguration::~QmakeBuildConfiguration()
     delete m_buildSystem;
 }
 
-QVariantMap QmakeBuildConfiguration::toMap() const
+void QmakeBuildConfiguration::toMap(Store &map) const
 {
-    QVariantMap map(BuildConfiguration::toMap());
-    map.insert(QLatin1String(BUILD_CONFIGURATION_KEY), int(m_qmakeBuildConfiguration));
-    return map;
+    BuildConfiguration::toMap(map);
+    map.insert(BUILD_CONFIGURATION_KEY, int(m_qmakeBuildConfiguration));
 }
 
-bool QmakeBuildConfiguration::fromMap(const QVariantMap &map)
+void QmakeBuildConfiguration::fromMap(const Store &map)
 {
-    if (!BuildConfiguration::fromMap(map))
-        return false;
+    BuildConfiguration::fromMap(map);
+    if (hasError())
+        return;
 
-    m_qmakeBuildConfiguration = QtVersion::QmakeBuildConfigs(map.value(QLatin1String(BUILD_CONFIGURATION_KEY)).toInt());
+    m_qmakeBuildConfiguration = QtVersion::QmakeBuildConfigs(map.value(BUILD_CONFIGURATION_KEY).toInt());
 
     m_lastKitState = LastKitState(kit());
-    return true;
 }
 
 void QmakeBuildConfiguration::kitChanged()
@@ -267,7 +260,7 @@ void QmakeBuildConfiguration::updateProblemLabel()
         }
     }
 
-    const bool unalignedBuildDir = QmakeSettings::warnAgainstUnalignedBuildDir()
+    const bool unalignedBuildDir = settings().warnAgainstUnalignedBuildDir()
             && !isBuildDirAtSafeLocation();
     if (unalignedBuildDir)
         allGood = false;
@@ -387,46 +380,29 @@ bool QmakeBuildConfiguration::isBuildDirAtSafeLocation() const
     return isBuildDirAtSafeLocation(project()->projectDirectory(), buildDirectory());
 }
 
-TriState QmakeBuildConfiguration::separateDebugInfo() const
-{
-    return aspect<SeparateDebugInfoAspect>()->value();
-}
-
 void QmakeBuildConfiguration::forceSeparateDebugInfo(bool sepDebugInfo)
 {
-    aspect<SeparateDebugInfoAspect>()->setValue(sepDebugInfo
-                                                ? TriState::Enabled
-                                                : TriState::Disabled);
-}
-
-TriState QmakeBuildConfiguration::qmlDebugging() const
-{
-    return aspect<QmlDebuggingAspect>()->value();
+    separateDebugInfo.setValue(sepDebugInfo ? TriState::Enabled : TriState::Disabled);
 }
 
 void QmakeBuildConfiguration::forceQmlDebugging(bool enable)
 {
-    aspect<QmlDebuggingAspect>()->setValue(enable ? TriState::Enabled : TriState::Disabled);
-}
-
-TriState QmakeBuildConfiguration::useQtQuickCompiler() const
-{
-    return aspect<QtQuickCompilerAspect>()->value();
+    qmlDebugging.setValue(enable ? TriState::Enabled : TriState::Disabled);
 }
 
 void QmakeBuildConfiguration::forceQtQuickCompiler(bool enable)
 {
-    aspect<QtQuickCompilerAspect>()->setValue(enable ? TriState::Enabled : TriState::Disabled);
+    useQtQuickCompiler.setValue(enable ? TriState::Enabled : TriState::Disabled);
 }
 
-bool QmakeBuildConfiguration::runSystemFunction() const
+bool QmakeBuildConfiguration::runQmakeSystemFunctions() const
 {
-    const TriState runSystem = aspect<RunSystemAspect>()->value();
-    if (runSystem == TriState::Enabled)
+    const int sel = runSystemFunctions();
+    if (sel == 0)
         return true;
-    if (runSystem == TriState::Disabled)
+    if (sel == 1)
         return false;
-    return QmakeSettings::runSystemFunction();
+    return settings().runSystemFunction();
 }
 
 QStringList QmakeBuildConfiguration::configCommandLineArguments() const
@@ -642,33 +618,29 @@ QString QmakeBuildConfiguration::extractSpecFromArguments(QString *args,
     if (parsedSpec.isEmpty())
         return {};
 
-    FilePath baseMkspecDir = FilePath::fromUserInput(version->hostDataPath().toString()
-                                                     + "/mkspecs");
-    baseMkspecDir = FilePath::fromString(baseMkspecDir.toFileInfo().canonicalFilePath());
+    const FilePath baseMkspecDir = version->hostDataPath().pathAppended("mkspecs")
+        .canonicalPath();
 
     // if the path is relative it can be
     // relative to the working directory (as found in the Makefiles)
     // or relatively to the mkspec directory
     // if it is the former we need to get the canonical form
     // for the other one we don't need to do anything
-    if (parsedSpec.toFileInfo().isRelative()) {
-        if (QFileInfo::exists(directory.path() + QLatin1Char('/') + parsedSpec.toString()))
-            parsedSpec = FilePath::fromUserInput(directory.path() + QLatin1Char('/') + parsedSpec.toString());
+    if (parsedSpec.isRelativePath()) {
+        FilePath mkspecs = directory.pathAppended(parsedSpec.path());
+        if (mkspecs.exists())
+            parsedSpec = mkspecs;
         else
-            parsedSpec = FilePath::fromUserInput(baseMkspecDir.toString() + QLatin1Char('/') + parsedSpec.toString());
+            parsedSpec = baseMkspecDir.pathAppended(parsedSpec.path());
     }
 
-    QFileInfo f2 = parsedSpec.toFileInfo();
-    while (f2.isSymLink()) {
-        parsedSpec = FilePath::fromString(f2.symLinkTarget());
-        f2.setFile(parsedSpec.toString());
-    }
+    for (int i = 0; i < 5 && parsedSpec.isSymLink(); ++i)
+        parsedSpec = parsedSpec.symLinkTarget();
 
     if (parsedSpec.isChildOf(baseMkspecDir)) {
         parsedSpec = parsedSpec.relativeChildPath(baseMkspecDir);
     } else {
-        FilePath sourceMkSpecPath = FilePath::fromString(version->sourcePath().toString()
-                                                         + QLatin1String("/mkspecs"));
+        FilePath sourceMkSpecPath = version->sourcePath().pathAppended("mkspecs");
         if (parsedSpec.isChildOf(sourceMkSpecPath))
             parsedSpec = parsedSpec.relativeChildPath(sourceMkSpecPath);
     }
@@ -682,7 +654,7 @@ QString QmakeBuildConfiguration::extractSpecFromArguments(QString *args,
 static BuildInfo createBuildInfo(const Kit *k, const FilePath &projectPath,
                  BuildConfiguration::BuildType type)
 {
-    const BuildPropertiesSettings &settings = ProjectExplorerPlugin::buildPropertiesSettings();
+    const BuildPropertiesSettings &settings = buildPropertiesSettings();
     QtVersion *version = QtKitAspect::qtVersion(k);
     QmakeExtraBuildInfo extraInfo;
     BuildInfo info;
@@ -693,7 +665,7 @@ static BuildInfo createBuildInfo(const Kit *k, const FilePath &projectPath,
         info.displayName = ::ProjectExplorer::Tr::tr("Release");
         //: Non-ASCII characters in directory suffix may cause build issues.
         suffix = Tr::tr("Release", "Shadow build directory suffix");
-        if (settings.qtQuickCompiler.value() == TriState::Default) {
+        if (settings.qtQuickCompiler() == TriState::Default) {
             if (version && version->isQtQuickCompilerSupported())
                 extraInfo.config.useQtQuickCompiler = TriState::Enabled;
         }
@@ -708,15 +680,15 @@ static BuildInfo createBuildInfo(const Kit *k, const FilePath &projectPath,
             info.displayName = ::ProjectExplorer::Tr::tr("Profile");
             //: Non-ASCII characters in directory suffix may cause build issues.
             suffix = Tr::tr("Profile", "Shadow build directory suffix");
-            if (settings.separateDebugInfo.value() == TriState::Default)
+            if (settings.separateDebugInfo() == TriState::Default)
                 extraInfo.config.separateDebugInfo = TriState::Enabled;
 
-            if (settings.qtQuickCompiler.value() == TriState::Default) {
+            if (settings.qtQuickCompiler() == TriState::Default) {
                 if (version && version->isQtQuickCompilerSupported())
                     extraInfo.config.useQtQuickCompiler = TriState::Enabled;
             }
         }
-        if (settings.qmlDebugging.value() == TriState::Default) {
+        if (settings.qmlDebugging() == TriState::Default) {
             if (version && version->isQmlDebuggingSupported())
                 extraInfo.config.linkQmlDebuggingQQ2 = TriState::Enabled;
         }
@@ -747,13 +719,13 @@ QmakeBuildConfigurationFactory::QmakeBuildConfigurationFactory()
 {
     registerBuildConfiguration<QmakeBuildConfiguration>(Constants::QMAKE_BC_ID);
     setSupportedProjectType(Constants::QMAKEPROJECT_ID);
-    setSupportedProjectMimeTypeName(Constants::PROFILE_MIMETYPE);
+    setSupportedProjectMimeTypeName(Utils::Constants::PROFILE_MIMETYPE);
     setIssueReporter([](Kit *k, const FilePath &projectPath, const FilePath &buildDir) {
         QtSupport::QtVersion *version = QtSupport::QtKitAspect::qtVersion(k);
         Tasks issues;
         if (version)
             issues << version->reportIssues(projectPath, buildDir);
-        if (QmakeSettings::warnAgainstUnalignedBuildDir()
+        if (settings().warnAgainstUnalignedBuildDir()
                 && !QmakeBuildConfiguration::isBuildDirAtSafeLocation(
                     projectPath.absolutePath(), buildDir.absoluteFilePath())) {
             issues.append(BuildSystemTask(Task::Warning,
@@ -809,7 +781,7 @@ QmakeBuildConfiguration::LastKitState::LastKitState(Kit *k)
       m_sysroot(SysRootKitAspect::sysRoot(k).toString()),
       m_mkspec(QmakeKitAspect::mkspec(k))
 {
-    ToolChain *tc = ToolChainKitAspect::cxxToolChain(k);
+    Toolchain *tc = ToolchainKitAspect::cxxToolchain(k);
     m_toolchain = tc ? tc->id() : QByteArray();
 }
 
@@ -858,5 +830,3 @@ void QmakeBuildConfiguration::restrictNextBuild(const RunConfiguration *rc)
 }
 
 } // namespace QmakeProjectManager
-
-#include <qmakebuildconfiguration.moc>

@@ -25,7 +25,7 @@
 
 #include "cppassert.h"
 
-#include <utils/executeondestruction.h>
+#include <QScopeGuard>
 
 #include <cctype>
 
@@ -756,9 +756,9 @@ void Lexer::scanStringLiteral(Token *tok, unsigned char hint)
 
 void Lexer::scanRawStringLiteral(Token *tok, unsigned char hint)
 {
-    Utils::ExecuteOnDestruction suffixCleaner;
-    if (!control())
-        suffixCleaner.reset([this] { _expectedRawStringSuffix.clear(); });
+    QScopeGuard cleanup([this] { _expectedRawStringSuffix.clear(); });
+    if (control())
+        cleanup.dismiss();
 
     const char *yytext = _currentChar;
 
@@ -827,7 +827,7 @@ void Lexer::scanRawStringLiteral(Token *tok, unsigned char hint)
         tok->f.kind = T_RAW_STRING_LITERAL;
 
     if (!control() && !closed) {
-        suffixCleaner.reset([]{});
+        cleanup.dismiss();
         s._tokenKind = tok->f.kind;
         _expectedRawStringSuffix.prepend(')');
         _expectedRawStringSuffix.append('"');
@@ -838,16 +838,16 @@ void Lexer::scanRawStringLiteral(Token *tok, unsigned char hint)
 
 bool Lexer::scanUntilRawStringLiteralEndPrecise()
 {
-    int matchLen = 0;
+    QByteArray slidingWindow;
+    slidingWindow.reserve(_expectedRawStringSuffix.size());
     while (_yychar) {
-        if (_yychar == _expectedRawStringSuffix.at(matchLen)) {
-            if (++matchLen == _expectedRawStringSuffix.length()) {
-                _expectedRawStringSuffix.clear();
-                yyinp();
-                return true;
-            }
-        } else {
-            matchLen = 0;
+        slidingWindow.append(_yychar);
+        if (slidingWindow.size() > _expectedRawStringSuffix.size())
+            slidingWindow.remove(0, 1);
+        if (slidingWindow == _expectedRawStringSuffix) {
+            _expectedRawStringSuffix.clear();
+            yyinp();
+            return true;
         }
         yyinp();
     }

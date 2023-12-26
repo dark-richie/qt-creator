@@ -19,16 +19,17 @@
 #include <projectexplorer/kit.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/runcontrol.h>
 #include <projectexplorer/target.h>
 
 #include <qmlprojectmanager/qmlprojectconstants.h>
 #include <qmlprojectmanager/qmlprojectmanagerconstants.h>
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
-#include <utils/asynctask.h>
-#include <utils/qtcprocess.h>
+#include <utils/async.h>
+#include <utils/process.h>
 
 #include <QDateTime>
 #include <QDeadlineTimer>
@@ -117,7 +118,7 @@ private:
     QStringList m_avdAbis;
     int m_viewerPid = -1;
     QFutureWatcher<void> m_pidFutureWatcher;
-    Utils::QtcProcess m_logcatProcess;
+    Utils::Process m_logcatProcess;
     QString m_logcatStartTimeStamp;
     UploadInfo m_uploadInfo;
 };
@@ -226,7 +227,7 @@ AndroidQmlPreviewWorker::AndroidQmlPreviewWorker(RunControl *runControl)
     connect(this, &AndroidQmlPreviewWorker::previewPidChanged,
             this, &AndroidQmlPreviewWorker::startLogcat);
 
-    connect(this, &RunWorker::stopped, &m_logcatProcess, &QtcProcess::stop);
+    connect(this, &RunWorker::stopped, &m_logcatProcess, &Process::stop);
     m_logcatProcess.setStdOutCallback([this](const QString &stdOut) {
         filterLogcatAndAppendMessage(stdOut);
     });
@@ -376,7 +377,7 @@ FilePath AndroidQmlPreviewWorker::createQmlrcFile(const FilePath &workFolder,
 {
     const QtSupport::QtVersion *qtVersion = QtSupport::QtKitAspect::qtVersion(m_rc->kit());
     const FilePath rccBinary = qtVersion->rccFilePath();
-    QtcProcess rccProcess;
+    Process rccProcess;
     FilePath qrcPath = FilePath::fromString(basename + ".qrc4viewer");
     const FilePath qmlrcPath = FilePath::fromString(QDir::tempPath()) / (basename + packageSuffix);
 
@@ -389,7 +390,7 @@ FilePath AndroidQmlPreviewWorker::createQmlrcFile(const FilePath &workFolder,
         rccProcess.setCommand({rccBinary, args});
         rccProcess.start();
         if (!rccProcess.waitForStarted()) {
-            appendMessage(Tr::tr("Could not create file for %1 \"%2\"").
+            appendMessage(Tr::tr("Could not create file for %1 \"%2\".").
                           arg(apkInfo()->name, rccProcess.commandLine().toUserOutput()),
                           StdErrFormat);
             qrcPath.removeFile();
@@ -400,7 +401,7 @@ FilePath AndroidQmlPreviewWorker::createQmlrcFile(const FilePath &workFolder,
         if (!rccProcess.readDataFromProcess(&stdOut, &stdErr)) {
             rccProcess.stop();
             rccProcess.waitForFinished();
-            appendMessage(Tr::tr("A timeout occurred running \"%1\"").
+            appendMessage(Tr::tr("A timeout occurred running \"%1\".").
                           arg(rccProcess.commandLine().toUserOutput()), StdErrFormat);
             qrcPath.removeFile();
             return {};
@@ -412,7 +413,7 @@ FilePath AndroidQmlPreviewWorker::createQmlrcFile(const FilePath &workFolder,
             appendMessage(QString::fromLocal8Bit(stdErr), StdErrFormat);
 
         if (rccProcess.exitStatus() != QProcess::NormalExit) {
-            appendMessage(Tr::tr("Crash while creating file for %1 \"%2\"").
+            appendMessage(Tr::tr("Crash while creating file for %1 \"%2\".").
                           arg(apkInfo()->name, rccProcess.commandLine().toUserOutput()),
                           StdErrFormat);
             qrcPath.removeFile();
@@ -489,13 +490,22 @@ bool AndroidQmlPreviewWorker::stopPreviewApp()
 
 // AndroidQmlPreviewWorkerFactory
 
-AndroidQmlPreviewWorkerFactory::AndroidQmlPreviewWorkerFactory()
+class AndroidQmlPreviewWorkerFactory final : public RunWorkerFactory
 {
-    setProduct<AndroidQmlPreviewWorker>();
-    addSupportedRunMode(ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE);
-    addSupportedRunConfig("QmlProjectManager.QmlRunConfiguration.Qml");
-    addSupportedRunConfig(Constants::ANDROID_RUNCONFIG_ID);
-    addSupportedDeviceType(Android::Constants::ANDROID_DEVICE_TYPE);
+public:
+    AndroidQmlPreviewWorkerFactory()
+    {
+        setProduct<AndroidQmlPreviewWorker>();
+        addSupportedRunMode(ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE);
+        addSupportedRunConfig("QmlProjectManager.QmlRunConfiguration.Qml");
+        addSupportedRunConfig(Constants::ANDROID_RUNCONFIG_ID);
+        addSupportedDeviceType(Android::Constants::ANDROID_DEVICE_TYPE);
+    }
+};
+
+void setupAndroidQmlPreviewWorker()
+{
+    static AndroidQmlPreviewWorkerFactory theAndroidQmlPreviewWorkerFactory;
 }
 
 } // Android::Internal

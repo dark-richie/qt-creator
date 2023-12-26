@@ -41,7 +41,7 @@ public:
     PropertyEditorContextObject* contextObject();
     QQuickWidget *widget();
     void setSource(const QUrl& url);
-    Internal::QmlAnchorBindingProxy &backendAnchorBinding();
+    QmlAnchorBindingProxy &backendAnchorBinding();
     DesignerPropertyMap &backendValuesPropertyMap();
     PropertyEditorTransaction *propertyEditorTransaction();
 
@@ -51,7 +51,7 @@ public:
     static QString templateGeneration(const NodeMetaInfo &type, const NodeMetaInfo &superType, const QmlObjectNode &node);
 
     static QUrl getQmlFileUrl(const TypeName &relativeTypeName, const NodeMetaInfo &info);
-    static QUrl getQmlUrlForMetaInfo(const NodeMetaInfo &modelNode, TypeName &className);
+    static std::tuple<QUrl, NodeMetaInfo> getQmlUrlForMetaInfo(const NodeMetaInfo &modelNode);
 
     static bool checkIfUrlExists(const QUrl &url);
 
@@ -76,7 +76,9 @@ private:
     void createPropertyEditorValue(const QmlObjectNode &qmlObjectNode,
                                    const PropertyName &name, const QVariant &value,
                                    PropertyEditorView *propertyEditor);
-    void setupPropertyEditorValue(const PropertyName &name, PropertyEditorView *propertyEditor, const QString &type);
+    void setupPropertyEditorValue(const PropertyName &name,
+                                  PropertyEditorView *propertyEditor,
+                                  const NodeMetaInfo &type);
 
     static TypeName qmlFileName(const NodeMetaInfo &nodeInfo);
     static QUrl fileToUrl(const QString &filePath);
@@ -86,7 +88,7 @@ private:
 
 private:
     Quick2PropertyEditorView *m_view;
-    Internal::QmlAnchorBindingProxy m_backendAnchorBinding;
+    QmlAnchorBindingProxy m_backendAnchorBinding;
     QmlModelNodeProxy m_backendModelNode;
     DesignerPropertyMap m_backendValuesPropertyMap;
     QScopedPointer<PropertyEditorTransaction> m_propertyEditorTransaction;

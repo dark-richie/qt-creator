@@ -22,7 +22,7 @@ class IPlugin;
 
 namespace Internal {
 
-class EXTENSIONSYSTEM_EXPORT PluginSpecPrivate : public QObject
+class EXTENSIONSYSTEM_TEST_EXPORT PluginSpecPrivate : public QObject
 {
     Q_OBJECT
 
@@ -45,6 +45,7 @@ public:
     void setEnabledByDefault(bool value);
     void setForceEnabled(bool value);
     void setForceDisabled(bool value);
+    void setSoftLoadable(bool value);
 
     std::optional<QPluginLoader> loader;
     std::optional<QStaticPlugin> staticPlugin;
@@ -55,6 +56,7 @@ public:
     bool required = false;
     bool experimental = false;
     bool enabledByDefault = true;
+    bool deprecated = false;
     QString vendor;
     QString copyright;
     QString license;
@@ -69,6 +71,7 @@ public:
     bool enabledIndirectly = false;
     bool forceEnabled = false;
     bool forceDisabled = false;
+    bool softLoadable = false;
 
     QString location;
     QString filePath;
@@ -83,6 +86,8 @@ public:
     PluginSpec::State state = PluginSpec::Invalid;
     bool hasError = false;
     QString errorString;
+
+    PerformanceData performanceData;
 
     static bool isValidVersion(const QString &version);
     static int versionCompare(const QString &version1, const QString &version2);

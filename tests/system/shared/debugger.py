@@ -53,8 +53,7 @@ def setBreakpointsForCurrentProject(filesAndLines):
     if not filesAndLines or not isinstance(filesAndLines, (list,tuple)):
         test.fatal("This function only takes a non-empty list/tuple holding dicts.")
         return None
-    waitForObject("{type='Utils::NavigationTreeView' unnamed='1' visible='1' "
-                  "window=':Qt Creator_Core::Internal::MainWindow'}")
+    waitForObject(":Qt Creator_Utils::NavigationTreeView")
     breakPointList = []
     for current in filesAndLines:
         for curFile,curLine in current.items():
@@ -108,13 +107,26 @@ def removeOldBreakpoints():
 #       This can be the return value of setBreakpointsForCurrentProject() if you
 #       passed the breakpoints into that function in the right order
 def doSimpleDebugging(currentKit, currentConfigName, expectedBPOrder=[], enableQml=True):
+
+    # this function verifies if the text matches the given
+    # regex inside expectedTexts
+    # param text must be a single str
+    # param expectedTexts can be str/list/tuple
+    def regexVerify(text, expectedTexts):
+        if isString(expectedTexts):
+            expectedTexts = [expectedTexts]
+        for curr in expectedTexts:
+            pattern = re.compile(curr)
+            if pattern.match(text):
+                return True
+        return False
+
     expectedLabelTexts = ['Stopped\.', 'Stopped at breakpoint \d+ in thread \d+\.']
     if len(expectedBPOrder) == 0:
         expectedLabelTexts.append("Running\.")
     switchViewTo(ViewConstants.PROJECTS)
     switchToBuildOrRunSettingsFor(currentKit, ProjectSettings.RUN)
-    ensureChecked(waitForObject("{container=':Qt Creator_Core::Internal::MainWindow' text='Enable QML' "
-                                "type='QCheckBox' unnamed='1' visible='1'}"), enableQml)
+    selectFromCombo(":EnableQMLDebugger_ComboBox", "Enabled" if enableQml else "Disabled")
     switchViewTo(ViewConstants.EDIT)
     if not __startDebugger__(currentKit, currentConfigName):
         return False
@@ -239,7 +251,7 @@ def __logDebugResult__():
 
 def verifyBreakPoint(bpToVerify):
     if isinstance(bpToVerify, dict):
-        fileName = list(bpToVerify.keys())[0]
+        fileName = next(iter(bpToVerify.keys()))
         editor = getEditorForFileSuffix(fileName)
         if editor:
             test.compare(waitForObject(":DebugModeWidget_QComboBox").toolTip, fileName,
@@ -248,7 +260,7 @@ def verifyBreakPoint(bpToVerify):
             windowTitle = str(waitForObject(":Qt Creator_Core::Internal::MainWindow").windowTitle)
             test.verify(windowTitle.startswith(os.path.basename(fileName) + " "),
                         "Verify that Creator's window title changed according to current file")
-            return test.compare(line, list(bpToVerify.values())[0],
+            return test.compare(line, next(iter(bpToVerify.values())),
                                 "Compare hit breakpoint to expected line number in %s" % fileName)
     else:
         test.fatal("Expected a dict for bpToVerify - got '%s'" % className(bpToVerify))

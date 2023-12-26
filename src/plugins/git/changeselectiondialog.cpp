@@ -12,7 +12,7 @@
 #include <utils/completinglineedit.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/theme/theme.h>
 
 #include <QCompleter>
@@ -33,8 +33,8 @@ ChangeSelectionDialog::ChangeSelectionDialog(const FilePath &workingDirectory, I
                                              QWidget *parent) :
     QDialog(parent)
 {
-    m_gitExecutable = GitClient::instance()->vcsBinary();
-    m_gitEnvironment = GitClient::instance()->processEnvironment();
+    m_gitExecutable = gitClient().vcsBinary();
+    m_gitEnvironment = gitClient().processEnvironment();
 
     resize(550, 350);
     setWindowTitle(Tr::tr("Select a Git Commit"));
@@ -208,13 +208,12 @@ void ChangeSelectionDialog::recalculateCompletion()
     if (workingDir.isEmpty())
         return;
 
-    GitClient *client = GitClient::instance();
-    QtcProcess *process = new QtcProcess(this);
-    process->setEnvironment(client->processEnvironment());
-    process->setCommand({client->vcsBinary(), {"for-each-ref", "--format=%(refname:short)"}});
+    Process *process = new Process(this);
+    process->setEnvironment(gitClient().processEnvironment());
+    process->setCommand({gitClient().vcsBinary(), {"for-each-ref", "--format=%(refname:short)"}});
     process->setWorkingDirectory(workingDir);
     process->setUseCtrlCStub(true);
-    connect(process, &QtcProcess::done, this, [this, process] {
+    connect(process, &Process::done, this, [this, process] {
         if (process->result() == ProcessResult::FinishedWithSuccess)
             m_changeModel->setStringList(process->cleanedStdOut().split('\n'));
         process->deleteLater();
@@ -238,8 +237,8 @@ void ChangeSelectionDialog::recalculateDetails()
         return;
     }
 
-    m_process.reset(new QtcProcess);
-    connect(m_process.get(), &QtcProcess::done, this, &ChangeSelectionDialog::setDetails);
+    m_process.reset(new Process);
+    connect(m_process.get(), &Process::done, this, &ChangeSelectionDialog::setDetails);
     m_process->setWorkingDirectory(workingDir);
     m_process->setEnvironment(m_gitEnvironment);
     m_process->setCommand({m_gitExecutable, {"show", "--decorate", "--stat=80", ref}});

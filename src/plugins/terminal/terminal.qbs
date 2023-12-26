@@ -5,39 +5,25 @@ QtcPlugin {
 
     Depends { name: "Core" }
     Depends { name: "ProjectExplorer" }
-    Depends { name: "vterm" }
-    Depends { name: "ptyqt" }
+    Depends { name: "TerminalLib" }
 
     files: [
-        "celliterator.cpp",
-        "celliterator.h",
-        "glyphcache.cpp",
-        "glyphcache.h",
-        "keys.cpp",
-        "keys.h",
-        "scrollback.cpp",
-        "scrollback.h",
         "shellmodel.cpp",
         "shellmodel.h",
         "shellintegration.cpp",
         "shellintegration.h",
+        "shortcutmap.cpp",
+        "shortcutmap.h",
         "terminal.qrc",
-        "terminalcommands.cpp",
-        "terminalcommands.h",
+        "terminalconstants.h",
+        "terminalicons.h",
         "terminalpane.cpp",
         "terminalpane.h",
         "terminalplugin.cpp",
-        "terminalplugin.h",
         "terminalprocessimpl.cpp",
         "terminalprocessimpl.h",
-        "terminalsearch.cpp",
-        "terminalsearch.h",
         "terminalsettings.cpp",
         "terminalsettings.h",
-        "terminalsettingspage.cpp",
-        "terminalsettingspage.h",
-        "terminalsurface.cpp",
-        "terminalsurface.h",
         "terminaltr.h",
         "terminalwidget.cpp",
         "terminalwidget.h",

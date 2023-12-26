@@ -3,21 +3,16 @@
 
 #pragma once
 
-#include <projectexplorer/runconfiguration.h>
-#include <projectexplorer/runcontrol.h>
+#include <QList>
+#include <QString>
 
 namespace WebAssembly::Internal {
 
-class EmrunRunConfigurationFactory final : public ProjectExplorer::RunConfigurationFactory
-{
-public:
-    EmrunRunConfigurationFactory();
-};
+using WebBrowserEntry = QPair<QString, QString>; // first: id, second: display name
+using WebBrowserEntries = QList<WebBrowserEntry>;
 
-class EmrunRunWorkerFactory final : public ProjectExplorer::RunWorkerFactory
-{
-public:
-    EmrunRunWorkerFactory();
-};
+WebBrowserEntries parseEmrunOutput(const QByteArray &output);
+
+void setupEmrunRunSupport();
 
 } // Webassembly::Internal

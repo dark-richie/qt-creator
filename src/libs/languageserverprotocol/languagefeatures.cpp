@@ -136,7 +136,7 @@ QHash<QString, DocumentFormattingProperty> FormattingOptions::properties() const
     return ret;
 }
 
-void FormattingOptions::setProperty(const QString &key, const DocumentFormattingProperty &property)
+void FormattingOptions::setProperty(const Key key, const DocumentFormattingProperty &property)
 {
     using namespace std;
     if (auto val = get_if<double>(&property))

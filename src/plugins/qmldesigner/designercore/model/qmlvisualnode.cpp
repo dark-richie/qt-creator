@@ -2,14 +2,13 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "qmlvisualnode.h"
-#include <metainfo.h>
-#include "qmlchangeset.h"
-#include "nodelistproperty.h"
-#include "nodehints.h"
-#include "variantproperty.h"
 #include "bindingproperty.h"
+#include "itemlibraryentry.h"
+#include "nodehints.h"
+#include "nodelistproperty.h"
 #include "qmlanchors.h"
-#include "itemlibraryinfo.h"
+#include "qmlchangeset.h"
+#include "variantproperty.h"
 
 #include <externaldependenciesinterface.h>
 
@@ -291,6 +290,7 @@ static QmlObjectNode createQmlObjectNodeFromSource(AbstractView *view,
     rewriterView->setCheckSemanticErrors(false);
     rewriterView->setTextModifier(&modifier);
     rewriterView->setAllowComponentRoot(true);
+    rewriterView->setPossibleImportsEnabled(false);
     inputModel->setRewriterView(rewriterView.data());
 
     if (rewriterView->errors().isEmpty() && rewriterView->rootModelNode().isValid()) {
@@ -414,6 +414,20 @@ QmlObjectNode QmlVisualNode::createQmlObjectNode(AbstractView *view,
         const NodeMetaInfo metaInfo = newQmlObjectNode.modelNode().metaInfo();
         if (metaInfo.hasProperty(property))
             newQmlObjectNode.setBindingProperty(property, parent.validId());
+    }
+
+    const QStringList copyFiles = itemLibraryEntry.extraFilePaths();
+    if (!copyFiles.isEmpty()) {
+        // Files are copied into the same directory as the current qml document
+        for (const auto &copyFileStr : copyFiles) {
+            Utils::FilePath sourceFile = Utils::FilePath::fromString(copyFileStr);
+            Utils::FilePath qmlFilePath = Utils::FilePath::fromString(
+                                            view->model()->fileUrl().toLocalFile()).absolutePath();
+            Utils::FilePath targetFile = qmlFilePath.pathAppended(sourceFile.fileName());
+            // We don't want to overwrite existing default files
+            if (!targetFile.exists() && !sourceFile.copyFile(targetFile))
+                qWarning() << QStringView(u"Copying extra file '%1' failed.").arg(copyFileStr);
+        }
     }
 
     return newQmlObjectNode;

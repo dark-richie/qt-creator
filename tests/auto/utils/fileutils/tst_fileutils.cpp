@@ -7,15 +7,33 @@
 #include <utils/hostosinfo.h>
 
 //TESTED_COMPONENT=src/libs/utils
-using namespace Utils;
 
+QT_BEGIN_NAMESPACE
 namespace QTest {
+
 template<>
-char *toString(const FilePath &filePath)
+char *toString(const Utils::FilePath &filePath)
 {
     return qstrdup(filePath.toString().toLocal8Bit().constData());
 }
+
+template<>
+char *toString(const Utils::FilePathInfo &filePathInfo)
+{
+    QByteArray ba = "FilePathInfo(";
+    ba += QByteArray::number(filePathInfo.fileSize);
+    ba += ", ";
+    ba += QByteArray::number(filePathInfo.fileFlags, 16);
+    ba += ", ";
+    ba += filePathInfo.lastModified.toString().toUtf8();
+    ba += ")";
+    return qstrdup(ba.constData());
+}
+
 } // namespace QTest
+QT_END_NAMESPACE
+
+using namespace Utils;
 
 class tst_fileutils : public QObject
 {
@@ -136,6 +154,9 @@ void tst_fileutils::filePathInfoFromTriple_data()
                                                     FilePathInfo::ReadOwnerPerm
                                                     | FilePathInfo::WriteOwnerPerm
                                                     | FilePathInfo::ExeOwnerPerm
+                                                    | FilePathInfo::ReadUserPerm
+                                                    | FilePathInfo::WriteUserPerm
+                                                    | FilePathInfo::ExeUserPerm
                                                     | FilePathInfo::ReadGroupPerm
                                                     | FilePathInfo::ExeGroupPerm
                                                     | FilePathInfo::ReadOtherPerm
@@ -149,10 +170,11 @@ void tst_fileutils::filePathInfoFromTriple_data()
         << FilePathInfo{808104,
                         FilePathInfo::FileFlags(
                             FilePathInfo::ReadOwnerPerm | FilePathInfo::WriteOwnerPerm
-                            | FilePathInfo::ExeOwnerPerm | FilePathInfo::ReadGroupPerm
-                            | FilePathInfo::ExeGroupPerm | FilePathInfo::ReadOtherPerm
-                            | FilePathInfo::ExeOtherPerm | FilePathInfo::FileType
-                            | FilePathInfo::ExistsFlag),
+                            | FilePathInfo::ExeOwnerPerm | FilePathInfo::ReadUserPerm
+                            | FilePathInfo::WriteUserPerm | FilePathInfo::ExeUserPerm
+                            | FilePathInfo::ReadGroupPerm | FilePathInfo::ExeGroupPerm
+                            | FilePathInfo::ReadOtherPerm | FilePathInfo::ExeOtherPerm
+                            | FilePathInfo::FileType | FilePathInfo::ExistsFlag),
                         QDateTime::fromSecsSinceEpoch(1668852790)};
 
     QTest::newRow("linux-disk") << QString("61b0 1651167746 0")
@@ -160,6 +182,8 @@ void tst_fileutils::filePathInfoFromTriple_data()
                                                 FilePathInfo::FileFlags(
                                                     FilePathInfo::ReadOwnerPerm
                                                     | FilePathInfo::WriteOwnerPerm
+                                                    | FilePathInfo::ReadUserPerm
+                                                    | FilePathInfo::WriteUserPerm
                                                     | FilePathInfo::ReadGroupPerm
                                                     | FilePathInfo::WriteGroupPerm
                                                     | FilePathInfo::LocalDiskFlag
@@ -176,23 +200,6 @@ void tst_fileutils::filePathInfoFromTriple()
 
     QCOMPARE(result, expected);
 }
-
-QT_BEGIN_NAMESPACE
-namespace QTest {
-template<>
-char *toString(const FilePathInfo &filePathInfo)
-{
-    QByteArray ba = "FilePathInfo(";
-    ba += QByteArray::number(filePathInfo.fileSize);
-    ba += ", ";
-    ba += QByteArray::number(filePathInfo.fileFlags, 16);
-    ba += ", ";
-    ba += filePathInfo.lastModified.toString().toUtf8();
-    ba += ")";
-    return qstrdup(ba.constData());
-}
-
-} // namespace QTest
 
 QTEST_GUILESS_MAIN(tst_fileutils)
 

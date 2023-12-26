@@ -10,7 +10,6 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -81,7 +80,7 @@ DriverSelector::DriverSelector(const QStringList &supportedDrivers, QWidget *par
     const auto detailsPanel = new DriverSelectorDetailsPanel(m_selection);
     setWidget(detailsPanel);
 
-    connect(toolPanel, &DriverSelectorToolPanel::clicked, this, [=]() {
+    connect(toolPanel, &DriverSelectorToolPanel::clicked, this, [=] {
         DriverSelectionDialog dialog(m_toolsIniFile, supportedDrivers, this);
         const int result = dialog.exec();
         if (result != QDialog::Accepted)

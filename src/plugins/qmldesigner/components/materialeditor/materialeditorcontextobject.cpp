@@ -233,11 +233,19 @@ void MaterialEditorContextObject::changeTypeName(const QString &typeName)
             }
         }
 
+#ifdef QDS_USE_PROJECTSTORAGE
+        if (m_selectedMaterial.isRootNode())
+            rewriterView->changeRootNodeType(typeName.toUtf8(), -1, -1);
+        else
+            m_selectedMaterial.changeType(typeName.toUtf8(), -1, -1);
+#else
         if (m_selectedMaterial.isRootNode())
             rewriterView->changeRootNodeType(metaInfo.typeName(), metaInfo.majorVersion(), metaInfo.minorVersion());
         else
-            m_selectedMaterial.changeType(metaInfo.typeName(), metaInfo.majorVersion(), metaInfo.minorVersion());
-
+            m_selectedMaterial.changeType(metaInfo.typeName(),
+                                          metaInfo.majorVersion(),
+                                          metaInfo.minorVersion());
+#endif
         for (const auto &key : copyKeys) {
             const CopyData &copyData = copyMap[key];
             if (copyData.isBinding)
@@ -321,6 +329,20 @@ void MaterialEditorContextObject::setHasMaterialLibrary(bool b)
 
     m_hasMaterialLibrary = b;
     emit hasMaterialLibraryChanged();
+}
+
+bool MaterialEditorContextObject::isQt6Project() const
+{
+    return m_isQt6Project;
+}
+
+void MaterialEditorContextObject::setIsQt6Project(bool b)
+{
+    if (m_isQt6Project == b)
+        return;
+
+    m_isQt6Project = b;
+    emit isQt6ProjectChanged();
 }
 
 bool MaterialEditorContextObject::hasModelSelection() const
@@ -510,18 +532,9 @@ QStringList MaterialEditorContextObject::allStatesForId(const QString &id)
       return {};
 }
 
-bool MaterialEditorContextObject::isBlocked(const QString &propName) const
+bool MaterialEditorContextObject::isBlocked(const QString &) const
 {
-    if (!m_selectedMaterial.isValid())
-        return false;
-
-    if (!m_model || !m_model->rewriterView())
-        return false;
-
-    if (QmlObjectNode(m_selectedMaterial).isBlocked(propName.toUtf8()))
-        return true;
-
-    return false;
+      return false;
 }
 
 void MaterialEditorContextObject::goIntoComponent()

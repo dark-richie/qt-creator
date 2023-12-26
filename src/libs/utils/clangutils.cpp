@@ -4,7 +4,7 @@
 #include "clangutils.h"
 
 #include "filepath.h"
-#include "qtcprocess.h"
+#include "process.h"
 #include "utilstr.h"
 
 #include <QVersionNumber>
@@ -13,7 +13,7 @@ namespace Utils {
 
 static QVersionNumber getClangdVersion(const FilePath &clangdFilePath)
 {
-    QtcProcess clangdProc;
+    Process clangdProc;
     clangdProc.setCommand({clangdFilePath, {"--version"}});
     clangdProc.runBlocking();
     if (clangdProc.result() != ProcessResult::FinishedWithSuccess)

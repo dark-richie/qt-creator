@@ -10,13 +10,13 @@
 #include "cppsourceprocessor.h"
 #include "searchsymbols.h"
 
-#include <coreplugin/find/searchresultitem.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
 #include <cplusplus/LookupContext.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/filepath.h>
+#include <utils/searchresultitem.h>
 #include <utils/stringutils.h>
 #include <utils/temporarydirectory.h>
 
@@ -30,10 +30,10 @@ namespace CppEditor {
 static Q_LOGGING_CATEGORY(indexerLog, "qtc.cppeditor.indexer", QtWarningMsg)
 
 SymbolSearcher::SymbolSearcher(const SymbolSearcher::Parameters &parameters,
-                               const QSet<QString> &fileNames)
-    : m_snapshot(CppModelManager::instance()->snapshot())
+                               const QSet<FilePath> &filePaths)
+    : m_snapshot(CppModelManager::snapshot())
     , m_parameters(parameters)
-    , m_fileNames(fileNames)
+    , m_filePaths(filePaths)
 {}
 
 namespace {
@@ -54,7 +54,7 @@ class WriteTaskFileForDiagnostics
 public:
     WriteTaskFileForDiagnostics()
     {
-        const QString fileName = Utils::TemporaryDirectory::masterDirectoryPath()
+        const QString fileName = TemporaryDirectory::masterDirectoryPath()
                                  + "/qtc_findErrorsIndexing.diagnostics."
                                  + QDateTime::currentDateTime().toString("yyMMdd_HHmm") + ".tasks";
 
@@ -106,7 +106,7 @@ private:
     int m_processedDiagnostics = 0;
 };
 
-void classifyFiles(const QSet<QString> &files, QStringList *headers, QStringList *sources)
+static void classifyFiles(const QSet<QString> &files, QStringList *headers, QStringList *sources)
 {
     for (const QString &file : files) {
         if (ProjectFile::isSource(ProjectFile::classify(file)))
@@ -116,7 +116,7 @@ void classifyFiles(const QSet<QString> &files, QStringList *headers, QStringList
     }
 }
 
-void indexFindErrors(QPromise<void> &promise, const ParseParams params)
+static void indexFindErrors(QPromise<void> &promise, const ParseParams params)
 {
     QStringList sources, headers;
     classifyFiles(params.sourceFiles, &headers, &sources);
@@ -138,8 +138,7 @@ void indexFindErrors(QPromise<void> &promise, const ParseParams params)
         // Parse the file as precisely as possible
         BuiltinEditorDocumentParser parser(FilePath::fromString(file));
         parser.setReleaseSourceAndAST(false);
-        parser.update({CppModelManager::instance()->workingCopy(), nullptr,
-                       Utils::Language::Cxx, false});
+        parser.update({CppModelManager::workingCopy(), nullptr, Language::Cxx, false});
         CPlusPlus::Document::Ptr document = parser.document();
         QTC_ASSERT(document, return);
 
@@ -159,7 +158,7 @@ void indexFindErrors(QPromise<void> &promise, const ParseParams params)
     qDebug("FindErrorsIndexing: %s", qPrintable(elapsedTime));
 }
 
-void index(QPromise<void> &promise, const ParseParams params)
+static void index(QPromise<void> &promise, const ParseParams params)
 {
     QScopedPointer<Internal::CppSourceProcessor> sourceProcessor(CppModelManager::createSourceProcessor());
     sourceProcessor->setFileSizeLimitInMb(params.indexerFileSizeLimitInMb);
@@ -181,8 +180,7 @@ void index(QPromise<void> &promise, const ParseParams params)
     const FilePath &conf = CppModelManager::configurationFileName();
     bool processingHeaders = false;
 
-    CppModelManager *cmm = CppModelManager::instance();
-    const ProjectExplorer::HeaderPaths fallbackHeaderPaths = cmm->headerPaths();
+    const ProjectExplorer::HeaderPaths fallbackHeaderPaths = CppModelManager::headerPaths();
     const CPlusPlus::LanguageFeatures defaultFeatures =
         CPlusPlus::LanguageFeatures::defaultFeatures();
 
@@ -192,7 +190,7 @@ void index(QPromise<void> &promise, const ParseParams params)
             break;
 
         const QString fileName = files.at(i);
-        const QList<ProjectPart::ConstPtr> parts = cmm->projectPart(fileName);
+        const QList<ProjectPart::ConstPtr> parts = CppModelManager::projectPart(fileName);
         const CPlusPlus::LanguageFeatures languageFeatures = parts.isEmpty()
                                                                  ? defaultFeatures
                                                                  : parts.first()->languageFeatures;
@@ -222,7 +220,7 @@ void index(QPromise<void> &promise, const ParseParams params)
     qCDebug(indexerLog) << "Indexing finished.";
 }
 
-void parse(QPromise<void> &promise, const ParseParams params)
+static void parse(QPromise<void> &promise, const ParseParams &params)
 {
     const QSet<QString> &files = params.sourceFiles;
     if (files.isEmpty())
@@ -236,12 +234,12 @@ void parse(QPromise<void> &promise, const ParseParams params)
         index(promise, params);
 
     promise.setProgressValue(files.size());
-    CppModelManager::instance()->finishedRefreshingSourceFiles(files);
+    CppModelManager::finishedRefreshingSourceFiles(files);
 }
 
 } // anonymous namespace
 
-void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
+void SymbolSearcher::runSearch(QPromise<SearchResultItem> &promise)
 {
     promise.setProgressRange(0, m_snapshot.size());
     promise.setProgressValue(0);
@@ -251,11 +249,11 @@ void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
     search.setSymbolsToSearchFor(m_parameters.types);
     CPlusPlus::Snapshot::const_iterator it = m_snapshot.begin();
 
-    QString findString = (m_parameters.flags & Core::FindRegularExpression
+    QString findString = (m_parameters.flags & FindRegularExpression
                               ? m_parameters.text : QRegularExpression::escape(m_parameters.text));
-    if (m_parameters.flags & Core::FindWholeWords)
+    if (m_parameters.flags & FindWholeWords)
         findString = QString::fromLatin1("\\b%1\\b").arg(findString);
-    QRegularExpression matcher(findString, (m_parameters.flags & Core::FindCaseSensitively
+    QRegularExpression matcher(findString, (m_parameters.flags & FindCaseSensitively
                                                 ? QRegularExpression::NoPatternOption
                                                 : QRegularExpression::CaseInsensitiveOption));
     matcher.optimize();
@@ -263,8 +261,8 @@ void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
         promise.suspendIfRequested();
         if (promise.isCanceled())
             break;
-        if (m_fileNames.isEmpty() || m_fileNames.contains(it.value()->filePath().path())) {
-            QVector<Core::SearchResultItem> resultItems;
+        if (m_filePaths.isEmpty() || m_filePaths.contains(it.value()->filePath())) {
+            SearchResultItems resultItems;
             auto filter = [&](const IndexItem::Ptr &info) -> IndexItem::VisitorResult {
                 if (matcher.match(info->symbolName()).hasMatch()) {
                     QString text = info->symbolName();
@@ -277,7 +275,7 @@ void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
                         text = info->representDeclaration();
                     }
 
-                    Core::SearchResultItem item;
+                    SearchResultItem item;
                     item.setPath(scope.split(QLatin1String("::"), Qt::SkipEmptyParts));
                     item.setLineText(text);
                     item.setIcon(info->icon());
@@ -288,7 +286,7 @@ void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
                 return IndexItem::Recurse;
             };
             search(it.value())->visitAllChildren(filter);
-            for (const Core::SearchResultItem &item : std::as_const(resultItems))
+            for (const SearchResultItem &item : std::as_const(resultItems))
                 promise.addResult(item);
         }
         ++it;
@@ -298,13 +296,6 @@ void SymbolSearcher::runSearch(QPromise<Core::SearchResultItem> &promise)
     promise.suspendIfRequested();
 }
 
-CppIndexingSupport::CppIndexingSupport()
-{
-    m_synchronizer.setCancelOnWait(true);
-}
-
-CppIndexingSupport::~CppIndexingSupport() = default;
-
 bool CppIndexingSupport::isFindErrorsIndexingActive()
 {
     return Utils::qtcEnvironmentVariable("QTC_FIND_ERRORS_INDEXING") == "1";
@@ -313,15 +304,13 @@ bool CppIndexingSupport::isFindErrorsIndexingActive()
 QFuture<void> CppIndexingSupport::refreshSourceFiles(const QSet<QString> &sourceFiles,
                                                      CppModelManager::ProgressNotificationMode mode)
 {
-    CppModelManager *mgr = CppModelManager::instance();
-
     ParseParams params;
     params.indexerFileSizeLimitInMb = indexerFileSizeLimitInMb();
-    params.headerPaths = mgr->headerPaths();
-    params.workingCopy = mgr->workingCopy();
+    params.headerPaths = CppModelManager::headerPaths();
+    params.workingCopy = CppModelManager::workingCopy();
     params.sourceFiles = sourceFiles;
 
-    QFuture<void> result = Utils::asyncRun(mgr->sharedThreadPool(), parse, params);
+    QFuture<void> result = Utils::asyncRun(CppModelManager::sharedThreadPool(), parse, params);
     m_synchronizer.addFuture(result);
 
     if (mode == CppModelManager::ForcedProgressNotification || sourceFiles.count() > 1) {

@@ -209,7 +209,8 @@ private:
 };
 
 /*!
-    Creates thread
+    \internal
+    Creates a thread.
 */
 FileInfoGatherer::FileInfoGatherer(QObject *parent)
     : QThread(parent)
@@ -219,7 +220,8 @@ FileInfoGatherer::FileInfoGatherer(QObject *parent)
 }
 
 /*!
-    Destroys thread
+    \internal
+    Destroys a thread.
 */
 FileInfoGatherer::~FileInfoGatherer()
 {
@@ -265,6 +267,7 @@ QFileIconProvider *FileInfoGatherer::iconProvider() const
 }
 
 /*!
+    \internal
     Fetch extended information for all \a files in \a path
 
     \sa updateFile(), update(), resolvedName()
@@ -295,6 +298,7 @@ void FileInfoGatherer::fetchExtendedInformation(const QString &path, const QStri
 }
 
 /*!
+    \internal
     Fetch extended information for all \a filePath
 
     \sa fetchExtendedInformation()
@@ -1049,10 +1053,8 @@ FileSystemNode *FileSystemModelPrivate::node(const QString &path, bool fetch) co
             elementPath = host;
             elementPath.append(separator);
         } else {
-            if (!pathElements.at(0).contains(QLatin1Char(':'))) {
-                QString rootPath = QDir(longPath).rootPath();
-                pathElements.prepend(rootPath);
-            }
+            if (!pathElements.at(0).contains(QLatin1Char(':')))
+                pathElements.prepend(HostOsInfo::root().path());
             if (pathElements.at(0).endsWith(QLatin1Char('/')))
                 pathElements[0].chop(1);
         }
@@ -1719,7 +1721,7 @@ QStringList FileSystemModel::mimeTypes() const
     \a indexes. The format used to describe the items corresponding to the
     indexes is obtained from the mimeTypes() function.
 
-    If the list of indexes is empty, \nullptr is returned rather than a
+    If the list of indexes is empty, \c nullptr is returned rather than a
     serialized empty list.
 */
 QMimeData *FileSystemModel::mimeData(const QModelIndexList &indexes) const
@@ -1799,7 +1801,8 @@ QHash<int, QByteArray> FileSystemModel::roleNames() const
 }
 
 /*!
-    \enum FileSystemModel::Option
+    \internal
+    \enum Utils::FileSystemModel::Option
     \since 5.14
 
     \value DontWatchForChanges Do not add file watchers to the paths.
@@ -1847,6 +1850,7 @@ bool FileSystemModel::testOption(Option option) const
 }
 
 /*!
+    \internal
     \property FileSystemModel::options
     \brief the various options that affect the model
     \since 5.14
@@ -2121,6 +2125,7 @@ QDir::Filters FileSystemModel::filter() const
 }
 
 /*!
+    \internal
     \property FileSystemModel::resolveSymlinks
     \brief Whether the directory model should resolve symbolic links
 
@@ -2146,6 +2151,7 @@ bool FileSystemModel::resolveSymlinks() const
 }
 
 /*!
+    \internal
     \property FileSystemModel::readOnly
     \brief Whether the directory model allows writing to the file system
 
@@ -2165,6 +2171,7 @@ bool FileSystemModel::isReadOnly() const
 }
 
 /*!
+    \internal
     \property FileSystemModel::nameFilterDisables
     \brief Whether files that don't pass the name filter are hidden or disabled
 
@@ -2511,7 +2518,7 @@ QStringList FileSystemModelPrivate::unwatchPathsAt(const QModelIndex &index)
     QTC_CHECK(useFileSystemWatcher());
     const FileSystemNode *indexNode = node(index);
     if (indexNode == nullptr)
-        return QStringList();
+        return {};
     const Qt::CaseSensitivity caseSensitivity = indexNode->caseSensitive()
         ? Qt::CaseSensitive : Qt::CaseInsensitive;
     const QString path = indexNode->fileInfo().absoluteFilePath();

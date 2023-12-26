@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include "itemlibraryinfo.h"
+#ifndef QDS_USE_PROJECTSTORAGE
+#  include <itemlibraryinfo.h>
+#endif
 #include "import.h"
 
 #include <studioquickwidget.h>
@@ -51,7 +53,9 @@ public:
     ItemLibraryWidget(AsynchronousImageCache &imageCache);
     ~ItemLibraryWidget();
 
+#ifndef QDS_USE_PROJECTSTORAGE
     void setItemLibraryInfo(ItemLibraryInfo *itemLibraryInfo);
+#endif
     QList<QToolButton *> createToolBarWidgets();
 
     static QString qmlSourcesPath();
@@ -60,8 +64,8 @@ public:
     void switchToComponentsView();
     void delayedUpdateModel();
     void updateModel();
-    void updatePossibleImports(const QList<Import> &possibleImports);
-    void updateUsedImports(const QList<Import> &usedImports);
+    void updatePossibleImports(const Imports &possibleImports);
+    void updateUsedImports(const Imports &usedImports);
 
     void setModel(Model *model);
     void setFlowMode(bool b);
@@ -90,7 +94,6 @@ private:
     void reloadQmlSource();
 
     void updateSearch();
-    void handlePriorityImportsChanged();
     void setIsDragging(bool val);
 
     static QString getDependencyImport(const Import &import);
@@ -98,8 +101,9 @@ private:
     QTimer m_compressionTimer;
     QSize m_itemIconSize;
 
+#ifndef QDS_USE_PROJECTSTORAGE
     QPointer<ItemLibraryInfo> m_itemLibraryInfo;
-
+#endif
     QPointer<ItemLibraryModel> m_itemLibraryModel;
     QPointer<ItemLibraryAddImportModel> m_addModuleModel;
 

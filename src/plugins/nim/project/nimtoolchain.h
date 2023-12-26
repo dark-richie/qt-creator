@@ -8,7 +8,7 @@
 
 namespace Nim {
 
-class NimToolChain : public ProjectExplorer::ToolChain
+class NimToolChain : public ProjectExplorer::Toolchain
 {
 public:
     NimToolChain();
@@ -24,14 +24,23 @@ public:
     Utils::FilePath makeCommand(const Utils::Environment &env) const final;
     QString compilerVersion() const;
     QList<Utils::OutputLineParser *> createOutputParsers() const final;
-    std::unique_ptr<ProjectExplorer::ToolChainConfigWidget> createConfigurationWidget() final;
+    std::unique_ptr<ProjectExplorer::ToolchainConfigWidget> createConfigurationWidget() final;
 
-    bool fromMap(const QVariantMap &data) final;
+    void fromMap(const Utils::Store &data) final;
 
     static bool parseVersion(const Utils::FilePath &path, std::tuple<int, int, int> &version);
 
 private:
     std::tuple<int, int, int> m_version;
+};
+
+class NimToolchainFactory : public ProjectExplorer::ToolchainFactory
+{
+public:
+    NimToolchainFactory();
+
+    ProjectExplorer::Toolchains autoDetect(const ProjectExplorer::ToolchainDetector &detector) const final;
+    ProjectExplorer::Toolchains detectForImport(const ProjectExplorer::ToolchainDescription &tcd) const final;
 };
 
 } // Nim

@@ -5,41 +5,15 @@
 
 #include "ilocatorfilter.h"
 
-#include <coreplugin/editormanager/documentmodel.h>
-
-#include <QMutex>
-
-namespace Core {
-namespace Internal {
+namespace Core::Internal {
 
 class OpenDocumentsFilter : public ILocatorFilter
 {
-    Q_OBJECT
-
 public:
     OpenDocumentsFilter();
-    QList<LocatorFilterEntry> matchesFor(QFutureInterface<LocatorFilterEntry> &future,
-                                         const QString &entry) override;
-public slots:
-    void slotDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
-                         const QVector<int> &roles);
-    void slotRowsInserted(const QModelIndex &, int first, int last);
-    void slotRowsRemoved(const QModelIndex &, int first, int last);
 
 private:
-    class Entry
-    {
-    public:
-        Utils::FilePath fileName;
-        QString displayName;
-    };
-
-    QList<Entry> editors() const;
-    void refreshInternally();
-
-    mutable QMutex m_mutex;
-    QList<Entry> m_editors;
+    LocatorMatcherTasks matchers() final;
 };
 
-} // namespace Internal
-} // namespace Core
+} // namespace Core::Internal

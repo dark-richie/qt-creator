@@ -19,9 +19,7 @@
 
 #include <qmlprivategate.h>
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 6, 0))
 #include <private/qquickdesignersupportmetainfo_p.h>
-#endif
 
 #include <createinstancescommand.h>
 #include <changefileurlcommand.h>
@@ -728,7 +726,6 @@ void NodeInstanceServer::setupMockupTypes(const QVector<MockupTypeContainer> &co
 {
     for (const MockupTypeContainer &mockupType : container) {
         if (!isTypeAvailable(mockupType, engine())) {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 8, 0))
             if (mockupType.majorVersion() == -1 && mockupType.minorVersion() == -1) {
                 QQuickDesignerSupportMetaInfo::registerMockupObject(mockupType.importUri().toUtf8(),
                                                                 1,
@@ -740,13 +737,6 @@ void NodeInstanceServer::setupMockupTypes(const QVector<MockupTypeContainer> &co
                                                                 mockupType.minorVersion(),
                                                                 mockupType.typeName());
             }
-#else
-            qmlRegisterType(QUrl("qrc:/qtquickplugin/mockfiles/GenericBackend.qml"),
-                        mockupType.importUri().toUtf8(),
-                        mockupType.majorVersion(),
-                        mockupType.minorVersion(),
-                        mockupType.typeName());
-#endif
         }
     }
 }
@@ -1058,6 +1048,21 @@ QList<ServerNodeInstance> NodeInstanceServer::allView3DInstances() const
     return view3Ds;
 }
 
+QList<ServerNodeInstance> NodeInstanceServer::allCameraInstances() const
+{
+    QList<ServerNodeInstance> cameras;
+    std::copy_if(nodeInstances().cbegin(),
+                 nodeInstances().cend(),
+                 std::back_inserter(cameras),
+                 [](const ServerNodeInstance &instance) {
+                     return instance.isValid()
+                            && ServerNodeInstance::isSubclassOf(instance.internalObject(),
+                                                                QByteArrayLiteral("QQuick3DCamera"));
+                 });
+
+    return cameras;
+}
+
 void NodeInstanceServer::setStateInstance(const ServerNodeInstance &stateInstance)
 {
     m_activeStateInstance = stateInstance;
@@ -1194,7 +1199,7 @@ ValuesChangedCommand NodeInstanceServer::createValuesChangedCommand(const QList<
         const QList<PropertyName> propertyNames = instance.propertyNames();
         for (const PropertyName &propertyName : propertyNames) {
             QVariant propertyValue = instance.property(propertyName);
-            if (supportedVariantType(propertyValue.userType())) {
+            if (supportedVariantType(propertyValue.typeId())) {
                 valueVector.append(PropertyValueContainer(instance.instanceId(), propertyName,
                                                           propertyValue, PropertyName()));
             }
@@ -1236,13 +1241,13 @@ ValuesChangedCommand NodeInstanceServer::createValuesChangedCommand(const QVecto
 
         if (instance.isValid()) {
             QVariant propertyValue = instance.property(propertyName);
-            bool isValid = QMetaType::isRegistered(propertyValue.userType())
-                    && supportedVariantType(propertyValue.type());
-            if (!isValid && propertyValue.userType() == 0) {
+            bool isValid = QMetaType::isRegistered(propertyValue.typeId())
+                           && supportedVariantType(propertyValue.typeId());
+            if (!isValid && propertyValue.typeId() == 0) {
                 // If the property is QVariant type, invalid variant can be a valid value
                 const QMetaObject *mo = instance.internalObject()->metaObject();
                 const int idx = mo->indexOfProperty(propertyName);
-                isValid = idx >= 0 && mo->property(idx).userType() == QMetaType::QVariant;
+                isValid = idx >= 0 && mo->property(idx).typeId() == QMetaType::QVariant;
             }
             if (isValid) {
                 valueVector.append(PropertyValueContainer(instance.instanceId(), propertyName,
@@ -1265,8 +1270,8 @@ ValuesModifiedCommand NodeInstanceServer::createValuesModifiedCommand(
         const QVariant propertyValue = property.propertyValue;
 
         if (instance.isValid()) {
-            if (QMetaType::isRegistered(propertyValue.userType())
-                && supportedVariantType(propertyValue.type())) {
+            if (QMetaType::isRegistered(propertyValue.typeId())
+                && supportedVariantType(propertyValue.typeId())) {
                 valueVector.append(PropertyValueContainer(instance.instanceId(),
                                                           propertyName,
                                                           propertyValue,
@@ -1397,10 +1402,8 @@ void NodeInstanceServer::loadDummyContextObjectFile(const QFileInfo &qmlFileInfo
 
 void NodeInstanceServer::setTranslationLanguage(const QString &language)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     // if there exists an /i18n directory it sets default translators
     engine()->setUiLanguage(language);
-#endif
     static QPointer<MultiLanguage::Translator> multilanguageTranslator;
     if (!MultiLanguage::databaseFilePath().isEmpty()
         && QFileInfo::exists(QString::fromUtf8(MultiLanguage::databaseFilePath()))) {

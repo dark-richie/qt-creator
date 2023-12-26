@@ -4,52 +4,47 @@
 #pragma once
 
 #include "cppeditor_global.h"
-#include "indexitem.h"
 
 #include <coreplugin/locator/ilocatorfilter.h>
 
 namespace CppEditor {
 
-Core::LocatorMatcherTask CPPEDITOR_EXPORT cppLocatorMatcher();
-Core::LocatorMatcherTask CPPEDITOR_EXPORT cppClassMatcher();
-Core::LocatorMatcherTask CPPEDITOR_EXPORT cppFunctionMatcher();
+Core::LocatorMatcherTasks CPPEDITOR_EXPORT cppMatchers(Core::MatcherType type);
 
-class CPPEDITOR_EXPORT CppLocatorFilter : public Core::ILocatorFilter
+class CppAllSymbolsFilter : public Core::ILocatorFilter
 {
-    Q_OBJECT
-
 public:
-    explicit CppLocatorFilter();
+    CppAllSymbolsFilter();
 
-    QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
-                                               const QString &entry) override;
-protected:
-    virtual IndexItem::ItemType matchTypes() const { return IndexItem::All; }
-    virtual Core::LocatorFilterEntry filterEntryFromIndexItem(IndexItem::Ptr info);
+private:
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-class CPPEDITOR_EXPORT CppClassesFilter : public CppLocatorFilter
+class CppClassesFilter : public Core::ILocatorFilter
 {
-    Q_OBJECT
-
 public:
-    explicit CppClassesFilter();
+    CppClassesFilter();
 
-protected:
-    IndexItem::ItemType matchTypes() const override { return IndexItem::Class; }
-    Core::LocatorFilterEntry filterEntryFromIndexItem(IndexItem::Ptr info) override;
+private:
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-class CPPEDITOR_EXPORT CppFunctionsFilter : public CppLocatorFilter
+class CppFunctionsFilter : public Core::ILocatorFilter
 {
-    Q_OBJECT
-
 public:
-    explicit CppFunctionsFilter();
+    CppFunctionsFilter();
 
-protected:
-    IndexItem::ItemType matchTypes() const override { return IndexItem::Function; }
-    Core::LocatorFilterEntry filterEntryFromIndexItem(IndexItem::Ptr info) override;
+private:
+    Core::LocatorMatcherTasks matchers() final;
+};
+
+class CppCurrentDocumentFilter : public  Core::ILocatorFilter
+{
+public:
+    CppCurrentDocumentFilter();
+
+private:
+    Core::LocatorMatcherTasks matchers() final;
 };
 
 } // namespace CppEditor

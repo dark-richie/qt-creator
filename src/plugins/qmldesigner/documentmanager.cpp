@@ -5,13 +5,14 @@
 #include "qmldesignerplugin.h"
 
 #include <bindingproperty.h>
+#include <model/modelutils.h>
 #include <modelnode.h>
 #include <nodelistproperty.h>
 #include <nodemetainfo.h>
 #include <nodeproperty.h>
-#include <variantproperty.h>
 #include <qmldesignerprojectmanager.h>
 #include <qmlitemnode.h>
+#include <variantproperty.h>
 
 #include <utils/qtcassert.h>
 #include <utils/textfileformat.h>
@@ -39,12 +40,12 @@ namespace QmlDesigner {
 
 Q_LOGGING_CATEGORY(documentManagerLog, "qtc.qtquickdesigner.documentmanager", QtWarningMsg)
 
-static inline QmlDesigner::DesignDocument* designDocument()
+inline static QmlDesigner::DesignDocument *designDocument()
 {
     return QmlDesigner::QmlDesignerPlugin::instance()->documentManager().currentDesignDocument();
 }
 
-static inline QHash<PropertyName, QVariant> getProperties(const ModelNode &node)
+inline static QHash<PropertyName, QVariant> getProperties(const ModelNode &node)
 {
     QHash<PropertyName, QVariant> propertyHash;
     if (QmlObjectNode::isValidQmlObjectNode(node)) {
@@ -71,22 +72,24 @@ static inline QHash<PropertyName, QVariant> getProperties(const ModelNode &node)
     return propertyHash;
 }
 
-static inline void applyProperties(ModelNode &node, const QHash<PropertyName, QVariant> &propertyHash)
+inline static void applyProperties(ModelNode &node, const QHash<PropertyName, QVariant> &propertyHash)
 {
     const auto auxiliaryData = node.auxiliaryData(AuxiliaryDataType::NodeInstancePropertyOverwrite);
-
     for (const auto &element : auxiliaryData)
         node.removeAuxiliaryData(AuxiliaryDataType::NodeInstancePropertyOverwrite, element.first);
 
-    for (auto propertyIterator = propertyHash.cbegin(), end = propertyHash.cend();
-              propertyIterator != end;
-              ++propertyIterator) {
-        const PropertyName propertyName = propertyIterator.key();
-        if (propertyName == "width" || propertyName == "height") {
-            node.setAuxiliaryData(AuxiliaryDataType::NodeInstancePropertyOverwrite,
-                                  propertyIterator.key(),
-                                  propertyIterator.value());
+    auto needsOverwrite = [&node](const auto& check, const auto& name, const auto& instanceValue) {
+        if (check == name) {
+            VariantProperty property = node.variantProperty(name);
+            if (property.isValid() && property.value() != instanceValue)
+                return true;
         }
+        return false;
+    };
+
+    for (const auto& [name, value] : propertyHash.asKeyValueRange()) {
+        if (needsOverwrite("width", name, value) || needsOverwrite("height", name, value))
+            node.setAuxiliaryData(AuxiliaryDataType::NodeInstancePropertyOverwrite, name, value);
     }
 }
 
@@ -100,7 +103,7 @@ static void openFileComponentForFile(const QString &fileName)
 
 static void openFileComponent(const ModelNode &modelNode)
 {
-    openFileComponentForFile(modelNode.metaInfo().componentFileName());
+    openFileComponentForFile(ModelUtils::componentFilePath(modelNode));
 }
 
 static void openFileComponentForDelegate(const ModelNode &modelNode)
@@ -168,7 +171,7 @@ static void handleTabComponent(const ModelNode &modelNode)
     }
 }
 
-static inline void openInlineComponent(const ModelNode &modelNode)
+inline static void openInlineComponent(const ModelNode &modelNode)
 {
     if (!modelNode.metaInfo().isValid())
         return;
@@ -227,7 +230,7 @@ void DocumentManager::setCurrentDesignDocument(Core::IEditor *editor)
         auto found = m_designDocuments.find(editor);
         if (found == m_designDocuments.end()) {
             auto &inserted = m_designDocuments[editor] = std::make_unique<DesignDocument>(
-                m_projectManager.projectStorage(), m_externalDependencies);
+                m_projectManager.projectStorageDependencies(), m_externalDependencies);
             m_currentDesignDocument = inserted.get();
             m_currentDesignDocument->setEditor(editor);
         } else {
@@ -265,6 +268,9 @@ void DocumentManager::resetPossibleImports()
 
 bool DocumentManager::goIntoComponent(const ModelNode &modelNode)
 {
+    QImage image = QmlDesignerPlugin::instance()->viewManager().takeFormEditorScreenshot();
+    const QPoint offset = image.offset();
+    image.setOffset(offset - QmlItemNode(modelNode).instancePosition().toPoint());
     if (modelNode.isValid() && modelNode.isComponent() && designDocument()) {
         QmlDesignerPlugin::instance()->viewManager().setComponentNode(modelNode);
         QHash<PropertyName, QVariant> oldProperties = getProperties(modelNode);
@@ -281,6 +287,8 @@ bool DocumentManager::goIntoComponent(const ModelNode &modelNode)
 
         ModelNode rootModelNode = designDocument()->rewriterView()->rootModelNode();
         applyProperties(rootModelNode, oldProperties);
+
+        rootModelNode.setAuxiliaryData(AuxiliaryDataType::Temporary, "contextImage", image);
 
         return true;
     }
@@ -355,19 +363,19 @@ QStringList DocumentManager::isoIconsQmakeVariableValue(const QString &proPath)
     ProjectExplorer::Node *node = ProjectExplorer::ProjectTree::nodeForFile(Utils::FilePath::fromString(proPath));
     if (!node) {
         qCWarning(documentManagerLog) << "No node for .pro:" << proPath;
-        return QStringList();
+        return {};
     }
 
     ProjectExplorer::Node *parentNode = node->parentFolderNode();
     if (!parentNode) {
         qCWarning(documentManagerLog) << "No parent node for node at" << proPath;
-        return QStringList();
+        return {};
     }
 
     auto proNode = dynamic_cast<QmakeProjectManager::QmakeProFileNode*>(parentNode);
     if (!proNode) {
         qCWarning(documentManagerLog) << "Parent node for node at" << proPath << "could not be converted to a QmakeProFileNode";
-        return QStringList();
+        return {};
     }
 
     return proNode->variableValue(QmakeProjectManager::Variable::IsoIcons);

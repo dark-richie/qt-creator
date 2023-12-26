@@ -22,8 +22,8 @@
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <coreplugin/idocument.h>
 #include <coreplugin/icore.h>
@@ -99,10 +99,10 @@ void PdbEngine::setupEngine()
     m_interpreter = runParameters().interpreter;
     QString bridge = ICore::resourcePath("debugger/pdbbridge.py").toString();
 
-    connect(&m_proc, &QtcProcess::started, this, &PdbEngine::handlePdbStarted);
-    connect(&m_proc, &QtcProcess::done, this, &PdbEngine::handlePdbDone);
-    connect(&m_proc, &QtcProcess::readyReadStandardOutput, this, &PdbEngine::readPdbStandardOutput);
-    connect(&m_proc, &QtcProcess::readyReadStandardError, this, &PdbEngine::readPdbStandardError);
+    connect(&m_proc, &Process::started, this, &PdbEngine::handlePdbStarted);
+    connect(&m_proc, &Process::done, this, &PdbEngine::handlePdbDone);
+    connect(&m_proc, &Process::readyReadStandardOutput, this, &PdbEngine::readPdbStandardOutput);
+    connect(&m_proc, &Process::readyReadStandardError, this, &PdbEngine::readPdbStandardError);
 
     const FilePath scriptFile = runParameters().mainScript;
     if (!scriptFile.isReadableFile()) {
@@ -114,6 +114,13 @@ void PdbEngine::setupEngine()
 
     CommandLine cmd{m_interpreter, {bridge, scriptFile.path()}};
     cmd.addArg(runParameters().inferior.workingDirectory.path());
+    cmd.addArg("--");
+    QStringList arguments = runParameters().inferior.command.splitArguments();
+    if (!arguments.isEmpty() && arguments.constFirst() == "-u")
+        arguments.removeFirst(); // unbuffered added by run config
+    if (!arguments.isEmpty())
+        arguments.removeFirst(); // file added by run config
+    cmd.addArgs(arguments);
     showMessage("STARTING " + cmd.toUserOutput());
     m_proc.setEnvironment(runParameters().debugger.environment);
     m_proc.setCommand(cmd);
@@ -220,7 +227,7 @@ void PdbEngine::insertBreakpoint(const Breakpoint &bp)
     if (params.type  == BreakpointByFunction)
         loc = params.functionName;
     else
-        loc = params.fileName.toString() + ':' + QString::number(params.lineNumber);
+        loc = params.fileName.toString() + ':' + QString::number(params.textPosition.line);
 
     postDirectCommand("break " + loc);
 }
@@ -476,7 +483,7 @@ void PdbEngine::handleOutput2(const QString &data)
             QTC_ASSERT(bp, continue);
             bp->setResponseId(bpnr);
             bp->setFileName(fileName);
-            bp->setLineNumber(lineNumber);
+            bp->setTextPosition({lineNumber, -1});
             bp->adjustMarker();
             bp->setPending(false);
             notifyBreakpointInsertOk(bp);
@@ -543,7 +550,7 @@ void PdbEngine::updateLocals()
 
     const bool alwaysVerbose = qtcEnvironmentVariableIsSet("QTC_DEBUGGER_PYTHON_VERBOSE");
     cmd.arg("passexceptions", alwaysVerbose);
-    cmd.arg("fancy", debuggerSettings()->useDebuggingHelpers.value());
+    cmd.arg("fancy", settings().useDebuggingHelpers());
 
     //cmd.arg("resultvarname", m_resultVarName);
     //m_lastDebuggableCommand = cmd;

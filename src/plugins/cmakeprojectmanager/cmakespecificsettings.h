@@ -3,38 +3,24 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
 namespace CMakeProjectManager::Internal {
-
-enum AfterAddFileAction : int {
-    AskUser,
-    CopyFilePath,
-    NeverCopyFilePath
-};
 
 class CMakeSpecificSettings final : public Utils::AspectContainer
 {
 public:
     CMakeSpecificSettings();
 
-    static CMakeSpecificSettings *instance();
-
-    Utils::BoolAspect autorunCMake;
-    Utils::SelectionAspect afterAddFileSetting;
-    Utils::StringAspect ninjaPath;
-    Utils::BoolAspect packageManagerAutoSetup;
-    Utils::BoolAspect askBeforeReConfigureInitialParams;
-    Utils::BoolAspect showSourceSubFolders;
-    Utils::BoolAspect showAdvancedOptionsByDefault;
+    Utils::BoolAspect autorunCMake{this};
+    Utils::FilePathAspect ninjaPath{this};
+    Utils::BoolAspect packageManagerAutoSetup{this};
+    Utils::BoolAspect askBeforeReConfigureInitialParams{this};
+    Utils::BoolAspect askBeforePresetsReload{this};
+    Utils::BoolAspect showSourceSubFolders{this};
+    Utils::BoolAspect showAdvancedOptionsByDefault{this};
 };
 
-class CMakeSpecificSettingsPage final : public Core::IOptionsPage
-{
-public:
-    CMakeSpecificSettingsPage();
-};
+CMakeSpecificSettings &settings();
 
 } // CMakeProjectManager::Internal

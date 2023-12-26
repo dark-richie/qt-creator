@@ -15,6 +15,8 @@ QT_BEGIN_NAMESPACE
 class QTextStream;
 QT_END_NAMESPACE
 
+namespace Utils { class FutureSynchronizer; }
+
 namespace ExtensionSystem {
 class IPlugin;
 class PluginSpec;
@@ -62,9 +64,11 @@ public:
 
     static QObject *getObjectByName(const QString &name);
 
+    static void startProfiling();
     // Plugin operations
     static QVector<PluginSpec *> loadQueue();
     static void loadPlugins();
+    static void loadPluginsAtRuntime(const QSet<PluginSpec *> &plugins);
     static QStringList pluginPaths();
     static void setPluginPaths(const QStringList &paths);
     static QString pluginIID();
@@ -81,7 +85,7 @@ public:
     // Settings
     static void setSettings(Utils::QtcSettings *settings);
     static Utils::QtcSettings *settings();
-    static void setGlobalSettings(Utils::QtcSettings *settings);
+    static void setInstallSettings(Utils::QtcSettings *settings);
     static Utils::QtcSettings *globalSettings();
     static void writeSettings();
 
@@ -122,16 +126,17 @@ public:
     static void setCreatorProcessData(const ProcessData &data);
     static ProcessData creatorProcessData();
 
-    static void profilingReport(const char *what, const PluginSpec *spec = nullptr);
-
     static QString platformName();
 
     static bool isInitializationDone();
+    static bool isShuttingDown();
 
     static void remoteArguments(const QString &serializedArguments, QObject *socket);
     static void shutdown();
 
     static QString systemInformation();
+
+    static Utils::FutureSynchronizer *futureSynchronizer();
 
 signals:
     void objectAdded(QObject *obj);

@@ -13,7 +13,7 @@
 
 #include <debugger/debuggeritem.h>
 #include <debugger/debuggeritemmanager.h>
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/projectexplorerconstants.h>
@@ -24,7 +24,7 @@
 
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtversionmanager.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <qmakeprojectmanager/qmakeprojectmanagerconstants.h>
 
@@ -37,6 +37,7 @@
 #include <QComboBox>
 #include <QDebug>
 #include <QDomDocument>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QMessageBox>
@@ -49,18 +50,18 @@ using namespace Debugger;
 
 namespace Qnx::Internal {
 
-const QLatin1String QNXEnvFileKey("EnvFile");
-const QLatin1String QNXVersionKey("QNXVersion");
+const char QNXEnvFileKey[] = "EnvFile";
+const char QNXVersionKey[] = "QNXVersion";
 // For backward compatibility
-const QLatin1String SdpEnvFileKey("NDKEnvFile");
+const char SdpEnvFileKey[] = "NDKEnvFile";
 
-const QLatin1String QNXConfiguration("QNX_CONFIGURATION");
-const QLatin1String QNXTarget("QNX_TARGET");
-const QLatin1String QNXHost("QNX_HOST");
+const char QNXConfiguration[] = "QNX_CONFIGURATION";
+const char QNXTarget[] = "QNX_TARGET";
+const char QNXHost[] = "QNX_HOST";
 
-const QLatin1String QNXConfigDataKey("QNXConfiguration.");
-const QLatin1String QNXConfigCountKey("QNXConfiguration.Count");
-const QLatin1String QNXConfigsFileVersionKey("Version");
+const char QNXConfigDataKey[] = "QNXConfiguration.";
+const char QNXConfigCountKey[] = "QNXConfiguration.Count";
+const char QNXConfigsFileVersionKey[] = "Version";
 
 static FilePath qnxConfigSettingsFileName()
 {
@@ -73,7 +74,7 @@ public:
     QnxConfiguration() = default;
     explicit QnxConfiguration(const FilePath &envFile) { m_envFile = envFile; }
 
-    void fromMap(const QVariantMap &data)
+    void fromMap(const Store &data)
     {
         QString envFilePath = data.value(QNXEnvFileKey).toString();
         if (envFilePath.isEmpty())
@@ -83,11 +84,11 @@ public:
         m_envFile = FilePath::fromString(envFilePath);
     }
 
-    QVariantMap toMap() const
+    Store toMap() const
     {
-        QVariantMap data;
-        data.insert(QLatin1String(QNXEnvFileKey), m_envFile.toString());
-        data.insert(QLatin1String(QNXVersionKey), m_version.toString());
+        Store data;
+        data.insert(QNXEnvFileKey, m_envFile.toString());
+        data.insert(QNXVersionKey, m_version.toString());
         return data;
     }
 
@@ -98,7 +99,7 @@ public:
 
     bool isActive() const
     {
-        const bool hasToolChain = ToolChainManager::toolChain(Utils::equal(&ToolChain::compilerCommand,
+        const bool hasToolChain = ToolchainManager::toolchain(Utils::equal(&Toolchain::compilerCommand,
                                                                            m_qccCompiler));
         const bool hasDebugger = Utils::contains(DebuggerItemManager::debuggers(), [this](const DebuggerItem &di) {
             return findTargetByDebuggerPath(di.command());
@@ -111,6 +112,11 @@ public:
 
     void ensureContents() const;
     void mutableEnsureContents();
+
+    QString architectureNames() const
+    {
+        return transform(m_targets, &QnxTarget::shortDescription).join(", ");
+    }
 
     EnvironmentItems qnxEnvironmentItems() const;
 
@@ -163,7 +169,7 @@ void QnxConfiguration::deactivate()
     QTC_ASSERT(isActive(), return);
 
     const Toolchains toolChainsToRemove =
-        ToolChainManager::toolchains(Utils::equal(&ToolChain::compilerCommand, m_qccCompiler));
+        ToolchainManager::toolchains(Utils::equal(&Toolchain::compilerCommand, m_qccCompiler));
 
     QList<DebuggerItem> debuggersToRemove;
     const QList<DebuggerItem> debuggerItems = DebuggerItemManager::debuggers();
@@ -176,13 +182,13 @@ void QnxConfiguration::deactivate()
     for (Kit *kit : kits) {
         if (kit->isAutoDetected()
                 && DeviceTypeKitAspect::deviceTypeId(kit) == Constants::QNX_QNX_OS_TYPE
-                && toolChainsToRemove.contains(ToolChainKitAspect::cxxToolChain(kit))) {
+                && toolChainsToRemove.contains(ToolchainKitAspect::cxxToolchain(kit))) {
             KitManager::deregisterKit(kit);
         }
     }
 
-    for (ToolChain *tc : toolChainsToRemove)
-        ToolChainManager::deregisterToolChain(tc);
+    for (Toolchain *tc : toolChainsToRemove)
+        ToolchainManager::deregisterToolchain(tc);
 
     for (const DebuggerItem &debuggerItem : std::as_const(debuggersToRemove))
         DebuggerItemManager::deregisterDebugger(debuggerItem.id());
@@ -226,16 +232,16 @@ Toolchains QnxConfiguration::createToolChains(const QnxTarget &target)
     for (const Id language : {ProjectExplorer::Constants::C_LANGUAGE_ID,
                               ProjectExplorer::Constants::CXX_LANGUAGE_ID}) {
         auto toolChain = new QnxToolChain;
-        toolChain->setDetection(ToolChain::AutoDetection);
+        toolChain->setDetection(Toolchain::ManualDetection);
         toolChain->setLanguage(language);
         toolChain->setTargetAbi(target.m_abi);
         toolChain->setDisplayName(Tr::tr("QCC for %1 (%2)")
                     .arg(m_configName)
                     .arg(target.shortDescription()));
-        toolChain->setSdpPath(m_envFile.parentDir());
-        toolChain->setCpuDir(target.cpuDir());
-        toolChain->resetToolChain(m_qccCompiler);
-        ToolChainManager::registerToolChain(toolChain);
+        toolChain->sdpPath.setValue(m_envFile.parentDir());
+        toolChain->cpuDir.setValue(target.cpuDir());
+        toolChain->resetToolchain(m_qccCompiler);
+        ToolchainManager::registerToolchain(toolChain);
 
         toolChains.append(toolChain);
     }
@@ -252,8 +258,8 @@ void QnxConfiguration::createKit(const QnxTarget &target)
 
     const auto init = [&](Kit *k) {
         QtKitAspect::setQtVersion(k, qnxQt);
-        ToolChainKitAspect::setToolChain(k, toolChains[0]);
-        ToolChainKitAspect::setToolChain(k, toolChains[1]);
+        ToolchainKitAspect::setToolchain(k, toolChains[0]);
+        ToolchainKitAspect::setToolchain(k, toolChains[1]);
 
         if (debugger.isValid())
             DebuggerKitAspect::setDebugger(k, debugger);
@@ -267,9 +273,8 @@ void QnxConfiguration::createKit(const QnxTarget &target)
 
         k->setAutoDetected(false);
         k->setAutoDetectionSource(m_envFile.toString());
-        k->setMutable(DeviceKitAspect::id(), true);
 
-        k->setSticky(ToolChainKitAspect::id(), true);
+        k->setSticky(ToolchainKitAspect::id(), true);
         k->setSticky(DeviceTypeKitAspect::id(), true);
         k->setSticky(SysRootKitAspect::id(), true);
         k->setSticky(DebuggerKitAspect::id(), true);
@@ -411,36 +416,37 @@ const QnxTarget *QnxConfiguration::findTargetByDebuggerPath(
     return it == m_targets.end() ? nullptr : &(*it);
 }
 
+// QnxSettingsPage
 
-// QnxSettingsPagePrivate
+static QHash<FilePath, QnxConfiguration> m_configurations;
 
-class QnxSettingsPagePrivate : public QObject
+static QnxConfiguration *configurationFromEnvFile(const FilePath &envFile)
+{
+    auto it = m_configurations.find(envFile);
+    return it == m_configurations.end() ? nullptr : &*it;
+}
+
+class QnxSettingsPage : public QObject, public Core::IOptionsPage
 {
 public:
-    QnxSettingsPagePrivate()
-    {
-        connect(Core::ICore::instance(), &Core::ICore::saveSettingsRequested,
-                this, &QnxSettingsPagePrivate::saveConfigs);
-        // Can't do yet as not all devices are around.
-        connect(DeviceManager::instance(), &DeviceManager::devicesLoaded,
-                this, &QnxSettingsPagePrivate::restoreConfigurations);
-    }
+    explicit QnxSettingsPage(QObject *guard);
+    ~QnxSettingsPage() {}
 
     void saveConfigs()
     {
-        QVariantMap data;
-        data.insert(QLatin1String(QNXConfigsFileVersionKey), 1);
+        Store data;
+        data.insert(QNXConfigsFileVersionKey, 1);
         int count = 0;
         for (const QnxConfiguration &config : std::as_const(m_configurations)) {
-            QVariantMap tmp = config.toMap();
+            Store tmp = config.toMap();
             if (tmp.isEmpty())
                 continue;
 
-            data.insert(QNXConfigDataKey + QString::number(count), tmp);
+            data.insert(numberedKey(QNXConfigDataKey, count), variantFromStore(tmp));
             ++count;
         }
 
-        data.insert(QLatin1String(QNXConfigCountKey), count);
+        data.insert(QNXConfigCountKey, count);
         m_writer.save(data, Core::ICore::dialogParent());
     }
 
@@ -450,33 +456,48 @@ public:
         if (!reader.load(qnxConfigSettingsFileName()))
             return;
 
-        QVariantMap data = reader.restoreValues();
+        Store data = reader.restoreValues();
         int count = data.value(QNXConfigCountKey, 0).toInt();
         for (int i = 0; i < count; ++i) {
-            const QString key = QNXConfigDataKey + QString::number(i);
+            const Key key = numberedKey(QNXConfigDataKey, i);
             if (!data.contains(key))
                 continue;
 
             QnxConfiguration config;
-            config.fromMap(data.value(key).toMap());
+            config.fromMap(storeFromVariant(data.value(key)));
             m_configurations[config.m_envFile] = config;
         }
     }
 
-    QnxConfiguration *configurationFromEnvFile(const FilePath &envFile)
-    {
-        auto it = m_configurations.find(envFile);
-        return it == m_configurations.end() ? nullptr : &*it;
-    }
-
-    QHash<FilePath, QnxConfiguration> m_configurations;
     PersistentSettingsWriter m_writer{qnxConfigSettingsFileName(), "QnxConfigurations"};
 };
 
-static QnxSettingsPagePrivate *dd = nullptr;
-
-
 // QnxSettingsWidget
+
+class ArchitecturesList final : public QWidget
+{
+public:
+    void setConfiguration(const FilePath &envFile)
+    {
+        m_envFile = envFile;
+        delete layout();
+
+        QnxConfiguration *config = configurationFromEnvFile(envFile);
+        if (!config)
+            return;
+
+        auto l = new QHBoxLayout(this);
+        for (const QnxTarget &target : config->m_targets) {
+            auto button = new QPushButton(Tr::tr("Create Kit for %1").arg(target.cpuDir()));
+            connect(button, &QPushButton::clicked, this, [config, target] {
+                config->createKit(target);
+            });
+            l->addWidget(button);
+        }
+    }
+
+    FilePath m_envFile;
+};
 
 class QnxSettingsWidget final : public Core::IOptionsPageWidget
 {
@@ -505,7 +526,6 @@ public:
 
     void addConfiguration();
     void removeConfiguration();
-    void generateKits(bool checked);
     void updateInformation();
     void populateConfigsCombo();
 
@@ -513,55 +533,55 @@ public:
 
 private:
     QComboBox *m_configsCombo = new QComboBox;
-    QCheckBox *m_generateKitsCheckBox = new QCheckBox(Tr::tr("Generate kits"));
     QLabel *m_configName = new QLabel;
     QLabel *m_configVersion = new QLabel;
     QLabel *m_configHost = new QLabel;
     QLabel *m_configTarget = new QLabel;
+    QLabel *m_compiler = new QLabel;
+    QLabel *m_architectures = new QLabel;
+
+    ArchitecturesList *m_kitCreation = new ArchitecturesList;
 
     QList<ConfigState> m_changedConfigs;
 };
 
 QnxSettingsWidget::QnxSettingsWidget()
 {
-    auto addButton = new QPushButton(Tr::tr("Add..."));
-    auto removeButton = new QPushButton(Tr::tr("Remove"));
-
     using namespace Layouting;
 
     Row {
         Column {
             m_configsCombo,
-            Row { m_generateKitsCheckBox, st },
             Group {
                 title(Tr::tr("Configuration Information:")),
                 Form {
                     Tr::tr("Name:"), m_configName, br,
                     Tr::tr("Version:"), m_configVersion, br,
                     Tr::tr("Host:"), m_configHost, br,
-                    Tr::tr("Target:"), m_configTarget
+                    Tr::tr("Target:"), m_configTarget, br,
+                    Tr::tr("Compiler:"), m_compiler, br,
+                    Tr::tr("Architectures:"), m_architectures
                 }
             },
+            Row { m_kitCreation, st },
             st
         },
         Column {
-            addButton,
-            removeButton,
+            PushButton {
+                text(Tr::tr("Add...")),
+                onClicked([this] { addConfiguration(); }, this)
+            },
+            PushButton {
+                text(Tr::tr("Remove")),
+                onClicked([this] { removeConfiguration(); }, this)
+            },
             st
         }
     }.attachTo(this);
 
     populateConfigsCombo();
 
-    connect(addButton, &QAbstractButton::clicked,
-            this, &QnxSettingsWidget::addConfiguration);
-    connect(removeButton, &QAbstractButton::clicked,
-            this, &QnxSettingsWidget::removeConfiguration);
     connect(m_configsCombo, &QComboBox::currentIndexChanged,
-            this, &QnxSettingsWidget::updateInformation);
-    connect(m_generateKitsCheckBox, &QAbstractButton::toggled,
-            this, &QnxSettingsWidget::generateKits);
-    connect(QtVersionManager::instance(), &QtVersionManager::qtVersionsChanged,
             this, &QnxSettingsWidget::updateInformation);
 }
 
@@ -578,7 +598,7 @@ void QnxSettingsWidget::addConfiguration()
     if (envFile.isEmpty())
         return;
 
-    if (dd->m_configurations.contains(envFile)) {
+    if (m_configurations.contains(envFile)) {
         QMessageBox::warning(Core::ICore::dialogParent(),
                              Tr::tr("Warning"),
                              Tr::tr("Configuration already exists."));
@@ -604,7 +624,7 @@ void QnxSettingsWidget::removeConfiguration()
     const FilePath envFile =  m_configsCombo->currentData().value<FilePath>();
     QTC_ASSERT(!envFile.isEmpty(), return);
 
-    QnxConfiguration *config = dd->configurationFromEnvFile(envFile);
+    QnxConfiguration *config = configurationFromEnvFile(envFile);
     QTC_ASSERT(config, return);
 
     config->ensureContents();
@@ -623,39 +643,36 @@ void QnxSettingsWidget::removeConfiguration()
     }
 }
 
-void QnxSettingsWidget::generateKits(bool checked)
-{
-    const FilePath envFile = m_configsCombo->currentData().value<FilePath>();
-    setConfigState(envFile, checked ? Activated : Deactivated);
-}
-
 void QnxSettingsWidget::updateInformation()
 {
     const FilePath envFile = m_configsCombo->currentData().value<FilePath>();
 
-    if (QnxConfiguration *config = dd->configurationFromEnvFile(envFile)) {
+    if (QnxConfiguration *config = configurationFromEnvFile(envFile)) {
         config->ensureContents();
-        m_generateKitsCheckBox->setEnabled(config->isValid());
-        m_generateKitsCheckBox->setChecked(config->isActive());
         m_configName->setText(config->m_configName);
         m_configVersion->setText(config->m_version.toString());
         m_configHost->setText(config->m_qnxHost.toString());
         m_configTarget->setText(config->m_qnxTarget.toString());
+        m_compiler->setText(config->m_qccCompiler.toUserOutput());
+        m_architectures->setText(config->architectureNames());
+        m_kitCreation->setConfiguration(envFile);
     } else {
-        m_generateKitsCheckBox->setEnabled(false);
-        m_generateKitsCheckBox->setChecked(false);
         m_configName->setText({});
         m_configVersion->setText({});
         m_configHost->setText({});
-        m_configTarget->setText({});
+        m_compiler->setText({});
+        m_architectures->setText({});
+        m_kitCreation->setConfiguration({});
     }
 }
 
 void QnxSettingsWidget::populateConfigsCombo()
 {
     m_configsCombo->clear();
-    for (const QnxConfiguration &config : std::as_const(dd->m_configurations))
+    for (const QnxConfiguration &config : std::as_const(m_configurations)) {
+        config.ensureContents();
         m_configsCombo->addItem(config.m_configName, QVariant::fromValue(config.m_envFile));
+    }
     updateInformation();
 }
 
@@ -690,13 +707,13 @@ void QnxSettingsWidget::apply()
     for (const ConfigState &configState : std::as_const(m_changedConfigs)) {
         switch (configState.state) {
         case Activated: {
-            QnxConfiguration *config = dd->configurationFromEnvFile(configState.envFile);
+            QnxConfiguration *config = configurationFromEnvFile(configState.envFile);
             QTC_ASSERT(config, break);
             config->activate();
             break;
         }
         case Deactivated: {
-            QnxConfiguration *config = dd->configurationFromEnvFile(configState.envFile);
+            QnxConfiguration *config = configurationFromEnvFile(configState.envFile);
             QTC_ASSERT(config, break);
             config->deactivate();
             break;
@@ -704,14 +721,14 @@ void QnxSettingsWidget::apply()
         case Added: {
             QnxConfiguration config(configState.envFile);
             config.ensureContents();
-            dd->m_configurations.insert(configState.envFile, config);
+            m_configurations.insert(configState.envFile, config);
             break;
         }
         case Removed:
-            QnxConfiguration *config = dd->configurationFromEnvFile(configState.envFile);
+            QnxConfiguration *config = configurationFromEnvFile(configState.envFile);
             QTC_ASSERT(config, break);
             config->deactivate();
-            dd->m_configurations.remove(configState.envFile);
+            m_configurations.remove(configState.envFile);
             break;
         }
     }
@@ -722,13 +739,28 @@ void QnxSettingsWidget::apply()
 
 // QnxSettingsPage
 
-QList<ToolChain *> QnxSettingsPage::autoDetect(const QList<ToolChain *> &alreadyKnown)
+QnxSettingsPage::QnxSettingsPage(QObject *guard)
+    : QObject(guard)
 {
-    QList<ToolChain *> result;
-    for (const QnxConfiguration &config : std::as_const(dd->m_configurations)) {
+    setId("DD.Qnx Configuration");
+    setDisplayName(Tr::tr("QNX"));
+    setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
+    setWidgetCreator([] { return new QnxSettingsWidget; });
+
+    connect(Core::ICore::instance(), &Core::ICore::saveSettingsRequested,
+            this, &QnxSettingsPage::saveConfigs);
+    // Can't do yet as not all devices are around.
+    connect(DeviceManager::instance(), &DeviceManager::devicesLoaded,
+            this, &QnxSettingsPage::restoreConfigurations);
+}
+
+QList<Toolchain *> autoDetectHelper(const QList<Toolchain *> &alreadyKnown)
+{
+    QList<Toolchain *> result;
+    for (const QnxConfiguration &config : std::as_const(m_configurations)) {
         config.ensureContents();
         for (const QnxTarget &target : std::as_const(config.m_targets)) {
-            result +=  Utils::filtered(alreadyKnown, [config, target](ToolChain *tc) {
+            result +=  Utils::filtered(alreadyKnown, [config, target](Toolchain *tc) {
                 return tc->typeId() == Constants::QNX_TOOLCHAIN_ID
                        && tc->targetAbi() == target.m_abi
                        && tc->compilerCommand() == config.m_qccCompiler;
@@ -738,19 +770,9 @@ QList<ToolChain *> QnxSettingsPage::autoDetect(const QList<ToolChain *> &already
     return result;
 }
 
-QnxSettingsPage::QnxSettingsPage()
+void setupQnxSettingsPage(QObject *guard)
 {
-    setId("DD.Qnx Configuration");
-    setDisplayName(Tr::tr("QNX"));
-    setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
-    setWidgetCreator([] { return new QnxSettingsWidget; });
-
-    dd = new QnxSettingsPagePrivate;
-}
-
-QnxSettingsPage::~QnxSettingsPage()
-{
-    delete dd;
+    (void) new QnxSettingsPage(guard);
 }
 
 } // Qnx::Internal

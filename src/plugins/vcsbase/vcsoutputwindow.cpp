@@ -14,7 +14,7 @@
 #include <texteditor/texteditorsettings.h>
 
 #include <utils/filepath.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/theme/theme.h>
 
 #include <QAction>
@@ -123,13 +123,13 @@ QString OutputWindowPlainTextEdit::identifierUnderCursor(const QPoint &widgetPos
     const int cursorDocumentPos = cursor.position();
     cursor.select(QTextCursor::BlockUnderCursor);
     if (!cursor.hasSelection())
-        return QString();
+        return {};
     const QString block = cursor.selectedText();
     // Determine cursor position within line and find blank-delimited word
     const int cursorPos = cursorDocumentPos - cursor.block().position();
     const int blockSize = block.size();
     if (cursorPos < 0 || cursorPos >= blockSize || block.at(cursorPos).isSpace())
-        return QString();
+        return {};
     // Retrieve repository if desired
     if (repository)
         if (QTextBlockUserData *data = cursor.block().userData())
@@ -283,6 +283,10 @@ static VcsOutputWindowPrivate *d = nullptr;
 
 VcsOutputWindow::VcsOutputWindow()
 {
+    setId("VersionControl");
+    setDisplayName(Tr::tr("Version Control"));
+    setPriorityInStatusBar(-20);
+
     d = new VcsOutputWindowPrivate;
     Q_ASSERT(d->passwordRegExp.isValid());
     m_instance = this;
@@ -325,16 +329,6 @@ QWidget *VcsOutputWindow::outputWidget(QWidget *parent)
     if (parent != d->widget.parent())
         d->widget.setParent(parent);
     return &d->widget;
-}
-
-QString VcsOutputWindow::displayName() const
-{
-    return Tr::tr("Version Control");
-}
-
-int VcsOutputWindow::priorityInStatusBar() const
-{
-    return -1;
 }
 
 void VcsOutputWindow::clearContents()
@@ -392,7 +386,7 @@ void VcsOutputWindow::setData(const QByteArray &data)
 
 void VcsOutputWindow::appendSilently(const QString &text)
 {
-    append(text, None, true);
+    append((text.endsWith('\n') || text.endsWith('\r')) ? text : text + '\n', None, true);
 }
 
 void VcsOutputWindow::append(const QString &text, MessageStyle style, bool silently)
@@ -444,7 +438,7 @@ QString VcsOutputWindow::msgExecutionLogEntry(const FilePath &workingDir, const 
             + ' ' + formatArguments(command.splitArguments());
     if (workingDir.isEmpty())
         return Tr::tr("Running: %1").arg(maskedCmdline) + '\n';
-    return Tr::tr("Running in %1: %2").arg(workingDir.toUserOutput(), maskedCmdline) + '\n';
+    return Tr::tr("Running in \"%1\": %2.").arg(workingDir.toUserOutput(), maskedCmdline) + '\n';
 }
 
 void VcsOutputWindow::appendShellCommandLine(const QString &text)

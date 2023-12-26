@@ -9,6 +9,7 @@
 #include "cppeditorwidget.h"
 #include "cpplocalsymbols.h"
 #include "cppquickfixassistant.h"
+#include "cpptoolsreuse.h"
 #include "symbolfinder.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -18,12 +19,14 @@
 
 #include <cplusplus/ASTPath.h>
 #include <cplusplus/CppRewriter.h>
+#include <cplusplus/declarationcomments.h>
 #include <cplusplus/Overview.h>
 #include <cplusplus/TypeOfExpression.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/proxyaction.h>
 #include <utils/qtcassert.h>
+#include <utils/textutils.h>
 #include <utils/tooltip/tooltip.h>
 
 #include <QRegularExpression>
@@ -196,7 +199,7 @@ void FunctionDeclDefLinkFinder::startFindLinkAt(
 
     // find the start/end offsets
     CppRefactoringChanges refactoringChanges(snapshot);
-    CppRefactoringFilePtr sourceFile = refactoringChanges.file(doc->filePath());
+    CppRefactoringFilePtr sourceFile = refactoringChanges.cppFile(doc->filePath());
     sourceFile->setCppDocument(doc);
     int start, end;
     declDefLinkStartEnd(sourceFile, parent, funcDecl, &start, &end);
@@ -256,7 +259,7 @@ void FunctionDeclDefLink::apply(CppEditorWidget *editor, bool jumpToMatch)
 
     // first verify the interesting region of the target file is unchanged
     CppRefactoringChanges refactoringChanges(snapshot);
-    CppRefactoringFilePtr newTargetFile = refactoringChanges.file(targetFile->filePath());
+    CppRefactoringFilePtr newTargetFile = refactoringChanges.cppFile(targetFile->filePath());
     if (!newTargetFile->isValid())
         return;
     const int targetStart = newTargetFile->position(targetLine, targetColumn);
@@ -279,8 +282,7 @@ void FunctionDeclDefLink::hideMarker(CppEditorWidget *editor)
 {
     if (!hasMarker)
         return;
-    editor->setRefactorMarkers(RefactorMarker::filterOutType(
-        editor->refactorMarkers(), Constants::CPP_FUNCTION_DECL_DEF_LINK_MARKER_ID));
+    editor->clearRefactorMarkers(Constants::CPP_FUNCTION_DECL_DEF_LINK_MARKER_ID);
     hasMarker = false;
 }
 
@@ -289,8 +291,7 @@ void FunctionDeclDefLink::showMarker(CppEditorWidget *editor)
     if (hasMarker)
         return;
 
-    QList<RefactorMarker> markers = RefactorMarker::filterOutType(
-        editor->refactorMarkers(), Constants::CPP_FUNCTION_DECL_DEF_LINK_MARKER_ID);
+    RefactorMarkers markers;
     RefactorMarker marker;
 
     // show the marker at the end of the linked area, with a special case
@@ -321,7 +322,7 @@ void FunctionDeclDefLink::showMarker(CppEditorWidget *editor)
             cppEditor->applyDeclDefLinkChanges(true);
     };
     markers += marker;
-    editor->setRefactorMarkers(markers);
+    editor->setRefactorMarkers(markers, Constants::CPP_FUNCTION_DECL_DEF_LINK_MARKER_ID);
 
     hasMarker = true;
 }
@@ -848,6 +849,41 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
                             targetFile->startOf(targetFunctionDeclarator->rparen_token),
                             newTargetParameters);
         }
+
+        // Change parameter names in function documentation.
+        [&] {
+            if (renamedTargetParameters.isEmpty())
+                return;
+            const QList<Token> functionComments = commentsForDeclaration(
+                    targetFunction, targetDeclaration, *targetFile->document(),
+                targetFile->cppDocument());
+            if (functionComments.isEmpty())
+                return;
+            const QString &content = targetFile->document()->toPlainText();
+            const QStringView docView = QStringView(content);
+            for (auto it = renamedTargetParameters.cbegin();
+                 it != renamedTargetParameters.cend(); ++it) {
+                const QString paramName = Overview().prettyName(it.key()->name());
+                for (const Token &tok : functionComments) {
+                    const TranslationUnit * const tu = targetFile->cppDocument()->translationUnit();
+                    const int tokenStartPos = tu->getTokenPositionInDocument(
+                        tok, targetFile->document());
+                    const int tokenEndPos = tu->getTokenEndPositionInDocument(
+                        tok, targetFile->document());
+                    const QStringView tokenView = docView.mid(tokenStartPos,
+                                                              tokenEndPos - tokenStartPos);
+                    const QList<Text::Range> ranges = symbolOccurrencesInText(
+                        *targetFile->document(), tokenView, tokenStartPos, paramName);
+                    for (const Text::Range &r : ranges) {
+                        const int startPos = Text::positionInText(
+                            targetFile->document(), r.begin.line, r.begin.column + 1);
+                        const int endPos = Text::positionInText(
+                            targetFile->document(), r.end.line, r.end.column + 1);
+                        changes.replace(startPos, endPos, it.value());
+                    }
+                }
+            }
+        }();
 
         // for function definitions, rename the local usages
         FunctionDefinitionAST *targetDefinition = targetDeclaration->asFunctionDefinition();

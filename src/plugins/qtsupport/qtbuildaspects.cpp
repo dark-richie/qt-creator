@@ -22,21 +22,21 @@ using namespace Utils;
 
 namespace QtSupport {
 
-QmlDebuggingAspect::QmlDebuggingAspect(BuildConfiguration *buildConfig)
-    : m_buildConfig(buildConfig)
+QmlDebuggingAspect::QmlDebuggingAspect(AspectContainer *container)
+    : TriStateAspect(container)
 {
     setSettingsKey("EnableQmlDebugging");
     setDisplayName(Tr::tr("QML debugging and profiling:"));
-    setValue(ProjectExplorerPlugin::buildPropertiesSettings().qmlDebugging.value());
+    setValue(buildPropertiesSettings().qmlDebugging());
 }
 
-void QmlDebuggingAspect::addToLayout(Layouting::LayoutBuilder &builder)
+void QmlDebuggingAspect::addToLayout(Layouting::LayoutItem &parent)
 {
-    SelectionAspect::addToLayout(builder);
+    SelectionAspect::addToLayout(parent);
     const auto warningLabel = createSubWidget<InfoLabel>(QString(), InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
     warningLabel->setVisible(false);
-    builder.addRow({{}, warningLabel});
+    parent.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         QTC_ASSERT(m_buildConfig, return);
@@ -59,21 +59,31 @@ void QmlDebuggingAspect::addToLayout(Layouting::LayoutBuilder &builder)
     changeHandler();
 }
 
-QtQuickCompilerAspect::QtQuickCompilerAspect(BuildConfiguration *buildConfig)
-    : m_buildConfig(buildConfig)
+void QmlDebuggingAspect::setBuildConfiguration(const BuildConfiguration *buildConfig)
+{
+    m_buildConfig = buildConfig;
+}
+
+QtQuickCompilerAspect::QtQuickCompilerAspect(AspectContainer *container)
+    : TriStateAspect(container)
 {
     setSettingsKey("QtQuickCompiler");
     setDisplayName(Tr::tr("Qt Quick Compiler:"));
-    setValue(ProjectExplorerPlugin::buildPropertiesSettings().qtQuickCompiler.value());
+    setValue(buildPropertiesSettings().qtQuickCompiler());
 }
 
-void QtQuickCompilerAspect::addToLayout(Layouting::LayoutBuilder &builder)
+void QtQuickCompilerAspect::setBuildConfiguration(const BuildConfiguration *buildConfig)
 {
-    SelectionAspect::addToLayout(builder);
+    m_buildConfig = buildConfig;
+}
+
+void QtQuickCompilerAspect::addToLayout(Layouting::LayoutItem &parent)
+{
+    SelectionAspect::addToLayout(parent);
     const auto warningLabel = createSubWidget<InfoLabel>(QString(), InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
     warningLabel->setVisible(false);
-    builder.addRow({{}, warningLabel});
+    parent.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         QTC_ASSERT(m_buildConfig, return);

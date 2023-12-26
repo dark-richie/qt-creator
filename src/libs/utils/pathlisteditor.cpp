@@ -16,6 +16,7 @@
 
 /*!
     \class Utils::PathListEditor
+    \inmodule QtCreator
 
     \brief The PathListEditor class is a control that lets the user edit a list
     of (directory) paths
@@ -137,7 +138,7 @@ QStringList PathListEditor::pathList() const
 {
     const QString text = d->edit->toPlainText().trimmed();
     if (text.isEmpty())
-        return QStringList();
+        return {};
     // trim each line
     QStringList rc = text.split('\n', Qt::SkipEmptyParts);
     const QStringList::iterator end = rc.end();

@@ -39,7 +39,7 @@
 
     By default, \QC does not handle build system based tests to avoid
     interference with code based parsers. To enable build system based tests,
-    select the respective test tool in \uicontrol Preferences > \uicontrol Testing
+    select the respective test tool in \preferences > \uicontrol Testing
     > \uicontrol General.
 
     The detection of tests is usually much faster for build system based
@@ -341,8 +341,8 @@
             with the build system.
 
     If a test takes more than a minute to execute, the default timeout might
-    stop the test execution. To increase the timeout, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Testing} > \uicontrol General.
+    stop the test execution. To increase the timeout, select \preferences >
+    \uicontrol {Testing} > \uicontrol General.
 
     \section2 Selecting Tests to Run
 
@@ -389,8 +389,7 @@
     \section1 Specifying Test Settings
 
     To customize the handling of tests, test frameworks, and test tools, select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Testing} >
-    \uicontrol General.
+    \preferences > \uicontrol {Testing} > \uicontrol General.
 
     \image qtcreator-preferences-testing-general.webp {General tab in Testing preferences}
 
@@ -406,6 +405,10 @@
     \uicontrol Group check box next to the framework name in the
     \uicontrol {Active Test Frameworks} list.
     By default, \QC groups tests that are in the same directory.
+
+    By default, \QC uses a quarter of the available logical CPUs when
+    scanning for tests. You can set the amount of worker threads used
+    in \uicontrol {Scan threads}.
 
     \QC omits internal messages and run configuration warnings for
     deduced  configurations by default. To view them, deselect the
@@ -435,7 +438,7 @@
     or select \uicontrol {Reset Cached Choices}.
 
     Select the \uicontrol {Process arguments} check box to pass arguments to the
-    test executable that you specify in the \l {Managing Run Configurations}
+    test executable that you specify in the \l {Configure projects for running}
     {run configuration}. This is an experimental feature that might cause the
     execution of the test executable to fail.
 
@@ -444,8 +447,8 @@
     The code inside a benchmark test is measured, and possibly also repeated
     several times in order to get an accurate measurement. This depends on the
     measurement back-end that you can select in the
-    \uicontrol {Benchmark Metrics} group in \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Testing} > \uicontrol {Qt Test}:
+    \uicontrol {Benchmark Metrics} group in \preferences > \uicontrol {Testing} >
+    \uicontrol {Qt Test}:
     walltime, CPU tick counter, event counter, Valgrind Callgrind, and Linux
     Perf. For more information, see \l{Creating a Benchmark}.
 
@@ -472,12 +475,18 @@
 
     \section2 Specifying Settings for Running Google Tests
 
-    To specify settings for running Google tests, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Testing} > \uicontrol {Google Test}.
+    To specify settings for running Google tests, select \preferences >
+    \uicontrol {Testing} > \uicontrol {Google Test}.
 
     \image qtcreator-preferences-testing-googletest.webp {Gooble Test tab in Testing preferences}
 
     To run disabled tests, select the \uicontrol {Run disabled tests} check box.
+
+    To turn assertion failures into C++ exceptions, select the
+    \uicontrol {Throw on failure} check box.
+
+    To turn failures into debugger breakpoints, select the
+    \uicontrol {Break on failure while debugging} check box.
 
     To run several iterations of the tests, select the \uicontrol {Repeat tests}
     check box and enter the number of times to run the tests in the
@@ -487,8 +496,6 @@
     randomizer in the \uicontrol Seed field. The value 0 generates a seed
     based on the current timestamp.
 
-    To turn failures into debugger breakpoints, select the
-    \uicontrol {Break on failure while debugging} check box.
 
     To group Google tests by using a GTest filter, select
     \uicontrol {GTest Filter} in the \uicontrol {Group mode} field,
@@ -500,9 +507,8 @@
     \section2 Specifying Settings for Running Boost Tests
 
     \list 1
-        \li To specify settings for running Boost tests, select \uicontrol Edit
-            > \uicontrol Preferences > \uicontrol {Testing} >
-            \uicontrol {Boost Test}.
+        \li To specify settings for running Boost tests, select \preferences >
+            \uicontrol {Testing} > \uicontrol {Boost Test}.
             \image qtcreator-preferences-testing-boosttest.webp {Boost Test tab in Testing preferences}
         \li In the \uicontrol {Log format} field, select the error report
             format to specify the type of events to record in the
@@ -526,8 +532,7 @@
     \section2 Specifying Settings for Running Catch2 Tests
     \list 1
         \li To specify settings for running Catch2 tests, select
-            \uicontrol Edit > \uicontrol Preferences > \uicontrol {Testing} >
-            \uicontrol {Catch Test}.
+            \preferences > \uicontrol {Testing} > \uicontrol {Catch Test}.
             \image qtcreator-preferences-testing-catchtest.webp {Catch Test tab in Testing preferences}
         \li Select the \uicontrol {Show success} check box to show succeeding
             expressions as well. By default Catch2 will print only fails.
@@ -557,8 +562,7 @@
     \section2 Specifying Settings for Running CTest-Based Tests
     \list 1
         \li To specify settings for running CTest-based tests, select
-        \uicontrol Edit > \uicontrol Preferences > \uicontrol {Testing} >
-        \uicontrol {CTest}.
+            \preferences > \uicontrol {Testing} > \uicontrol {CTest}.
             \image qtcreator-preferences-testing-ctest.webp {CTest tab in Testing preferences}
         \li Select the \uicontrol {Output on failure} check box to show test
             specific output if a test fails. Contrary to the CTest default
@@ -584,7 +588,7 @@
 
     \section1 Viewing Test Output
 
-    The \l{Viewing Output}{Test Results} view shows Qt and Qt Quick test results
+    The \l{View output}{Test Results} view shows Qt and Qt Quick test results
     in XML format and other test results in plain text format.
 
     \section2 Qt Test Output
@@ -595,8 +599,8 @@
     the lost information when viewing the results as plain text.
 
     To view the
-    results of Qt and Qt Quick tests as plain text, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Testing} > \uicontrol {Qt Test}, and
+    results of Qt and Qt Quick tests as plain text, select \preferences >
+    \uicontrol {Testing} > \uicontrol {Qt Test}, and
     then deselect the \uicontrol {Use XML output} check box. Then select the
     \inlineimage icons/text.png
     (\uicontrol {Switch Between Visual and Text Display}) button in

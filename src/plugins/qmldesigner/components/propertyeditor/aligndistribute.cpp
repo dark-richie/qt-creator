@@ -19,6 +19,8 @@
 
 #include <cmath>
 
+using namespace Utils;
+
 namespace QmlDesigner {
 
 AlignDistribute::AlignDistribute(QObject *parent)
@@ -30,7 +32,7 @@ bool AlignDistribute::multiSelection() const
     if (!m_qmlObjectNode.isValid())
         return false;
 
-    return m_qmlObjectNode.view()->selectedModelNodes().count() > 1;
+    return m_qmlObjectNode.view()->selectedModelNodes().size() > 1;
 }
 
 bool AlignDistribute::selectionHasAnchors() const
@@ -210,7 +212,7 @@ bool compareByDepth(const ModelNode &node1, const ModelNode &node2)
     return false;
 }
 
-static inline QRectF getBoundingRect(const QList<ModelNode> &modelNodeList)
+inline static QRectF getBoundingRect(const QList<ModelNode> &modelNodeList)
 {
     QRectF boundingRect;
     for (const ModelNode &modelNode : modelNodeList) {
@@ -222,7 +224,7 @@ static inline QRectF getBoundingRect(const QList<ModelNode> &modelNodeList)
     return boundingRect;
 }
 
-static inline QSizeF getSummedSize(const QList<ModelNode> &modelNodeList)
+inline static QSizeF getSummedSize(const QList<ModelNode> &modelNodeList)
 {
     QSizeF summedSize = QSizeF(0, 0);
     for (const ModelNode &modelNode : modelNodeList) {
@@ -234,7 +236,7 @@ static inline QSizeF getSummedSize(const QList<ModelNode> &modelNodeList)
     return summedSize;
 }
 
-static inline qreal getInstanceSceneX(const QmlItemNode &qmlItemNode)
+inline static qreal getInstanceSceneX(const QmlItemNode &qmlItemNode)
 {
     const qreal x = qmlItemNode.modelValue("x").toReal();
     if (qmlItemNode.hasInstanceParentItem())
@@ -242,7 +244,7 @@ static inline qreal getInstanceSceneX(const QmlItemNode &qmlItemNode)
     return x;
 }
 
-static inline qreal getInstanceSceneY(const QmlItemNode &qmlItemNode)
+inline static qreal getInstanceSceneY(const QmlItemNode &qmlItemNode)
 {
     const qreal y = qmlItemNode.modelValue("y").toReal();
     if (qmlItemNode.hasInstanceParentItem())
@@ -663,14 +665,15 @@ AlignDistribute::Dimension AlignDistribute::getDimension(Target target) const
 
 bool AlignDistribute::executePixelPerfectDialog() const
 {
-    QDialogButtonBox::StandardButton pressed = Utils::CheckableMessageBox::doNotAskAgainQuestion(
+    Utils::CheckableDecider decider(Key("WarnAboutPixelPerfectDistribution"));
+
+    QMessageBox::StandardButton pressed = Utils::CheckableMessageBox::question(
         Core::ICore::dialogParent(),
         tr("Cannot Distribute Perfectly"),
         tr("These objects cannot be distributed to equal pixel values. "
            "Do you want to distribute to the nearest possible values?"),
-        Core::ICore::settings(),
-        "WarnAboutPixelPerfectDistribution");
-    return (pressed == QDialogButtonBox::Yes) ? true : false;
+        decider);
+    return (pressed == QMessageBox::Yes) ? true : false;
 }
 
 } // namespace QmlDesigner

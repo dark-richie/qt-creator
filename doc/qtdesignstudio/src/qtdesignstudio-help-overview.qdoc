@@ -3,21 +3,21 @@
 
 /*!
     \page studio-help.html
-    \previouspage creator-editor-external.html
-    \nextpage creator-help.html
+    \previouspage studio-connecting-mcus-with-creator.html
+    \nextpage creator-how-to-get-help.html
 
     \title Help
 
     \table
         \row
-            \li \image front-help.png
+            \li \image qds-front-help.png
             \li Learn more about using the \uicontrol Help mode, frequently
                 asked questions, and supported platforms.
     \endtable
 
     \list
 
-        \li \l{Using the Help Mode}
+        \li \l{Get help}
 
             \QDS comes fully integrated with documentation. You can use search
             and index functions to find particular topics in the helps, or

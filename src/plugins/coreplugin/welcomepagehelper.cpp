@@ -13,7 +13,6 @@
 #include <utils/theme/theme.h>
 
 #include <QEasingCurve>
-#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHoverEvent>
@@ -46,21 +45,6 @@ static QFont sizedFont(int size, const QWidget *widget)
 
 namespace WelcomePageHelpers {
 
-QFont brandFont()
-{
-    const static QFont f = []{
-        const int id = QFontDatabase::addApplicationFont(":/studiofonts/TitilliumWeb-Regular.ttf");
-        QFont result;
-        result.setPixelSize(16);
-        if (id >= 0) {
-            const QStringList fontFamilies = QFontDatabase::applicationFontFamilies(id);
-            result.setFamilies(fontFamilies);
-        }
-        return result;
-    }();
-    return f;
-}
-
 QWidget *panelBar(QWidget *parent)
 {
     auto frame = new QWidget(parent);
@@ -83,7 +67,7 @@ SearchBox::SearchBox(QWidget *parent)
     m_lineEdit = new FancyLineEdit;
     m_lineEdit->setFiltering(true);
     m_lineEdit->setFrame(false);
-    m_lineEdit->setFont(WelcomePageHelpers::brandFont());
+    m_lineEdit->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
     m_lineEdit->setMinimumHeight(33);
     m_lineEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
 
@@ -144,10 +128,10 @@ bool SectionGridView::hasHeightForWidth() const
 
 int SectionGridView::heightForWidth(int width) const
 {
-    const int columnCount = width / Core::ListItemDelegate::GridItemWidth;
+    const int columnCount = qMax(1, width / Core::WelcomePageHelpers::GridItemWidth);
     const int rowCount = (model()->rowCount() + columnCount - 1) / columnCount;
     const int maxRowCount = m_maxRows ? std::min(*m_maxRows, rowCount) : rowCount;
-    return maxRowCount * Core::ListItemDelegate::GridItemHeight;
+    return maxRowCount * Core::WelcomePageHelpers::GridItemHeight;
 }
 
 void SectionGridView::wheelEvent(QWheelEvent *e)
@@ -158,7 +142,25 @@ void SectionGridView::wheelEvent(QWheelEvent *e)
         GridView::wheelEvent(e);
 }
 
-const QSize ListModel::defaultImageSize(214, 160);
+bool SectionGridView::event(QEvent *e)
+{
+    if (e->type() == QEvent::Resize) {
+        const auto itemsFit = [this](const QSize &size) {
+            const int maxColumns = std::max(size.width() / WelcomePageHelpers::GridItemWidth, 1);
+            const int maxRows = std::max(size.height() / WelcomePageHelpers::GridItemHeight, 1);
+            const int maxItems = maxColumns * maxRows;
+            const int items = model()->rowCount();
+            return maxItems >= items;
+        };
+        auto resizeEvent = static_cast<QResizeEvent *>(e);
+        const bool itemsCurrentyFit = itemsFit(size());
+        if (!resizeEvent->oldSize().isValid()
+            || itemsFit(resizeEvent->oldSize()) != itemsCurrentyFit) {
+            emit itemsFitChanged(itemsCurrentyFit);
+        }
+    }
+    return GridView::event(e);
+}
 
 ListModel::ListModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -280,24 +282,6 @@ bool ListModelFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourceP
     return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
 }
 
-void ListModelFilter::delayedUpdateFilter()
-{
-    if (m_timerId != 0)
-        killTimer(m_timerId);
-
-    m_timerId = startTimer(320);
-}
-
-void ListModelFilter::timerEvent(QTimerEvent *timerEvent)
-{
-    if (m_timerId == timerEvent->timerId()) {
-        invalidateFilter();
-        emit layoutChanged();
-        killTimer(m_timerId);
-        m_timerId = 0;
-    }
-}
-
 struct SearchStringLexer
 {
     QString code;
@@ -409,7 +393,8 @@ void ListModelFilter::setSearchString(const QString &arg)
         }
     }
 
-    delayedUpdateFilter();
+    invalidateFilter();
+    emit layoutChanged();
 }
 
 ListModel *ListModelFilter::sourceListModel() const
@@ -426,6 +411,7 @@ ListItemDelegate::ListItemDelegate()
     : backgroundPrimaryColor(themeColor(Theme::Welcome_BackgroundPrimaryColor))
     , backgroundSecondaryColor(themeColor(Theme::Welcome_BackgroundSecondaryColor))
     , foregroundPrimaryColor(themeColor(Theme::Welcome_ForegroundPrimaryColor))
+    , foregroundSecondaryColor(themeColor(Theme::Welcome_ForegroundSecondaryColor))
     , hoverColor(themeColor(Theme::Welcome_HoverColor))
     , textColor(themeColor(Theme::Welcome_TextColor))
 {
@@ -438,13 +424,14 @@ void ListItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
 
     const QRect rc = option.rect;
     const QRect tileRect(0, 0, rc.width() - GridItemGap, rc.height() - GridItemGap);
-    const QSize thumbnailBgSize = ListModel::defaultImageSize.grownBy(QMargins(1, 1, 1, 1));
+    const QSize thumbnailBgSize = GridItemImageSize.grownBy(QMargins(1, 1, 1, 1));
     const QRect thumbnailBgRect((tileRect.width() - thumbnailBgSize.width()) / 2, GridItemGap,
                                 thumbnailBgSize.width(), thumbnailBgSize.height());
     const QRect textArea = tileRect.adjusted(GridItemGap, GridItemGap, -GridItemGap, -GridItemGap);
 
     const bool hovered = option.state & QStyle::State_MouseOver;
 
+    constexpr int TagsSeparatorY = GridItemHeight - GridItemGap - 52;
     constexpr int tagsBase = TagsSeparatorY + 17;
     constexpr int shiftY = TagsSeparatorY - 16;
     constexpr int nameY = TagsSeparatorY - 20;
@@ -547,7 +534,7 @@ void ListItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
         // The separator line below the example title.
         const int ll = nameRect.height() + 3;
         const QLine line = QLine(0, ll, textArea.width(), ll).translated(shiftedTextRect.topLeft());
-        painter->setPen(foregroundPrimaryColor);
+        painter->setPen(foregroundSecondaryColor);
         painter->setOpacity(animationProgress); // "fade in" separator line and description
         painter->drawLine(line);
 
@@ -566,7 +553,7 @@ void ListItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
     }
 
     // Separator line between text and 'Tags:' section
-    painter->setPen(foregroundPrimaryColor);
+    painter->setPen(foregroundSecondaryColor);
     painter->drawLine(QLineF(textArea.topLeft(), textArea.topRight())
                       .translated(0, TagsSeparatorY));
 
@@ -657,6 +644,13 @@ void ListItemDelegate::goon()
 SectionedGridView::SectionedGridView(QWidget *parent)
     : QStackedWidget(parent)
 {
+    m_searchTimer.setInterval(320);
+    m_searchTimer.setSingleShot(true);
+    connect(&m_searchTimer, &QTimer::timeout, this, [this] {
+        setSearchString(m_delayedSearchString);
+        m_delayedSearchString.clear();
+    });
+
     m_allItemsModel.reset(new ListModel);
     m_allItemsModel->setPixmapFunction(m_pixmapFunction);
 
@@ -698,6 +692,12 @@ void SectionedGridView::setPixmapFunction(const Core::ListModel::PixmapFunction 
         model->setPixmapFunction(pixmapFunction);
 }
 
+void SectionedGridView::setSearchStringDelayed(const QString &searchString)
+{
+    m_delayedSearchString = searchString;
+    m_searchTimer.start();
+}
+
 void SectionedGridView::setSearchString(const QString &searchString)
 {
     if (searchString.isEmpty()) {
@@ -713,6 +713,7 @@ void SectionedGridView::setSearchString(const QString &searchString)
         // We don't have a grid set for searching yet.
         // Create all items view for filtering.
         m_allItemsView.reset(new GridView);
+        m_allItemsView->setObjectName("AllItemsView"); // used by Squish
         m_allItemsView->setModel(new ListModelFilter(m_allItemsModel.get(), m_allItemsView.get()));
         if (m_itemDelegate)
             m_allItemsView->setItemDelegate(m_itemDelegate);
@@ -721,6 +722,27 @@ void SectionedGridView::setSearchString(const QString &searchString)
     setCurrentWidget(m_allItemsView.get());
     auto filterModel = static_cast<ListModelFilter *>(m_allItemsView.get()->model());
     filterModel->setSearchString(searchString);
+}
+
+static QWidget *createSeparator(QWidget *parent)
+{
+    QWidget *line = Layouting::createHr(parent);
+    QSizePolicy linePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    linePolicy.setHorizontalStretch(2);
+    line->setSizePolicy(linePolicy);
+    QPalette pal = line->palette();
+    pal.setColor(QPalette::Dark, Qt::transparent);
+    pal.setColor(QPalette::Light, themeColor(Theme::Welcome_ForegroundSecondaryColor));
+    line->setPalette(pal);
+    return line;
+}
+
+static QLabel *createLinkLabel(const QString &text, QWidget *parent)
+{
+    const QString linkColor = themeColor(Theme::Welcome_LinkColor).name();
+    auto link = new QLabel("<a href=\"link\" style=\"color: " + linkColor + ";\">"
+                           + text + "</a>", parent);
+    return link;
 }
 
 ListModel *SectionedGridView::addSection(const Section &section, const QList<ListItem *> &items)
@@ -743,15 +765,27 @@ ListModel *SectionedGridView::addSection(const Section &section, const QList<Lis
     m_sectionModels.insert(section, model);
     const auto it = m_gridViews.insert(section, gridView);
 
-    using namespace Layouting;
-    auto seeAllLink = new QLabel("<a href=\"link\">" + Tr::tr("Show All") + " &gt;</a>", this);
-    seeAllLink->setVisible(gridView->maxRows().has_value());
+    QLabel *seeAllLink = createLinkLabel(Tr::tr("Show All") + " &gt;", this);
+    if (gridView->maxRows().has_value()) {
+        seeAllLink->setVisible(true);
+        connect(gridView, &SectionGridView::itemsFitChanged, seeAllLink, [seeAllLink](bool fits) {
+            seeAllLink->setVisible(!fits);
+        });
+    } else {
+        seeAllLink->setVisible(false);
+    }
     connect(seeAllLink, &QLabel::linkActivated, this, [this, section] { zoomInSection(section); });
-    QWidget *sectionLabel = Column{hr, Row{section.name, st, seeAllLink, Space(HSpacing)}}.emerge(
-        Layouting::WithoutMargins);
+    using namespace Layouting;
+    QWidget *sectionLabel = Row {
+        section.name,
+        createSeparator(this),
+        seeAllLink,
+        Space(HSpacing),
+        noMargin
+    }.emerge();
     m_sectionLabels.append(sectionLabel);
     sectionLabel->setContentsMargins(0, ItemGap, 0, 0);
-    sectionLabel->setFont(Core::WelcomePageHelpers::brandFont());
+    sectionLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
     auto scrollArea = qobject_cast<QScrollArea *>(widget(0));
     auto vbox = qobject_cast<QVBoxLayout *>(scrollArea->widget()->layout());
 
@@ -793,17 +827,22 @@ void SectionedGridView::zoomInSection(const Section &section)
     layout->setContentsMargins(0, 0, 0, 0);
     zoomedInWidget->setLayout(layout);
 
-    using namespace Layouting;
-    auto backLink = new QLabel("<a href=\"link\">&lt; " + Tr::tr("Back") + "</a>", zoomedInWidget);
+    QLabel *backLink = createLinkLabel("&lt; " + Tr::tr("Back"), this);
     connect(backLink, &QLabel::linkActivated, this, [this, zoomedInWidget] {
         removeWidget(zoomedInWidget);
         delete zoomedInWidget;
         setCurrentIndex(0);
     });
-    QWidget *sectionLabel = Column{hr, Row{section.name, st, backLink, Space(HSpacing)}}.emerge(
-        Layouting::WithoutMargins);
+    using namespace Layouting;
+    QWidget *sectionLabel = Row {
+        section.name,
+        createSeparator(this),
+        backLink,
+        Space(HSpacing),
+        noMargin
+    }.emerge();
     sectionLabel->setContentsMargins(0, ItemGap, 0, 0);
-    sectionLabel->setFont(Core::WelcomePageHelpers::brandFont());
+    sectionLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
 
     auto gridView = new GridView(zoomedInWidget);
     gridView->setItemDelegate(m_itemDelegate);
@@ -828,5 +867,15 @@ Section::Section(const QString &name, int priority, std::optional<int> maxRows)
     , priority(priority)
     , maxRows(maxRows)
 {}
+
+ResizeSignallingWidget::ResizeSignallingWidget(QWidget *parent)
+    : QWidget(parent)
+{
+}
+
+void ResizeSignallingWidget::resizeEvent(QResizeEvent *event)
+{
+    emit resized(event->size(), event->oldSize());
+}
 
 } // namespace Core

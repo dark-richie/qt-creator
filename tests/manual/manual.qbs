@@ -1,9 +1,7 @@
-import qbs
-
 Project {
-    name: "QtcManualtests"
+    name: "QtcManualTests"
 
-    condition: project.withAutotests
+    qbsSearchPaths: "qbs"
 
     references: [
         "debugger/gui/gui.qbs",
@@ -13,7 +11,12 @@ Project {
         "pluginview/pluginview.qbs",
         "proparser/testreader.qbs",
         "shootout/shootout.qbs",
-        "tasktree/tasktree.qbs",
+        "spinner/spinner.qbs",
+        "subdirfilecontainer/subdirfilecontainer.qbs",
+        "tasking/dataexchange/dataexchange.qbs",
+        "tasking/demo/demo.qbs",
+        "tasking/imagescaling/imagescaling.qbs",
+        "terminal/terminal.qbs",
         "widgets/widgets.qbs",
     ]
 }

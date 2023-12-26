@@ -5,17 +5,18 @@
 
 #include "diffeditorconstants.h"
 #include "diffeditordocument.h"
-#include "diffeditorplugin.h"
 #include "diffeditortr.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
+#include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/fontsettings.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/mathutils.h>
 #include <utils/qtcassert.h>
 
@@ -27,8 +28,7 @@ using namespace Core;
 using namespace TextEditor;
 using namespace Utils;
 
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 UnifiedDiffEditorWidget::UnifiedDiffEditorWidget(QWidget *parent)
     : SelectableTextEditorWidget("DiffEditor.UnifiedDiffEditor", parent)
@@ -225,7 +225,7 @@ QString UnifiedDiffEditorWidget::lineNumber(int blockNumber) const
             const QString line = lineExists
                     ? QString::number(m_data.m_lineNumbers[side].value(blockNumber).first)
                     : QString();
-            lineNumberString += QString(m_data.m_lineNumberDigits[side] - line.count(), ' ') + line;
+            lineNumberString += QString(m_data.m_lineNumberDigits[side] - line.size(), ' ') + line;
         };
         addSideNumber(LeftSide, leftLineExists);
         lineNumberString += '|';
@@ -262,7 +262,7 @@ void UnifiedDiffData::setLineNumber(DiffSide side, int blockNumber, int lineNumb
     QTC_ASSERT(side < SideCount, return);
     const QString lineNumberString = QString::number(lineNumber);
     m_lineNumbers[side].insert(blockNumber, {lineNumber, rowNumberInChunk});
-    m_lineNumberDigits[side] = qMax(m_lineNumberDigits[side], lineNumberString.count());
+    m_lineNumberDigits[side] = qMax(m_lineNumberDigits[side], lineNumberString.size());
 }
 
 QString UnifiedDiffData::setChunk(const DiffEditorInput &input, const ChunkData &chunkData,
@@ -451,10 +451,10 @@ void UnifiedDiffEditorWidget::showDiff()
         return;
     }
 
-    m_asyncTask.reset(new AsyncTask<UnifiedShowResult>());
-    m_asyncTask->setFutureSynchronizer(DiffEditorPlugin::futureSynchronizer());
+    m_asyncTask.reset(new Async<UnifiedShowResult>());
+    m_asyncTask->setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
     m_controller.setBusyShowing(true);
-    connect(m_asyncTask.get(), &AsyncTaskBase::done, this, [this] {
+    connect(m_asyncTask.get(), &AsyncBase::done, this, [this] {
         if (m_asyncTask->isCanceled() || !m_asyncTask->isResultAvailable()) {
             setPlainText(Tr::tr("Retrieving data failed."));
         } else {
@@ -588,5 +588,4 @@ void UnifiedDiffEditorWidget::setCurrentDiffFileIndex(int diffFileIndex)
     verticalScrollBar()->setValue(blockNumber);
 }
 
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal

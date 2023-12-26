@@ -28,7 +28,7 @@ namespace Internal {
     class InternalProperty;
 
     using InternalNodePointer = std::shared_ptr<InternalNode>;
-    using InternalPropertyPointer = QSharedPointer<InternalProperty>;
+    using InternalPropertyPointer = std::shared_ptr<InternalProperty>;
 }
 class NodeMetaInfo;
 class BindingProperty;
@@ -58,10 +58,7 @@ inline constexpr AuxiliaryDataKeyView transitionExpandedPropery{AuxiliaryDataTyp
 
 class QMLDESIGNERCORE_EXPORT ModelNode
 {
-    friend QMLDESIGNERCORE_EXPORT bool operator ==(const ModelNode &firstNode, const ModelNode &secondNode);
-    friend QMLDESIGNERCORE_EXPORT bool operator !=(const ModelNode &firstNode, const ModelNode &secondNode);
     friend QMLDESIGNERCORE_EXPORT QDebug operator<<(QDebug debug, const ModelNode &modelNode);
-    friend QMLDESIGNERCORE_EXPORT bool operator <(const ModelNode &firstNode, const ModelNode &secondNode);
     friend QMLDESIGNERCORE_EXPORT QList<Internal::InternalNodePointer> toInternalNodeList(const QList<ModelNode> &nodeList);
     friend Model;
     friend AbstractView;
@@ -77,10 +74,14 @@ public:
         NodeWithComponentSource = 2
     };
 
-    ModelNode();
+    ModelNode() = default;
     ModelNode(const Internal::InternalNodePointer &internalNode, Model *model, const AbstractView *view);
     ModelNode(const ModelNode &modelNode, AbstractView *view);
-    ~ModelNode();
+    ModelNode(const ModelNode &) = default;
+    ModelNode &operator=(const ModelNode &) = default;
+    ModelNode(ModelNode &&) = default;
+    ModelNode &operator=(ModelNode &&) noexcept = default;
+    ~ModelNode() = default;
 
     TypeName type() const;
     QString simplifiedTypeName() const;
@@ -121,7 +122,7 @@ public:
     NodeListProperty defaultNodeListProperty() const;
     NodeProperty defaultNodeProperty() const;
 
-    void removeProperty(const PropertyName &name) const; //### also implement in AbstractProperty
+    void removeProperty(PropertyNameView name) const; //### also implement in AbstractProperty
     QList<AbstractProperty> properties() const;
     QList<VariantProperty> variantProperties() const;
     QList<NodeAbstractProperty> nodeAbstractProperties() const;
@@ -132,17 +133,17 @@ public:
     QList<AbstractProperty> dynamicProperties() const;
     PropertyNameList propertyNames() const;
 
-    bool hasProperties() const;
-    bool hasProperty(const PropertyName &name) const;
-    bool hasVariantProperty(const PropertyName &name) const;
-    bool hasBindingProperty(const PropertyName &name) const;
-    bool hasSignalHandlerProperty(const PropertyName &name) const;
-    bool hasNodeAbstractProperty(const PropertyName &name) const;
+    bool hasProperty(PropertyNameView name) const;
+    bool hasVariantProperty(PropertyNameView name) const;
+    bool hasBindingProperty(PropertyNameView name) const;
+    bool hasSignalHandlerProperty(PropertyNameView name) const;
+    bool hasNodeAbstractProperty(PropertyNameView name) const;
     bool hasDefaultNodeAbstractProperty() const;
     bool hasDefaultNodeListProperty() const;
     bool hasDefaultNodeProperty() const;
-    bool hasNodeProperty(const PropertyName &name) const;
-    bool hasNodeListProperty(const PropertyName &name) const;
+    bool hasNodeProperty(PropertyNameView name) const;
+    bool hasNodeListProperty(PropertyNameView name) const;
+    bool hasProperty(PropertyNameView name, PropertyType propertyType) const;
 
     void setScriptFunctions(const QStringList &scriptFunctionList);
     QStringList scriptFunctions() const;
@@ -172,7 +173,7 @@ public:
     void selectNode();
     void deselectNode();
 
-    static int variantUserType();
+    static int variantTypeId();
     QVariant toVariant() const;
 
     std::optional<QVariant> auxiliaryData(AuxiliaryDataKeyView key) const;
@@ -181,6 +182,7 @@ public:
     QVariant auxiliaryDataWithDefault(AuxiliaryDataKeyView key) const;
     QVariant auxiliaryDataWithDefault(AuxiliaryDataKeyDefaultValue key) const;
     void setAuxiliaryData(AuxiliaryDataKeyView key, const QVariant &data) const;
+    void setAuxiliaryDataWithoutLock(AuxiliaryDataKeyView key, const QVariant &data) const;
     void setAuxiliaryData(AuxiliaryDataType type, Utils::SmallStringView name, const QVariant &data) const;
     void setAuxiliaryDataWithoutLock(AuxiliaryDataType type,
                                      Utils::SmallStringView name,
@@ -221,10 +223,6 @@ public:
     bool locked() const;
     void setLocked(bool value);
 
-    static bool isThisOrAncestorLocked(const ModelNode &node);
-    static ModelNode lowestCommonAncestor(const QList<ModelNode> &nodes);
-    static QList<ModelNode> pruneChildren(const QList<ModelNode> &nodes);
-
     qint32 internalId() const;
 
     void setNodeSource(const QString&);
@@ -250,9 +248,26 @@ public:
 
     friend auto qHash(const ModelNode &node) { return ::qHash(node.m_internalNode.get()); }
 
-private: // functions
-    Internal::InternalNodePointer internalNode() const;
+    friend bool operator==(const ModelNode &firstNode, const ModelNode &secondNode)
+    {
+        return firstNode.m_internalNode == secondNode.m_internalNode;
+    }
 
+    friend bool operator!=(const ModelNode &firstNode, const ModelNode &secondNode)
+    {
+        return !(firstNode == secondNode);
+    }
+
+    friend bool operator<(const ModelNode &firstNode, const ModelNode &secondNode)
+    {
+        return firstNode.m_internalNode < secondNode.m_internalNode;
+    }
+
+private: // functions
+    Internal::InternalNodePointer internalNode() const { return m_internalNode; }
+
+    template<typename Type, typename... PropertyType>
+    QList<Type> properties(PropertyType... type) const;
     bool hasLocked() const;
 
 private: // variables
@@ -261,11 +276,10 @@ private: // variables
     QPointer<AbstractView> m_view;
 };
 
-QMLDESIGNERCORE_EXPORT bool operator ==(const ModelNode &firstNode, const ModelNode &secondNode);
-QMLDESIGNERCORE_EXPORT bool operator !=(const ModelNode &firstNode, const ModelNode &secondNode);
-QMLDESIGNERCORE_EXPORT bool operator <(const ModelNode &firstNode, const ModelNode &secondNode);
 QMLDESIGNERCORE_EXPORT QDebug operator<<(QDebug debug, const ModelNode &modelNode);
 QMLDESIGNERCORE_EXPORT QTextStream& operator<<(QTextStream &stream, const ModelNode &modelNode);
+
+using ModelNodes = QList<ModelNode>;
 }
 
 Q_DECLARE_METATYPE(QmlDesigner::ModelNode)

@@ -3,19 +3,12 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
 #include <QDialog>
 #include <QProcess>
 
-QT_BEGIN_NAMESPACE
-class QSettings;
-QT_END_NAMESPACE
-
-namespace Squish {
-namespace Internal {
+namespace Squish::Internal {
 
 enum class Language;
 
@@ -30,37 +23,29 @@ public:
     QMap<QString, QString> attachableAuts; // name, host:port
     QStringList autPaths; // absolute path
     QStringList licensedToolkits;
-    Utils::IntegerAspect autTimeout;
-    Utils::IntegerAspect responseTimeout;
-    Utils::IntegerAspect postMortemWaitTime;
-    Utils::BoolAspect animatedCursor;
+    Utils::IntegerAspect autTimeout{this};
+    Utils::IntegerAspect responseTimeout{this};
+    Utils::IntegerAspect postMortemWaitTime{this};
+    Utils::BoolAspect animatedCursor{this};
 };
 
 class SquishSettings : public Utils::AspectContainer
 {
-    Q_OBJECT
 public:
     SquishSettings();
 
     Utils::FilePath scriptsPath(Language language) const;
 
-    Utils::StringAspect squishPath;
-    Utils::StringAspect licensePath;
-    Utils::StringAspect serverHost;
-    Utils::IntegerAspect serverPort;
-    Utils::BoolAspect local;
-    Utils::BoolAspect verbose;
-    Utils::BoolAspect minimizeIDE;
-
-signals:
-    void squishPathChanged();
+    Utils::FilePathAspect squishPath{this};
+    Utils::FilePathAspect licensePath{this};
+    Utils::StringAspect serverHost{this};
+    Utils::IntegerAspect serverPort{this};
+    Utils::BoolAspect local{this};
+    Utils::BoolAspect verbose{this};
+    Utils::BoolAspect minimizeIDE{this};
 };
 
-class SquishSettingsPage final : public Core::IOptionsPage
-{
-public:
-    SquishSettingsPage(SquishSettings *settings);
-};
+SquishSettings &settings();
 
 class SquishServerSettingsDialog : public QDialog
 {
@@ -71,5 +56,4 @@ private:
     void configWriteFailed(QProcess::ProcessError error);
 };
 
-} // namespace Internal
-} // namespace Squish
+} // Squish::Internal

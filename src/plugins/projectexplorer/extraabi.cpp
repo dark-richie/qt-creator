@@ -4,17 +4,16 @@
 #include "extraabi.h"
 
 #include "abi.h"
-#include "projectexplorertr.h"
 
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
-#include <utils/fileutils.h>
+#include <utils/filepath.h>
+#include <utils/settingsaccessor.h>
 #include <utils/settingsaccessor.h>
 
-#include <app/app_version.h>
-
 #include <QDebug>
+#include <QGuiApplication>
 
 using namespace Utils;
 
@@ -30,23 +29,21 @@ class AbiFlavorUpgraderV0 : public VersionUpgrader
 public:
     AbiFlavorUpgraderV0() : VersionUpgrader(0, "") { }
 
-    QVariantMap upgrade(const QVariantMap &data) override { return data; }
+    Store upgrade(const Store &data) override { return data; }
 };
 
 class AbiFlavorAccessor : public UpgradingSettingsAccessor
 {
 public:
-    AbiFlavorAccessor();
+    AbiFlavorAccessor()
+    {
+        setDocType("QtCreatorExtraAbi");
+        setApplicationDisplayName(QGuiApplication::applicationDisplayName());
+        setBaseFilePath(Core::ICore::installerResourcePath("abi.xml"));
+        addVersionUpgrader(std::make_unique<AbiFlavorUpgraderV0>());
+    }
 };
 
-AbiFlavorAccessor::AbiFlavorAccessor() :
-    UpgradingSettingsAccessor("QtCreatorExtraAbi", Tr::tr("ABI"),
-                              Core::Constants::IDE_DISPLAY_NAME)
-{
-    setBaseFilePath(Core::ICore::installerResourcePath("abi.xml"));
-
-    addVersionUpgrader(std::make_unique<AbiFlavorUpgraderV0>());
-}
 
 // --------------------------------------------------------------------
 // ExtraAbi:
@@ -55,9 +52,9 @@ AbiFlavorAccessor::AbiFlavorAccessor() :
 void ExtraAbi::load()
 {
     AbiFlavorAccessor accessor;
-    const QVariantMap data = accessor.restoreSettings(Core::ICore::dialogParent()).value("Flavors").toMap();
+    const Store data = storeFromVariant(accessor.restoreSettings(Core::ICore::dialogParent()).value("Flavors"));
     for (auto it = data.constBegin(); it != data.constEnd(); ++it) {
-        const QString flavor = it.key();
+        const Key flavor = it.key();
         if (flavor.isEmpty())
             continue;
 
@@ -65,13 +62,15 @@ void ExtraAbi::load()
         std::vector<Abi::OS> oses;
         for (const QString &osName : osNames) {
             Abi::OS os = Abi::osFromString(osName);
-            if (Abi::toString(os) != osName)
-                qWarning() << "Invalid OS found when registering extra abi flavor" << it.key();
-            else
+            if (Abi::toString(os) != osName) {
+                qWarning() << "Invalid OS found when registering extra abi flavor"
+                           << it.key().toByteArray();
+            } else {
                 oses.push_back(os);
+            }
         }
 
-        Abi::registerOsFlavor(oses, flavor);
+        Abi::registerOsFlavor(oses, stringFromKey(flavor));
     }
 }
 

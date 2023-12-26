@@ -81,8 +81,8 @@ def __createProjectOrFileSelectType__(category, template, fromWelcome = False, i
     return __getSupportedPlatforms__(str(text), template)[0]
 
 def __createProjectSetNameAndPath__(path, projectName = None, checks = True):
-    directoryEdit = waitForObject("{type='Utils::FancyLineEdit' unnamed='1' visible='1' "
-                                  "toolTip~='Full path: .*'}")
+    pathChooser = waitForObject("{type='Utils::PathChooser' name='baseFolder' visible='1'}")
+    directoryEdit = getChildByClass(pathChooser, "Utils::FancyLineEdit")
     replaceEditorContent(directoryEdit, path)
     projectNameEdit = waitForObject("{name='nameLineEdit' visible='1' "
                                     "type='Utils::FancyLineEdit'}")
@@ -120,18 +120,18 @@ def __handleBuildSystem__(buildSystem):
             selectFromCombo(combo, buildSystem)
     except:
         t, v = sys.exc_info()[:2]
-        test.warning("Exception while handling build system", "%s(%s)" % (str(t), str(v)))
+        test.warning("Exception while handling build system", "%s: %s" % (t.__name__, str(v)))
     clickButton(waitForObject(":Next_QPushButton"))
     return buildSystem
 
 def __createProjectHandleQtQuickSelection__(minimumQtVersion):
-    comboBox = waitForObject("{name='MinimumSupportedQtVersion' type='QComboBox' "
-                             "visible='1' window=':New_ProjectExplorer::JsonWizard'}")
+    comboBox = waitForObject("{name?='*QtVersion' type='QComboBox' visible='1'"
+                             " window=':New_ProjectExplorer::JsonWizard'}")
     try:
-        selectFromCombo(comboBox, minimumQtVersion)
+        selectFromCombo(comboBox, "Qt " + minimumQtVersion)
     except:
         t,v = sys.exc_info()[:2]
-        test.fatal("Exception while trying to select Qt version", "%s (%s)" % (str(t), str(v)))
+        test.fatal("Exception while trying to select Qt version", "%s: %s" % (t.__name__, str(v)))
     clickButton(waitForObject(":Next_QPushButton"))
     return minimumQtVersion
 
@@ -139,8 +139,13 @@ def __createProjectHandleQtQuickSelection__(minimumQtVersion):
 # param buildSystem is a string holding the build system selected for the project
 # param checks turns tests in the function on if set to True
 # param available a list holding the available targets
-def __selectQtVersionDesktop__(buildSystem, checks, available=None):
-    wanted = Targets.desktopTargetClasses()
+# param targets a list holding the wanted targets - defaults to all desktop targets if empty
+# returns checked targets
+def __selectQtVersionDesktop__(buildSystem, checks, available=None, targets=[]):
+    if len(targets):
+        wanted = targets
+    else:
+        wanted = Targets.desktopTargetClasses()
     checkedTargets = __chooseTargets__(wanted, available)
     if checks:
         for target in checkedTargets:
@@ -162,6 +167,7 @@ def __selectQtVersionDesktop__(buildSystem, checks, available=None):
                     verifyChecked(cbObject % ("Profile", objectMap.realName(detailsWidget)))
                 clickButton(detailsButton)
     clickButton(waitForObject(":Next_QPushButton"))
+    return checkedTargets
 
 def __createProjectHandleLastPage__(expectedFiles=[], addToVersionControl="<None>", addToProject=None):
     if len(expectedFiles):
@@ -205,8 +211,10 @@ def __getProjectFileName__(projectName, buildSystem):
 # param checks turns tests in the function on if set to True
 # param addToVersionControl selects the specified VCS from Creator's wizard
 # param buildSystem selects the specified build system from Creator's wizard
+# param targets specifies targets that should be checked
+# returns the checked targets
 def createProject_Qt_GUI(path, projectName, checks=True, addToVersionControl="<None>",
-                         buildSystem=None):
+                         buildSystem=None, targets=[]):
     template = "Qt Widgets Application"
     available = __createProjectOrFileSelectType__("  Application (Qt)", template)
     __createProjectSetNameAndPath__(path, projectName, checks)
@@ -229,7 +237,7 @@ def createProject_Qt_GUI(path, projectName, checks=True, addToVersionControl="<N
 
     clickButton(waitForObject(":Next_QPushButton"))
     __createProjectHandleTranslationSelection__()
-    __selectQtVersionDesktop__(buildSystem, checks, available)
+    checkedTargets = __selectQtVersionDesktop__(buildSystem, checks, available, targets)
 
     expectedFiles = []
     if checks:
@@ -243,16 +251,22 @@ def createProject_Qt_GUI(path, projectName, checks=True, addToVersionControl="<N
     waitForProjectParsing()
     if checks:
         __verifyFileCreation__(path, expectedFiles)
+    return checkedTargets
 
 # Creates a Qt Console project
 # param path specifies where to create the project
 # param projectName is the name for the new project
 # param checks turns tests in the function on if set to True
-def createProject_Qt_Console(path, projectName, checks = True, buildSystem = None):
+def createProject_Qt_Console(path, projectName, checks = True, buildSystem = None, targets=[]):
     available = __createProjectOrFileSelectType__("  Application (Qt)", "Qt Console Application")
     __createProjectSetNameAndPath__(path, projectName, checks)
     buildSystem = __handleBuildSystem__(buildSystem)
     __createProjectHandleTranslationSelection__()
+    if targets:
+        available = set(targets).intersection(available)
+        if len(available) < len(targets):
+            test.warning("Could not use all desired targets.",
+                         "%s vs %s" % (str(available), str(targets)))
     __selectQtVersionDesktop__(buildSystem, checks, available)
 
     expectedFiles = []
@@ -277,7 +291,12 @@ def createNewQtQuickApplication(workingDir, projectName=None,
                                 buildSystem=None):
     available = __createProjectOrFileSelectType__("  Application (Qt)", template, fromWelcome)
     projectName = __createProjectSetNameAndPath__(workingDir, projectName)
-    __handleBuildSystem__(buildSystem)
+    if template == "Qt Quick Application":
+        if buildSystem:
+            test.warning("Build system set explicitly for a template which can't change it.",
+                         "Template: %s, Build System: %s" % (template, buildSystem))
+    else:
+        __handleBuildSystem__(buildSystem)
     requiredQt = __createProjectHandleQtQuickSelection__(minimumQtVersion)
     __modifyAvailableTargets__(available, requiredQt)
     checkedTargets = __chooseTargets__(targets, available)
@@ -505,7 +524,7 @@ def __getSupportedPlatforms__(text, templateName, getAsStrings=False, ignoreVali
         version = res.group("version")
     else:
         version = None
-    if "Qt Quick" in templateName:
+    if templateName == "Qt Quick Application":
         result = set([Targets.DESKTOP_6_2_4])
     elif 'Supported Platforms' in text:
         supports = text[text.find('Supported Platforms'):].split(":")[1].strip().split("\n")
@@ -544,6 +563,7 @@ def checkAndCopyFiles(dataSet, fieldName, templateDir):
     files = map(lambda record:
                 os.path.normpath(os.path.join(srcPath, testData.field(record, fieldName))),
                 dataSet)
+    files = list(files)  # copy data from map object to list to make it reusable
     for currentFile in files:
         if not neededFilePresent(currentFile):
             return []

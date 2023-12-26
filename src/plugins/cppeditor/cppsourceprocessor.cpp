@@ -9,6 +9,7 @@
 
 #include <coreplugin/editormanager/editormanager.h>
 
+#include <utils/algorithm.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
@@ -81,7 +82,8 @@ inline const CPlusPlus::Macro revision(const WorkingCopy &workingCopy,
                                        const CPlusPlus::Macro &macro)
 {
     CPlusPlus::Macro newMacro(macro);
-    newMacro.setFileRevision(workingCopy.get(macro.filePath()).second);
+    if (const auto entry = workingCopy.get(macro.filePath()))
+        newMacro.setFileRevision(entry->second);
     return newMacro;
 }
 
@@ -189,10 +191,9 @@ bool CppSourceProcessor::getFileContents(const FilePath &absoluteFilePath,
         return false;
 
     // Get from working copy
-    if (m_workingCopy.contains(absoluteFilePath)) {
-        const QPair<QByteArray, unsigned> entry = m_workingCopy.get(absoluteFilePath);
-        *contents = entry.first;
-        *revision = entry.second;
+    if (const auto entry = m_workingCopy.get(absoluteFilePath)) {
+        *contents = entry->first;
+        *revision = entry->second;
         return true;
     }
 
@@ -216,7 +217,7 @@ bool CppSourceProcessor::checkFile(const FilePath &absoluteFilePath) const
 {
     if (absoluteFilePath.isEmpty()
             || m_included.contains(absoluteFilePath)
-            || m_workingCopy.contains(absoluteFilePath)) {
+            || m_workingCopy.get(absoluteFilePath)) {
         return true;
     }
 
@@ -281,7 +282,7 @@ FilePath CppSourceProcessor::resolveFile_helper(const FilePath &filePath,
             } else {
                 path = FilePath::fromString(headerPathsIt->path) /  fileName;
             }
-            if (m_workingCopy.contains(path) || checkFile(path))
+            if (m_workingCopy.get(path) || checkFile(path))
                 return path;
         }
     }
@@ -363,12 +364,8 @@ void CppSourceProcessor::mergeEnvironment(Document::Ptr doc)
     if (!doc)
         return;
 
-    const QString fn = doc->filePath().path();
-
-    if (m_processed.contains(fn))
+    if (!Utils::insert(m_processed, doc->filePath()))
         return;
-
-    m_processed.insert(fn);
 
     const QList<Document::Include> includes = doc->resolvedIncludes();
     for (const Document::Include &incl : includes) {
@@ -468,8 +465,8 @@ void CppSourceProcessor::sourceNeeded(int line, const FilePath &filePath, Includ
     document->setUtf8Source(preprocessedCode);
     document->keepSourceAndAST();
     document->tokenize();
-    document->check(m_workingCopy.contains(document->filePath()) ? Document::FullCheck
-                                                                 : Document::FastCheck);
+    document->check(m_workingCopy.get(document->filePath()) ? Document::FullCheck
+                                                            : Document::FastCheck);
 
     m_documentFinished(document);
 

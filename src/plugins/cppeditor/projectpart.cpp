@@ -69,7 +69,7 @@ static Macros getProjectMacros(const RawProjectPart &rpp)
 
 static HeaderPaths getHeaderPaths(const RawProjectPart &rpp,
                                   const RawProjectPartFlags &flags,
-                                  const ProjectExplorer::ToolChainInfo &tcInfo)
+                                  const ProjectExplorer::ToolchainInfo &tcInfo)
 {
     HeaderPaths headerPaths;
 
@@ -96,10 +96,10 @@ static HeaderPaths getHeaderPaths(const RawProjectPart &rpp,
     return headerPaths;
 }
 
-static ToolChain::MacroInspectionReport getToolchainMacros(
-        const RawProjectPartFlags &flags, const ToolChainInfo &tcInfo, Utils::Language language)
+static Toolchain::MacroInspectionReport getToolchainMacros(
+        const RawProjectPartFlags &flags, const ToolchainInfo &tcInfo, Utils::Language language)
 {
-    ToolChain::MacroInspectionReport report;
+    Toolchain::MacroInspectionReport report;
     if (tcInfo.macroInspectionRunner) {
         report = tcInfo.macroInspectionRunner(flags.commandLineFlags);
     } else if (language == Utils::Language::C) { // No compiler set in kit.
@@ -122,7 +122,7 @@ ProjectPart::ProjectPart(const Utils::FilePath &topLevelProject,
                          Utils::Language language,
                          Utils::LanguageExtensions languageExtensions,
                          const RawProjectPartFlags &flags,
-                         const ToolChainInfo &tcInfo)
+                         const ToolchainInfo &tcInfo)
     : topLevelProject(topLevelProject),
       displayName(displayName),
       projectFile(rpp.projectFile),
@@ -163,6 +163,7 @@ CPlusPlus::LanguageFeatures ProjectPart::deriveLanguageFeatures() const
     CPlusPlus::LanguageFeatures features;
     features.cxx11Enabled = languageVersion >= Utils::LanguageVersion::CXX11;
     features.cxx14Enabled = languageVersion >= Utils::LanguageVersion::CXX14;
+    features.cxx17Enabled = languageVersion >= Utils::LanguageVersion::CXX17;
     features.cxx20Enabled = languageVersion >= Utils::LanguageVersion::CXX20;
     features.cxxEnabled = hasCxx;
     features.c99Enabled = languageVersion >= Utils::LanguageVersion::C99;

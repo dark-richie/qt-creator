@@ -22,7 +22,7 @@
         \li Record test cases (in a very limited way compared to what you can do
             inside the Squish IDE).
         \li Use Squish Runner and Server to run test suites or cases and view
-            the results in the \uicontrol Squish \l{Viewing Output}{output}.
+            the results in the \uicontrol Squish \l{View output}{output}.
         \li Set breakpoints before running tests to stop at certain locations and
             inspect the local variables, similarly to when debugging a test.
     \endlist
@@ -42,22 +42,14 @@
     To use the plugin, you must download and install Squish, create a connection
     to the Squish Server, and specify AUTs to run.
 
-    \section1 Enabling the Squish Plugin
-
-    To enable the Squish plugin:
-
-    \list 1
-        \li Select \uicontrol Help > \uicontrol {About Plugins} >
-            \uicontrol Utilities > \uicontrol Squish to enable the plugin.
-        \li Select \uicontrol {Restart Now} to restart \QC and load the plugin.
-    \endlist
+    \note Enable the Squish plugin to use it.
 
     \section1 Specifying a Squish Server
 
     To specify a Squish Server to run:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Squish.
+        \li Select \preferences > \uicontrol Squish.
             \image qtcreator-squish-preferences.png "Squish general preferences"
         \li In the \uicontrol {Squish path} field, specify the path to the Squish
             installation directory.
@@ -130,7 +122,7 @@
     \section1 Managing Test Suites and Cases
 
     You can manage Squish test suites and cases in the \uicontrol Squish
-    \l {Working with Sidebars}{view}.
+    \l {Show and hide sidebars}{view}.
 
     \image qtcreator-squish-view.png "Squish sidebar view"
 
@@ -328,4 +320,6 @@
     output, \uicontrol {Runner/Server Log} tab.
 
     \image qtcreator-squish-output-runner-server-log.png "Runner and Server Log output"
+
+    \sa {Enable and disable plugins}
 */

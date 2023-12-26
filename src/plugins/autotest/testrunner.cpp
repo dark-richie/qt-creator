@@ -16,7 +16,7 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/taskprogress.h>
 
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 #include <debugger/debuggerruncontrol.h>
 
 #include <projectexplorer/buildconfiguration.h>
@@ -33,14 +33,12 @@
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 #include <utils/outputformat.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QFuture>
-#include <QFutureInterface>
 #include <QLabel>
 #include <QLoggingCategory>
 #include <QPointer>
@@ -48,6 +46,7 @@
 
 using namespace Core;
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
 
 namespace Autotest {
@@ -89,7 +88,7 @@ void TestRunner::runTest(TestRunMode mode, const ITestTreeItem *item)
         runTests(mode, {configuration});
 }
 
-static QString processInformation(const QtcProcess *proc)
+static QString processInformation(const Process *proc)
 {
     QTC_ASSERT(proc, return {});
     const CommandLine command = proc->commandLine();
@@ -259,7 +258,7 @@ static RunConfiguration *getRunConfiguration(const QString &buildTargetKey)
 
 int TestRunner::precheckTestConfigurations()
 {
-    const bool omitWarnings = AutotestPlugin::settings()->omitRunConfigWarn;
+    const bool omitWarnings = testSettings().omitRunConfigWarn();
     int testCaseCount = 0;
     for (ITestConfiguration *itc : std::as_const(m_selectedTests)) {
         if (itc->testBase()->type() == ITestBase::Tool) {
@@ -348,24 +347,23 @@ void TestRunner::runTestsHelper()
         std::unique_ptr<TestOutputReader> m_outputReader;
     };
 
-    using namespace Tasking;
-    QList<TaskItem> tasks{optional};
+    QList<GroupItem> tasks{finishAllAndSuccess};
 
     for (ITestConfiguration *config : m_selectedTests) {
         QTC_ASSERT(config, continue);
-        const TreeStorage<TestStorage> storage;
+        const Storage<TestStorage> storage;
 
-        const auto onGroupSetup = [this, config] {
+        const auto onSetup = [this, config] {
             if (!config->project())
-                return TaskAction::StopWithDone;
+                return SetupResult::StopWithSuccess;
             if (config->testExecutable().isEmpty()) {
                 reportResult(ResultType::MessageFatal,
                              Tr::tr("Executable path is empty. (%1)").arg(config->displayName()));
-                return TaskAction::StopWithDone;
+                return SetupResult::StopWithSuccess;
             }
-            return TaskAction::Continue;
+            return SetupResult::Continue;
         };
-        const auto onSetup = [this, config, storage](QtcProcess &process) {
+        const auto onProcessSetup = [this, config, storage](Process &process) {
             TestStorage *testStorage = storage.activeStorage();
             QTC_ASSERT(testStorage, return);
             testStorage->m_outputReader.reset(config->createOutputReader(&process));
@@ -404,7 +402,7 @@ void TestRunner::runTestsHelper()
             }
             process.setEnvironment(environment);
 
-            m_cancelTimer.setInterval(AutotestPlugin::settings()->timeout);
+            m_cancelTimer.setInterval(testSettings().timeout());
             m_cancelTimer.start();
 
             qCInfo(runnerLog) << "Command:" << process.commandLine().executable();
@@ -412,7 +410,7 @@ void TestRunner::runTestsHelper()
             qCInfo(runnerLog) << "Working directory:" << process.workingDirectory();
             qCDebug(runnerLog) << "Environment:" << process.environment().toStringList();
         };
-        const auto onDone = [this, config, storage](const QtcProcess &process) {
+        const auto onProcessDone = [this, config, storage](const Process &process) {
             TestStorage *testStorage = storage.activeStorage();
             QTC_ASSERT(testStorage, return);
             if (process.result() == ProcessResult::StartFailed) {
@@ -420,6 +418,9 @@ void TestRunner::runTestsHelper()
                     Tr::tr("Failed to start test for project \"%1\".").arg(config->displayName())
                         + processInformation(&process) + rcInfo(config));
             }
+
+            if (testStorage->m_outputReader)
+                testStorage->m_outputReader->onDone(process.exitCode());
 
             if (process.exitStatus() == QProcess::CrashExit) {
                 if (testStorage->m_outputReader)
@@ -444,20 +445,19 @@ void TestRunner::runTestsHelper()
             }
         };
         const Group group {
-            optional,
-            Storage(storage),
-            OnGroupSetup(onGroupSetup),
-            Process(onSetup, onDone, onDone)
+            finishAllAndSuccess,
+            storage,
+            onGroupSetup(onSetup),
+            ProcessTask(onProcessSetup, onProcessDone)
         };
         tasks.append(group);
     }
 
     m_taskTree.reset(new TaskTree(tasks));
     connect(m_taskTree.get(), &TaskTree::done, this, &TestRunner::onFinished);
-    connect(m_taskTree.get(), &TaskTree::errorOccurred, this, &TestRunner::onFinished);
 
     auto progress = new TaskProgress(m_taskTree.get());
-    progress->setDisplayName(tr("Running Tests"));
+    progress->setDisplayName(Tr::tr("Running Tests"));
     progress->setAutoStopOnCancel(false);
     progress->setHalfLifeTimePerTask(10000); // 10 seconds
     connect(progress, &TaskProgress::canceled, this, [this, progress] {
@@ -467,7 +467,7 @@ void TestRunner::runTestsHelper()
         cancelCurrent(UserCanceled);
     });
 
-    if (AutotestPlugin::settings()->popupOnStart)
+    if (testSettings().popupOnStart())
         AutotestPlugin::popupResultsPane();
 
     m_taskTree->start();
@@ -538,7 +538,7 @@ void TestRunner::debugTests()
     runControl->copyDataFromRunConfiguration(config->runConfiguration());
 
     QStringList omitted;
-    Runnable inferior = config->runnable();
+    ProcessRunData inferior = config->runnable();
     inferior.command.setExecutable(commandFilePath);
 
     const QStringList args = config->argumentsForTestRunner(&omitted);
@@ -588,9 +588,8 @@ void TestRunner::debugTests()
                                  runControl, &RunControl::initiateStop);
 
     connect(runControl, &RunControl::stopped, this, &TestRunner::onFinished);
-    m_finishDebugConnect = connect(runControl, &RunControl::finished, this, &TestRunner::onFinished);
     ProjectExplorerPlugin::startRunControl(runControl);
-    if (useOutputProcessor && AutotestPlugin::settings()->popupOnStart)
+    if (useOutputProcessor && testSettings().popupOnStart())
         AutotestPlugin::popupResultsPane();
 }
 
@@ -671,10 +670,10 @@ static RunAfterBuildMode runAfterBuild()
         return RunAfterBuildMode::None;
 
     if (!project->namedSettings(Constants::SK_USE_GLOBAL).isValid())
-        return AutotestPlugin::settings()->runAfterBuild;
+        return testSettings().runAfterBuildMode();
 
     TestProjectSettings *projectSettings = AutotestPlugin::projectSettings(project);
-    return projectSettings->useGlobalSettings() ? AutotestPlugin::settings()->runAfterBuild
+    return projectSettings->useGlobalSettings() ? testSettings().runAfterBuildMode()
                                                 : projectSettings->runAfterBuild();
 }
 
@@ -704,7 +703,6 @@ void TestRunner::onFinished()
     if (m_taskTree)
         m_taskTree.release()->deleteLater();
     disconnect(m_stopDebugConnect);
-    disconnect(m_finishDebugConnect);
     disconnect(m_targetConnect);
     qDeleteAll(m_selectedTests);
     m_selectedTests.clear();

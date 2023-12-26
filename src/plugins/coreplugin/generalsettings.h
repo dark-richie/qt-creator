@@ -3,23 +3,20 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
+#include <utils/aspects.h>
 
-namespace Core {
-namespace Internal {
+namespace Core::Internal {
 
-class GeneralSettings : public IOptionsPage
+class GeneralSettings : public Utils::AspectContainer
 {
 public:
     GeneralSettings();
 
-    static bool showShortcutsInContextMenu();
-    void setShowShortcutsInContextMenu(bool show);
+    Utils::BoolAspect showShortcutsInContextMenus{this};
 
-private:
-    friend class GeneralSettingsWidget;
-    bool m_defaultShowShortcutsInContextMenu;
+    static void applyToolbarStyleFromSettings();
 };
 
-} // namespace Internal
-} // namespace Core
+GeneralSettings &generalSettings();
+
+} // Core::Internal

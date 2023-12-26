@@ -11,7 +11,6 @@ QtcPlugin {
     Depends { name: "TextEditor" }
     Depends { name: "ProjectExplorer" }
     Depends { name: "QtSupport" }
-    Depends { name: "app_version_header" }
 
     pluginRecommends: [
         "CppEditor"
@@ -22,8 +21,6 @@ QtcPlugin {
     ]
 
     files: [
-        "filesselectionwizardpage.cpp",
-        "filesselectionwizardpage.h",
         "genericbuildconfiguration.cpp",
         "genericbuildconfiguration.h",
         "genericmakestep.cpp",
@@ -35,7 +32,6 @@ QtcPlugin {
         "genericprojectfileseditor.h",
         "genericprojectmanagertr.h",
         "genericprojectplugin.cpp",
-        "genericprojectplugin.h",
         "genericprojectwizard.cpp",
         "genericprojectwizard.h",
     ]

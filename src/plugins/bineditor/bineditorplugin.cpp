@@ -8,11 +8,23 @@
 #include "bineditortr.h"
 #include "bineditorwidget.h"
 
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/coreconstants.h>
 #include <coreplugin/coreplugintr.h>
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/editormanager/ieditorfactory.h>
+#include <coreplugin/find/ifindsupport.h>
 #include <coreplugin/icore.h>
+#include <coreplugin/idocument.h>
+
+#include <extensionsystem/pluginmanager.h>
 
 #include <texteditor/codecchooser.h>
+
+#include <utils/mimeconstants.h>
+#include <utils/reloadpromptutils.h>
+#include <utils/qtcassert.h>
 
 #include <QAction>
 #include <QHBoxLayout>
@@ -23,24 +35,12 @@
 #include <QTextCodec>
 #include <QToolBar>
 
-#include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/coreconstants.h>
-#include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/find/ifindsupport.h>
-#include <coreplugin/idocument.h>
-
-#include <extensionsystem/pluginmanager.h>
-
-#include <utils/reloadpromptutils.h>
-#include <utils/qtcassert.h>
-
 using namespace Utils;
 using namespace Core;
 
 namespace BinEditor::Internal {
 
-class BinEditorFactory final : public IEditorFactory
+class BinEditorFactory final : public QObject, public IEditorFactory
 {
 public:
     BinEditorFactory();
@@ -71,7 +71,8 @@ public:
 
     void highlightAll(const QString &txt, FindFlags findFlags) override
     {
-        m_widget->highlightSearchResults(txt.toLatin1(), textDocumentFlagsForFindFlags(findFlags));
+        m_widget->highlightSearchResults(txt.toLatin1(),
+                                         Utils::textDocumentFlagsForFindFlags(findFlags));
     }
 
     void clearHighlights() override
@@ -88,10 +89,10 @@ public:
             return pos;
         }
 
-        int res = m_widget->find(pattern, pos, textDocumentFlagsForFindFlags(findFlags));
+        int res = m_widget->find(pattern, pos, Utils::textDocumentFlagsForFindFlags(findFlags));
         if (res < 0) {
             pos = (findFlags & FindBackward) ? -1 : 0;
-            res = m_widget->find(pattern, pos, textDocumentFlagsForFindFlags(findFlags));
+            res = m_widget->find(pattern, pos, Utils::textDocumentFlagsForFindFlags(findFlags));
             if (res < 0)
                 return res;
             if (wrapped)
@@ -119,7 +120,8 @@ public:
         Result result;
         if (found >= 0) {
             result = Found;
-            m_widget->highlightSearchResults(pattern, textDocumentFlagsForFindFlags(findFlags));
+            m_widget->highlightSearchResults(pattern,
+                                             Utils::textDocumentFlagsForFindFlags(findFlags));
             m_contPos = -1;
         } else {
             if (found == -2) {
@@ -154,8 +156,10 @@ public:
             result = Found;
             m_incrementalStartPos = found;
             m_contPos = -1;
-            if (wasReset)
-                m_widget->highlightSearchResults(pattern, textDocumentFlagsForFindFlags(findFlags));
+            if (wasReset) {
+                m_widget->highlightSearchResults(pattern,
+                                                 Utils::textDocumentFlagsForFindFlags(findFlags));
+            }
         } else if (found == -2) {
             result = NotYetFound;
             m_contPos += findFlags & FindBackward
@@ -185,7 +189,7 @@ public:
         IDocument(parent)
     {
         setId(Core::Constants::K_DEFAULT_BINARY_EDITOR_ID);
-        setMimeType(QLatin1String(BinEditor::Constants::C_BINEDITOR_MIMETYPE));
+        setMimeType(Utils::Constants::OCTET_STREAM_MIMETYPE);
         m_widget = parent;
         EditorService *es = m_widget->editorService();
         es->setFetchDataHandler([this](quint64 address) { provideData(address); });
@@ -211,17 +215,6 @@ public:
     ReloadBehavior reloadBehavior(ChangeTrigger state, ChangeType type) const override
     {
         return type == TypeRemoved ? BehaviorSilent : IDocument::reloadBehavior(state, type);
-    }
-
-    bool save(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override
-    {
-        QTC_ASSERT(!autoSave, return true); // bineditor does not support autosave - it would be a bit expensive
-        const FilePath &fileNameToUse = filePath.isEmpty() ? this->filePath() : filePath;
-        if (m_widget->save(errorString, this->filePath(), fileNameToUse)) {
-            setFilePath(fileNameToUse);
-            return true;
-        }
-        return false;
     }
 
     OpenResult open(QString *errorString, const FilePath &filePath,
@@ -314,6 +307,17 @@ public:
         m_widget->setCursorPosition(cPos);
         emit reloadFinished(success);
         return success;
+    }
+
+protected:
+    bool saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override
+    {
+        QTC_ASSERT(!autoSave, return true); // bineditor does not support autosave - it would be a bit expensive
+        if (m_widget->save(errorString, this->filePath(), filePath)) {
+            setFilePath(filePath);
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -446,7 +450,7 @@ BinEditorFactory::BinEditorFactory()
 {
     setId(Core::Constants::K_DEFAULT_BINARY_EDITOR_ID);
     setDisplayName(::Core::Tr::tr("Binary Editor"));
-    addMimeType(Constants::C_BINEDITOR_MIMETYPE);
+    addMimeType(Utils::Constants::OCTET_STREAM_MIMETYPE);
 
     setEditorCreator([] {
         auto widget = new BinEditorWidget();

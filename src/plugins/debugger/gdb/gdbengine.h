@@ -15,7 +15,7 @@
 #include <debugger/outputcollector.h>
 
 #include <utils/id.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QProcess>
 #include <QTextCodec>
@@ -37,7 +37,7 @@ struct CoreInfo
     Utils::FilePath foundExecutableName; // empty if no corresponding exec could be found
     bool isCore = false;
 
-    static CoreInfo readExecutableNameFromCore(const ProjectExplorer::Runnable &debugger,
+    static CoreInfo readExecutableNameFromCore(const Utils::ProcessRunData &debugger,
                                                const Utils::FilePath &coreFile);
 };
 
@@ -405,7 +405,7 @@ private: ////////// General Interface //////////
 
     bool usesOutputCollector() const;
 
-    Utils::QtcProcess m_gdbProc;
+    Utils::Process m_gdbProc;
     OutputCollector m_outputCollector;
     QString m_errorString;
 };

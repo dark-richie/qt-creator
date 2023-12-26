@@ -7,14 +7,15 @@
 #include <abstractview.h>
 #include <assetslibraryview.h>
 #include <capturingconnectionmanager.h>
-#include <componentaction.h>
-#include <contentlibraryview.h>
+#include <collectionview.h>
 #include <componentaction.h>
 #include <componentview.h>
+#include <contentlibraryview.h>
 #include <crumblebar.h>
 #include <debugview.h>
 #include <designeractionmanagerview.h>
 #include <designmodewidget.h>
+#include <dynamiclicensecheck.h>
 #include <edit3dview.h>
 #include <formeditorview.h>
 #include <itemlibraryview.h>
@@ -24,13 +25,16 @@
 #include <nodeinstanceview.h>
 #include <propertyeditorview.h>
 #include <rewriterview.h>
-#include <stateseditornew/stateseditorview.h>
 #include <stateseditorview.h>
 #include <texteditorview.h>
 #include <textureeditorview.h>
 #include <qmldesignerplugin.h>
 
+#include <coreplugin/icore.h>
+
 #include <utils/algorithm.h>
+
+#include <advanceddockingsystem/dockwidget.h>
 
 #include <QElapsedTimer>
 #include <QLoggingCategory>
@@ -38,12 +42,12 @@
 
 namespace QmlDesigner {
 
-static bool useOldStatesEditor()
+static bool enableModelEditor()
 {
-    return QmlDesignerPlugin::instance()
-        ->settings()
-        .value(DesignerSettingsKey::OLD_STATES_EDITOR)
-        .toBool();
+    Utils::QtcSettings *settings = Core::ICore::settings();
+    const Utils::Key enableModelManagerKey = "QML/Designer/UseExperimentalFeatures44";
+
+    return settings->value(enableModelManagerKey, false).toBool();
 }
 
 static Q_LOGGING_CATEGORY(viewBenchmark, "qtc.viewmanager.attach", QtWarningMsg)
@@ -58,7 +62,9 @@ public:
         , nodeInstanceView(QCoreApplication::arguments().contains("-capture-puppet-stream")
                                ? capturingConnectionManager
                                : connectionManager,
-                           externalDependencies)
+                           externalDependencies,
+                           true)
+        , collectionView{externalDependencies}
         , contentLibraryView{externalDependencies}
         , componentView{externalDependencies}
         , edit3DView{externalDependencies}
@@ -72,7 +78,6 @@ public:
         , materialBrowserView{imageCache, externalDependencies}
         , textureEditorView{imageCache, externalDependencies}
         , statesEditorView{externalDependencies}
-        , newStatesEditorView{externalDependencies}
     {}
 
     InteractiveConnectionManager connectionManager;
@@ -81,6 +86,7 @@ public:
     Internal::DebugView debugView;
     DesignerActionManagerView designerActionManagerView;
     NodeInstanceView nodeInstanceView;
+    CollectionView collectionView;
     ContentLibraryView contentLibraryView;
     ComponentView componentView;
     Edit3DView edit3DView;
@@ -94,7 +100,6 @@ public:
     MaterialBrowserView materialBrowserView;
     TextureEditorView textureEditorView;
     StatesEditorView statesEditorView;
-    Experimental::StatesEditorView newStatesEditorView;
 
     std::vector<std::unique_ptr<AbstractView>> additionalViews;
     bool disableStandardViews = false;
@@ -176,30 +181,16 @@ void ViewManager::detachRewriterView()
 
 void ViewManager::switchStateEditorViewToBaseState()
 {
-    if (useOldStatesEditor()) {
-        if (d->statesEditorView.isAttached()) {
-            d->savedState = d->statesEditorView.currentState();
-            d->statesEditorView.setCurrentState(d->statesEditorView.baseState());
-        }
-    } else {
-        // TODO remove old statesview
-        if (d->newStatesEditorView.isAttached()) {
-            d->savedState = d->newStatesEditorView.currentState();
-            d->newStatesEditorView.setCurrentState(d->newStatesEditorView.baseState());
-        }
+    if (d->statesEditorView.isAttached()) {
+        d->savedState = d->statesEditorView.currentState();
+        d->statesEditorView.setCurrentState(d->statesEditorView.baseState());
     }
 }
 
 void ViewManager::switchStateEditorViewToSavedState()
 {
-    if (useOldStatesEditor()) {
-        if (d->savedState.isValid() && d->statesEditorView.isAttached())
-            d->statesEditorView.setCurrentState(d->savedState);
-    } else {
-        // TODO remove old statesview
-        if (d->savedState.isValid() && d->newStatesEditorView.isAttached())
-            d->newStatesEditorView.setCurrentState(d->savedState);
-    }
+    if (d->savedState.isValid() && d->statesEditorView.isAttached())
+        d->statesEditorView.setCurrentState(d->savedState);
 }
 
 QList<AbstractView *> ViewManager::views() const
@@ -223,13 +214,10 @@ QList<AbstractView *> ViewManager::standardViews() const
                                   &d->materialBrowserView,
                                   &d->textureEditorView,
                                   &d->statesEditorView,
-                                  &d->newStatesEditorView, // TODO
                                   &d->designerActionManagerView};
 
-    if (useOldStatesEditor())
-        list.removeAll(&d->newStatesEditorView);
-    else
-        list.removeAll(&d->statesEditorView);
+    if (enableModelEditor())
+        list.append(&d->collectionView);
 
     if (QmlDesignerPlugin::instance()
             ->settings()
@@ -237,12 +225,8 @@ QList<AbstractView *> ViewManager::standardViews() const
             .toBool())
         list.append(&d->debugView);
 
-#ifdef CHECK_LICENSE
-    if (checkLicense() == FoundLicense::enterprise)
+    if (checkEnterpriseLicense())
         list.append(&d->contentLibraryView);
-#else
-    list.append(&d->contentLibraryView);
-#endif
 
     return list;
 }
@@ -410,17 +394,12 @@ QList<WidgetInfo> ViewManager::widgetInfos() const
     widgetInfoList.append(d->materialEditorView.widgetInfo());
     widgetInfoList.append(d->materialBrowserView.widgetInfo());
     widgetInfoList.append(d->textureEditorView.widgetInfo());
-    if (useOldStatesEditor())
-        widgetInfoList.append(d->statesEditorView.widgetInfo());
-    else
-        widgetInfoList.append(d->newStatesEditorView.widgetInfo());
+    widgetInfoList.append(d->statesEditorView.widgetInfo());
+    if (enableModelEditor())
+        widgetInfoList.append(d->collectionView.widgetInfo());
 
-#ifdef CHECK_LICENSE
-    if (checkLicense() == FoundLicense::enterprise)
+    if (checkEnterpriseLicense())
         widgetInfoList.append(d->contentLibraryView.widgetInfo());
-#else
-    widgetInfoList.append(d->contentLibraryView.widgetInfo());
-#endif
 
     if (d->debugView.hasWidget())
         widgetInfoList.append(d->debugView.widgetInfo());
@@ -479,6 +458,12 @@ const AbstractView *ViewManager::view() const
     return &d->nodeInstanceView;
 }
 
+void ViewManager::emitCustomNotification(const QString &identifier, const QList<ModelNode> &nodeList,
+                                         const QList<QVariant> &data)
+{
+    d->nodeInstanceView.emitCustomNotification(identifier, nodeList, data);
+}
+
 QWidgetAction *ViewManager::componentViewAction() const
 {
     return d->componentView.action();
@@ -514,6 +499,11 @@ void ViewManager::exportAsImage()
     d->formEditorView.exportAsImage();
 }
 
+QImage ViewManager::takeFormEditorScreenshot()
+{
+    return d->formEditorView.takeFormEditorScreenshot();
+}
+
 void ViewManager::reformatFileUsingTextEditorView()
 {
     d->textEditorView.reformatFile();
@@ -534,6 +524,15 @@ void ViewManager::enableStandardViews()
 {
     d->disableStandardViews = false;
     attachViewsExceptRewriterAndComponetView();
+}
+
+void ViewManager::jumpToCodeInTextEditor(const ModelNode &modelNode)
+{
+    ADS::DockWidget *dockWidget = qobject_cast<ADS::DockWidget *>(
+        d->textEditorView.widgetInfo().widget->parentWidget());
+    if (dockWidget)
+        dockWidget->toggleView(true);
+    d->textEditorView.jumpToModelNode(modelNode);
 }
 
 void ViewManager::addView(std::unique_ptr<AbstractView> &&view)

@@ -11,6 +11,7 @@
 
 #include <QCoreApplication>
 #include <QIcon>
+#include <QStaticText>
 #include <QVector>
 
 #include <optional>
@@ -40,6 +41,7 @@ class TEXTEDITOR_EXPORT TextMark
 public:
     TextMark() = delete;
     TextMark(const Utils::FilePath &filePath, int lineNumber, TextMarkCategory category);
+    TextMark(TextDocument *document, int lineNumber, TextMarkCategory category);
     virtual ~TextMark();
 
     // determine order on markers on the same line.
@@ -138,6 +140,7 @@ private:
     bool m_visible = false;
     TextMarkCategory m_category;
     QString m_lineAnnotation;
+    mutable QStaticText m_staticAnnotationText;
     QString m_toolTip;
     std::function<QString()> m_toolTipProvider;
     QString m_defaultToolTip;

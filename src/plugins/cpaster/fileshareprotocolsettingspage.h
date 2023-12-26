@@ -5,23 +5,19 @@
 
 #include <coreplugin/dialogs/ioptionspage.h>
 
-#include <utils/aspects.h>
-
 namespace CodePaster {
 
-class FileShareProtocolSettings : public Utils::AspectContainer
+class FileShareProtocolSettings final : public Utils::AspectContainer
 {
 public:
     FileShareProtocolSettings();
 
-    Utils::StringAspect path;
-    Utils::IntegerAspect displayCount;
+    Utils::FilePathAspect path{this};
+    Utils::IntegerAspect displayCount{this};
 };
 
-class FileShareProtocolSettingsPage final : public Core::IOptionsPage
-{
-public:
-    explicit FileShareProtocolSettingsPage(FileShareProtocolSettings *settings);
-};
+FileShareProtocolSettings &fileShareSettings();
+
+Core::IOptionsPage &fileShareSettingsPage();
 
 } // CodePaster

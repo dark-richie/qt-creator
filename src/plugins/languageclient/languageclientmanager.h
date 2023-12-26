@@ -30,9 +30,9 @@ class LanguageClientMark;
 class LANGUAGECLIENT_EXPORT LanguageClientManager : public QObject
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(LanguageClientManager)
+
 public:
-    LanguageClientManager(const LanguageClientManager &other) = delete;
-    LanguageClientManager(LanguageClientManager &&other) = delete;
     ~LanguageClientManager() override;
 
     static void init();
@@ -48,7 +48,7 @@ public:
     static void deleteClient(Client *client);
 
     static void shutdown();
-    static bool isShuttingDown();
+    static bool isShutdownFinished();
 
     static LanguageClientManager *instance();
 
@@ -60,6 +60,9 @@ public:
     static void enableClientSettings(const QString &settingsId, bool enable = true);
     static QList<Client *> clientsForSetting(const BaseSettings *setting);
     static const BaseSettings *settingForClient(Client *setting);
+    static void updateWorkspaceConfiguration(const ProjectExplorer::Project *project,
+                                             const QJsonValue &json);
+
     static Client *clientForDocument(TextEditor::TextDocument *document);
     static Client *clientForFilePath(const Utils::FilePath &filePath);
     static const QList<Client *> clientsForProject(const ProjectExplorer::Project *project);
@@ -91,11 +94,11 @@ private:
     void editorOpened(Core::IEditor *editor);
     void documentOpened(Core::IDocument *document);
     void documentClosed(Core::IDocument *document);
-    void documentContentsSaved(Core::IDocument *document);
-    void documentWillSave(Core::IDocument *document);
 
     void updateProject(ProjectExplorer::Project *project);
     void projectAdded(ProjectExplorer::Project *project);
+
+    void trackClientDeletion(Client *client);
 
     QList<Client *> reachableClients();
 
@@ -106,6 +109,7 @@ private:
     QHash<TextEditor::TextDocument *, QPointer<Client>> m_clientForDocument;
     std::unique_ptr<LanguageClientManagerPrivate> d;
     LspInspector m_inspector;
+    QSet<Utils::Id> m_scheduledForDeletion;
 };
 
 template<typename T> bool LanguageClientManager::hasClients()

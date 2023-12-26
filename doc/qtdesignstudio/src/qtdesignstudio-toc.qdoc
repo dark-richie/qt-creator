@@ -12,7 +12,6 @@
                 \li \l{Tutorials}
                 \li \l{User Interface}
                     \list
-                        \li \l{Selecting Modes}
                         \li \l{Design Views}
                             \list
                                 \li \l{2D}
@@ -34,9 +33,10 @@
                                 \li \l{Open Documents}
                                 \li \l{Content Library}
                                 \li \l{Texture Editor}
+                                \li \l{Qt Insight}
                            \endlist
                         \li \l{Managing Workspaces}
-                        \li \l{Managing Sessions}
+                        \li \l{Manage sessions}
                         \li \l{Keyboard Shortcuts}
                     \endlist
                 \li \l{Creating Projects}
@@ -162,7 +162,7 @@
                                 \list
                                     \li \l{Setting Up Qt Bridge for Figma}
                                     \li \l{Using Qt Bridge for Figma}
-                                    \li \l{Using Figma Quick Control Template in Qt Design Studio}
+                                    \li \l{Using Figma Quick Control Template Components in Qt Design Studio}
                                 \endlist
                         \endlist
                         \li \l {Exporting 3D Assets}
@@ -180,11 +180,7 @@
                                 \li \l{Importing 3D Assets}
                             \endlist
                         \li \l{Exporting Components}
-                        \li Qt Quick Effect Maker
-                            \list
-                                \li \l{Creating Qt Quick Effect Maker Files}
-                                \li \l{Working with Effects in Qt Quick Effect Maker}
-                            \endlist
+                        \li \l{Using Qt Quick Effect Maker Effects}
                     \endlist
             \endlist
         \li \l{Motion Design}
@@ -205,16 +201,12 @@
                     \list
                         \li \l{Writing Code}
                             \list
-                                \li \l{Working in Edit Mode}
-                                    \list
-                                        \li \l{Working with Sidebars}
-                                        \li \l{Browsing Project Contents}
-                                        \li \l{Viewing Output}
-                                    \endlist
                                 \li \l{Semantic Highlighting}
                                 \li \l{Checking Code Syntax}
                                 \li \l{Completing Code}
-                                \li \l{Indenting Text or Code}
+                                \li \l{Indent text or code}
+                                \li \l{Behavior}
+                                \li \l{Qt Quick Code Style}
                                 \li \l{Using Qt Quick Toolbars}
                                 \li \l{Comparing Files}
                             \endlist
@@ -222,6 +214,7 @@
                             \list
                                 \li \l{Finding and Replacing}
                                 \li \l{Searching with the Locator}
+                                \li \l{Jump to the Code}
                             \endlist
                         \li \l{Refactoring}
                         \li \l{Applying Refactoring Actions}
@@ -249,9 +242,9 @@
                 \li Extending Component Functionality
                 \endomit
                 \li \l{UI Files}
-                \li \l{Managing Data Collection}
+                \li \l{Manage Data Collection}
                     \list
-                        \li \l {Collecting Usage Statistics}
+                        \li \l {Collect Usage Statistics}
                         \li \l {Collecting User Feedback}
                         \li \l {Reporting Crashes}
                     \endlist
@@ -262,11 +255,31 @@
                 \li \l{Using Git}
                 \li \l{Converting Qt 5 Projects into Qt 6 Projects}
                 \li \l{Converting UI Projects to Applications}
-                \li \l{Using External Tools}
+                \li \l{Use external tools}
+                \li \l{\QDS on MCUs}
+                    \list
+                        \li \l {\QMCU Framework}
+                        \li \l {\QDS Version Compatibility with \QMCU SDKs}
+                        \li \l {\QDS Features on MCU Projects}
+                        \li \l {Creating Projects for MCUs}
+                        \li \l {Creating UIs for MCUs}
+                        \li \l {Developing Applications for MCUs}
+                        \li \l {Connecting MCUs with Qt Creator}
+                    \endlist
             \endlist
         \li \l Help
             \list
-                \li \l{Using the Help Mode}
+                \li \l{Get help}
+                    \list
+                        \li \l {Add bookmarks to help pages}
+                        \li \l {Add external documentation}
+                        \li \l {Detach the help window}
+                        \li \l {Filter documentation}
+                        \li \l {Find information in Qt documentation}
+                        \li \l {Get help}
+                        \li \l {Search from documentation}
+                        \li \l {Select the help start page}
+                    \endlist
                 \li \l{Frequently Asked Questions}
                 \li \l{Supported Platforms}
             \endlist

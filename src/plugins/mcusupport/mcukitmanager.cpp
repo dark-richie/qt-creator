@@ -2,29 +2,30 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "mcukitmanager.h"
-#include "mculegacyconstants.h"
-#include "mcusupportoptions.h"
 
-#include "mcukitinformation.h"
+#include "mcukitaspect.h"
+#include "mculegacyconstants.h"
 #include "mcupackage.h"
+#include "mcusupport_global.h"
 #include "mcusupportconstants.h"
+#include "mcusupportoptions.h"
 #include "mcusupportplugin.h"
 #include "mcusupportsdk.h"
 #include "mcusupporttr.h"
 #include "mcutarget.h"
 
-#include <cmakeprojectmanager/cmakekitinformation.h>
+#include <cmakeprojectmanager/cmakekitaspect.h>
 #include <cmakeprojectmanager/cmaketoolmanager.h>
-#include <coreplugin/icore.h>
 
 #include <debugger/debuggeritem.h>
 #include <debugger/debuggeritemmanager.h>
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/toolchain.h>
 
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtsupportconstants.h>
 #include <qtsupport/qtversionmanager.h>
 
 #include <utils/algorithm.h>
@@ -84,10 +85,10 @@ public:
         case McuToolChainPackage::ToolChainType::GCC:
         case McuToolChainPackage::ToolChainType::MinGW:
         case McuToolChainPackage::ToolChainType::ArmGcc:
-            ToolChainKitAspect::setToolChain(k,
+            ToolchainKitAspect::setToolchain(k,
                                              tcPackage->toolChain(
                                                  ProjectExplorer::Constants::C_LANGUAGE_ID));
-            ToolChainKitAspect::setToolChain(k,
+            ToolchainKitAspect::setToolchain(k,
                                              tcPackage->toolChain(
                                                  ProjectExplorer::Constants::CXX_LANGUAGE_ID));
             return;
@@ -114,15 +115,15 @@ public:
         k->makeSticky();
         if (mcuTarget->toolChainPackage()->isDesktopToolchain())
             k->setDeviceTypeForIcon(DEVICE_TYPE);
-        k->setValue(QtSupport::SuppliesQtQuickImportPath::id(), true);
+        k->setValue(QtSupport::Constants::FLAGS_SUPPLIES_QTQUICK_IMPORT_PATH, true);
         // FIXME: This is treated as a pathlist in CMakeBuildSystem::updateQmlJSCodeModel
-        k->setValue(QtSupport::KitQmlImportPath::id(), (sdkPath / "include/qul").toString());
-        k->setValue(QtSupport::KitHasMergedHeaderPathsWithQmlImportPaths::id(), true);
+        k->setValue(QtSupport::Constants::KIT_QML_IMPORT_PATH, (sdkPath / "include/qul").toString());
+        k->setValue(QtSupport::Constants::KIT_HAS_MERGED_HEADER_PATHS_WITH_QML_IMPORT_PATHS, true);
         QSet<Id> irrelevant = {
             SysRootKitAspect::id(),
-            QtSupport::SuppliesQtQuickImportPath::id(),
-            QtSupport::KitQmlImportPath::id(),
-            QtSupport::KitHasMergedHeaderPathsWithQmlImportPaths::id(),
+            QtSupport::Constants::FLAGS_SUPPLIES_QTQUICK_IMPORT_PATH,
+            QtSupport::Constants::KIT_QML_IMPORT_PATH,
+            QtSupport::Constants::KIT_HAS_MERGED_HEADER_PATHS_WITH_QML_IMPORT_PATHS,
         };
         if (!McuSupportOptions::kitsNeedQtVersion())
             irrelevant.insert(QtSupport::QtKitAspect::id());
@@ -289,8 +290,7 @@ public:
                              cMakeToolchainFile.toString().toUtf8());
             if (!cMakeToolchainFile.exists()) {
                 printMessage(
-                    Tr::tr(
-                        "Warning for target %1: missing CMake toolchain file expected at %2.")
+                    Tr::tr("Warning for target %1: missing CMake toolchain file expected at %2.")
                         .arg(generateKitNameFromTarget(mcuTarget),
                              cMakeToolchainFile.toUserOutput()),
                     false);
@@ -301,8 +301,7 @@ public:
             "/lib/cmake/Qul/QulGenerators.cmake");
         configMap.insert("QUL_GENERATORS", generatorsPath.toString().toUtf8());
         if (!generatorsPath.exists()) {
-            printMessage(Tr::tr(
-                             "Warning for target %1: missing QulGenerators expected at %2.")
+            printMessage(Tr::tr("Warning for target %1: missing QulGenerators expected at %2.")
                              .arg(generateKitNameFromTarget(mcuTarget),
                                   generatorsPath.toUserOutput()),
                          false);
@@ -414,7 +413,7 @@ static FilePath kitDependencyPath(const Kit *kit, const QString &cmakeVariableNa
         if (configItem.key == keyName)
             return FilePath::fromUserInput(QString::fromUtf8(configItem.value));
     }
-    return FilePath();
+    return {};
 }
 
 // Kit Information
@@ -431,11 +430,17 @@ bool kitIsUpToDate(const Kit *kit,
 QList<Kit *> existingKits(const McuTarget *mcuTarget)
 {
     using namespace Constants;
+    // some models have compatible name changes that refere to the same supported board across versions.
+    // name changes are tracked here to recognize the corresponding kits as upgradable.
+    static const QMap<QString, QStringList> upgradable_to = {
+        {"MIMXRT1170-EVK-FREERTOS", {"MIMXRT1170-EVKB-FREERTOS"}}};
     return Utils::filtered(KitManager::kits(), [mcuTarget](Kit *kit) {
         return kit->value(KIT_MCUTARGET_KITVERSION_KEY) == KIT_VERSION
                && (!mcuTarget
                    || (kit->value(KIT_MCUTARGET_VENDOR_KEY) == mcuTarget->platform().vendor
-                       && kit->value(KIT_MCUTARGET_MODEL_KEY) == mcuTarget->platform().name
+                       && (kit->value(KIT_MCUTARGET_MODEL_KEY) == mcuTarget->platform().name
+                           || upgradable_to[kit->value(KIT_MCUTARGET_MODEL_KEY).toString()].contains(
+                               mcuTarget->platform().name))
                        && kit->value(KIT_MCUTARGET_COLORDEPTH_KEY) == mcuTarget->colorDepth()
                        && kit->value(KIT_MCUTARGET_OS_KEY).toInt()
                               == static_cast<int>(mcuTarget->os())
@@ -488,32 +493,37 @@ void createAutomaticKits(const SettingsHandler::Ptr &settingsHandler)
 {
     McuPackagePtr qtForMCUsPackage{createQtForMCUsPackage(settingsHandler)};
 
-    const auto createKits = [qtForMCUsPackage, settingsHandler]() {
+    // add a list of package, board, errormessage,
+    MessagesList autoGenerationMessages;
+
+    const auto createKits = [&autoGenerationMessages, qtForMCUsPackage, settingsHandler] {
         if (settingsHandler->isAutomaticKitCreationEnabled()) {
             qtForMCUsPackage->updateStatus();
             if (!qtForMCUsPackage->isValidStatus()) {
                 switch (qtForMCUsPackage->status()) {
                 case McuAbstractPackage::Status::ValidPathInvalidPackage: {
-                    printMessage(Tr::tr("Path %1 exists, but does not contain %2.")
-                                     .arg(qtForMCUsPackage->path().toUserOutput(),
-                                          qtForMCUsPackage->detectionPath().toUserOutput()),
-                                 true);
+                    const QString message
+                        = Tr::tr("Path %1 exists, but does not contain %2.")
+                              .arg(qtForMCUsPackage->path().toUserOutput(),
+                                   qtForMCUsPackage->detectionPath().toUserOutput());
+                    autoGenerationMessages.push_back({qtForMCUsPackage->label(), "", message});
+                    printMessage(message, true);
                     break;
                 }
                 case McuAbstractPackage::Status::InvalidPath: {
-                    printMessage(Tr::tr(
-                                     "Path %1 does not exist. Add the path in Edit > Preferences > "
-                                     "Devices > MCU.")
-                                     .arg(qtForMCUsPackage->path().toUserOutput()),
-                                 true);
+                    const QString message
+                        = Tr::tr("Path %1 does not exist. Add the path in Edit > Preferences > "
+                                 "Devices > MCU.")
+                              .arg(qtForMCUsPackage->path().toUserOutput());
+                    autoGenerationMessages.push_back({qtForMCUsPackage->label(), "", message});
+                    printMessage(message, true);
                     break;
                 }
                 case McuAbstractPackage::Status::EmptyPath: {
-                    printMessage(
-                        Tr::tr(
-                            "Missing %1. Add the path in Edit > Preferences > Devices > MCU.")
-                            .arg(qtForMCUsPackage->detectionPath().toUserOutput()),
-                        true);
+                    const QString message = Tr::tr("Missing %1. Add the path in Edit > Preferences > Devices > MCU.")
+                            .arg(qtForMCUsPackage->detectionPath().toUserOutput());
+                    autoGenerationMessages.push_back({qtForMCUsPackage->label(), "", message});
+                    printMessage(message, true);
                     return;
                 }
                 default:
@@ -523,11 +533,10 @@ void createAutomaticKits(const SettingsHandler::Ptr &settingsHandler)
             }
 
             if (CMakeProjectManager::CMakeToolManager::cmakeTools().isEmpty()) {
-                printMessage(
-                    Tr::tr(
-                        "No CMake tool was detected. Add a CMake tool in Edit > Preferences > "
-                        "Kits > CMake."),
-                    true);
+                const QString message = Tr::tr("No CMake tool was detected. Add a CMake tool in Edit > Preferences > "
+                           "Kits > CMake.");
+                autoGenerationMessages.push_back({qtForMCUsPackage->label(), "", message});
+                printMessage(message, true);
                 return;
             }
 
@@ -547,7 +556,7 @@ void createAutomaticKits(const SettingsHandler::Ptr &settingsHandler)
                     // if no kits for this target, create
                     if (target->isValid())
                         newKit(target.get(), qtForMCUsPackage);
-                    target->printPackageProblems();
+                    target->handlePackageProblems(autoGenerationMessages);
                 }
             }
             if (needsUpgrade)
@@ -556,6 +565,9 @@ void createAutomaticKits(const SettingsHandler::Ptr &settingsHandler)
     };
 
     createKits();
+    McuSupportOptions::displayKitCreationMessages(autoGenerationMessages,
+                                                  settingsHandler,
+                                                  qtForMCUsPackage);
 }
 
 // Maintenance
@@ -573,6 +585,7 @@ void upgradeKitsByCreatingNewPackage(const SettingsHandler::Ptr &settingsHandler
 
     McuSdkRepository repo{targetsAndPackages(qtForMCUsPackage, settingsHandler)};
 
+    MessagesList messages;
     for (const auto &target : std::as_const(repo.mcuTargets)) {
         if (!matchingKits(target.get(), qtForMCUsPackage).empty())
             // already up-to-date
@@ -583,13 +596,18 @@ void upgradeKitsByCreatingNewPackage(const SettingsHandler::Ptr &settingsHandler
             if (upgradeOption == UpgradeOption::Replace) {
                 for (auto existingKit : kits)
                     KitManager::deregisterKit(existingKit);
+                // Reset cached values that are not valid after an update
+                // Exp: a board sdk version that was dropped in newer releases
+                target->resetInvalidPathsToDefault();
             }
 
             if (target->isValid())
                 newKit(target.get(), qtForMCUsPackage);
-            target->printPackageProblems();
+            target->handlePackageProblems(messages);
         }
     }
+    // Open the dialog showing warnings and errors in packages
+    McuSupportOptions::displayKitCreationMessages(messages, settingsHandler, qtForMCUsPackage);
 }
 
 // Maintenance
@@ -659,7 +677,7 @@ void fixExistingKits(const SettingsHandler::Ptr &settingsHandler)
         // Check if the MCU kits are flagged as supplying a QtQuick import path, in order
         // to tell the QMLJS code-model that it won't need to add a fall-back import
         // path.
-        const auto bringsQtQuickImportPath = QtSupport::SuppliesQtQuickImportPath::id();
+        const Id bringsQtQuickImportPath = QtSupport::Constants::FLAGS_SUPPLIES_QTQUICK_IMPORT_PATH;
         auto irrelevantAspects = kit->irrelevantAspects();
         if (!irrelevantAspects.contains(bringsQtQuickImportPath)) {
             irrelevantAspects.insert(bringsQtQuickImportPath);
@@ -670,7 +688,7 @@ void fixExistingKits(const SettingsHandler::Ptr &settingsHandler)
         }
 
         // Check if the MCU kit supplies its import path.
-        const auto kitQmlImportPath = QtSupport::KitQmlImportPath::id();
+        const Id kitQmlImportPath = QtSupport::Constants::KIT_QML_IMPORT_PATH;
         if (!irrelevantAspects.contains(kitQmlImportPath)) {
             irrelevantAspects.insert(kitQmlImportPath);
             kit->setIrrelevantAspects(irrelevantAspects);
@@ -689,7 +707,7 @@ void fixExistingKits(const SettingsHandler::Ptr &settingsHandler)
         }
 
         // Check if the MCU kit has the flag for merged header/qml-import paths set.
-        const auto mergedPaths = QtSupport::KitHasMergedHeaderPathsWithQmlImportPaths::id();
+        const Id mergedPaths = QtSupport::Constants::KIT_HAS_MERGED_HEADER_PATHS_WITH_QML_IMPORT_PATHS;
         if (!irrelevantAspects.contains(mergedPaths)) {
             irrelevantAspects.insert(mergedPaths);
             kit->setIrrelevantAspects(irrelevantAspects);
@@ -744,10 +762,16 @@ static bool anyKitDescriptionFileExists(const FilePaths &jsonFiles,
         const QRegularExpressionMatch match = re.match(jsonFile.fileName());
         QStringList kitsPropertiesFromFileName;
         if (match.hasMatch()) {
-            const QString toolchain = match.captured(1).replace(
-                "gnu", "gcc"); // kitFileName contains gnu while profiles.xml contains gcc
+            QString toolchain = match.captured(1);
             const QString vendor = match.captured(2);
             const QString device = match.captured(3);
+
+            /*
+            * file name of kit starts with "gnu" while in profiles.xml name of
+            * toolchain is "gcc" on Linux and "mingw" on Windows
+            */
+            toolchain = HostOsInfo::isLinuxHost() ? toolchain.replace("gnu", "gcc")
+                                                  : toolchain.replace("gnu", "mingw");
 
             kitsPropertiesFromFileName << toolchain << vendor << device;
         }

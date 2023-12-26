@@ -4,16 +4,14 @@
 #pragma once
 
 #include "ilocatorfilter.h"
+#include "../actionmanager/command.h"
 
-#include <coreplugin/actionmanager/command.h>
 #include <extensionsystem/iplugin.h>
 
 #include <QObject>
 #include <QTimer>
 
-#include <functional>
-
-namespace Utils { class TaskTree; }
+namespace Tasking { class TaskTree; }
 
 namespace Core {
 namespace Internal {
@@ -30,8 +28,7 @@ public:
     ~Locator() override;
 
     static Locator *instance();
-    ExtensionSystem::IPlugin::ShutdownFlag aboutToShutdown(
-        const std::function<void()> &emitAsynchronousShutdownFinished);
+    void aboutToShutdown();
 
     void initialize();
     void extensionsInitialized();
@@ -68,14 +65,13 @@ private:
         bool useCenteredPopup = false;
     };
 
-    bool m_shuttingDown = false;
     bool m_settingsInitialized = false;
     Settings m_settings;
     QList<ILocatorFilter *> m_filters;
     QList<ILocatorFilter *> m_customFilters;
     QMap<Utils::Id, QAction *> m_filterActionMap;
     QTimer m_refreshTimer;
-    std::unique_ptr<Utils::TaskTree> m_taskTree;
+    std::unique_ptr<Tasking::TaskTree> m_taskTree;
     QList<ILocatorFilter *> m_refreshingFilters;
 };
 

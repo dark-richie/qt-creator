@@ -23,6 +23,7 @@
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
+#include <utils/stylehelper.h>
 
 #include <QApplication>
 #include <QComboBox>
@@ -181,7 +182,7 @@ void TransitionEditorToolBar::createLeftControls()
     m_transitionComboBox = new QComboBox(this);
     addWidgetToGroup(m_transitionComboBox);
 
-    connect(m_transitionComboBox, &QComboBox::currentTextChanged, this, [this]() {
+    connect(m_transitionComboBox, &QComboBox::currentTextChanged, this, [this] {
         emit currentTransitionChanged(m_transitionComboBox->currentText());
     });
 }
@@ -241,7 +242,7 @@ void TransitionEditorToolBar::createRightControls()
                                  tr("Zoom Out"),
                                  QKeySequence(QKeySequence::ZoomOut));
 
-    connect(zoomOut, &QAction::triggered, [this]() {
+    connect(zoomOut, &QAction::triggered, [this] {
         m_scale->setValue(m_scale->value() - m_scale->pageStep());
     });
     addAction(zoomOut);
@@ -249,8 +250,8 @@ void TransitionEditorToolBar::createRightControls()
     addSpacing(10);
 
     m_scale = new QSlider(this);
-    m_scale->setProperty("panelwidget", true);
-    m_scale->setProperty("panelwidget_singlerow", true);
+    Utils::StyleHelper::setPanelWidget(m_scale);
+    Utils::StyleHelper::setPanelWidgetSingleRow(m_scale);
     m_scale->setOrientation(Qt::Horizontal);
     m_scale->setMaximumWidth(200);
     m_scale->setMinimumWidth(100);
@@ -268,7 +269,7 @@ void TransitionEditorToolBar::createRightControls()
                                 tr("Zoom In"),
                                 QKeySequence(QKeySequence::ZoomIn));
 
-    connect(zoomIn, &QAction::triggered, [this]() {
+    connect(zoomIn, &QAction::triggered, [this] {
         m_scale->setValue(m_scale->value() + m_scale->pageStep());
     });
     addAction(zoomIn);
@@ -280,7 +281,7 @@ void TransitionEditorToolBar::createRightControls()
     m_duration = createToolBarLineEdit(this);
     addWidget(m_duration);
 
-    auto emitEndChanged = [this]() { emit durationChanged(m_duration->text().toInt()); };
+    auto emitEndChanged = [this] { emit durationChanged(m_duration->text().toInt()); };
     connect(m_duration, &QLineEdit::editingFinished, emitEndChanged);
 
     addSpacing(5);

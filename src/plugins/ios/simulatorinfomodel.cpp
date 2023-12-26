@@ -6,7 +6,7 @@
 #include "iostr.h"
 
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 
 #include <QTimer>
 
@@ -23,8 +23,6 @@ const int deviceUpdateInterval = 1000; // Update simulator state every 1 sec.
 SimulatorInfoModel::SimulatorInfoModel(QObject *parent) :
     QAbstractItemModel(parent)
 {
-    m_fetchFuture.setCancelOnWait(true);
-
     requestSimulatorInfo();
 
     auto updateTimer = new QTimer(this);

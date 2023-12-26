@@ -5,30 +5,28 @@
 
 #include "projectexplorer_export.h"
 
-#include <coreplugin/dialogs/ioptionspage.h>
+#include <utils/treemodel.h>
 
-#include <QPointer>
+namespace Utils { class Id; }
 
 namespace ProjectExplorer {
 
-namespace Internal { class KitOptionsPageWidget; }
-
-class Kit;
-
-class PROJECTEXPLORER_EXPORT KitOptionsPage : public Core::IOptionsPage
+class PROJECTEXPLORER_EXPORT KitSettingsSortModel : public Utils::SortModel
 {
 public:
-    KitOptionsPage();
+    using SortModel::SortModel;
 
-    QWidget *widget() override;
-    void apply() override;
-    void finish() override;
-
-    void showKit(Kit *k);
-    static KitOptionsPage *instance();
+    void setSortedCategories(const QStringList &categories) { m_sortedCategories = categories; }
 
 private:
-    QPointer<Internal::KitOptionsPageWidget> m_widget;
+    bool lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const override;
+
+    QStringList m_sortedCategories;
 };
 
-} // namespace ProjectExplorer
+namespace Internal {
+
+void setSelectectKitId(const Utils::Id &kitId);
+
+} // Internal
+} // ProjectExplorer

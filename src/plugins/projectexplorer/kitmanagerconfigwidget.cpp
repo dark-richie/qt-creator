@@ -5,7 +5,7 @@
 
 #include "devicesupport/idevicefactory.h"
 #include "kit.h"
-#include "kitinformation.h"
+#include "kitaspects.h"
 #include "kitmanager.h"
 #include "projectexplorertr.h"
 #include "task.h"
@@ -23,25 +23,25 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QFileDialog>
+#include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QToolButton>
 #include <QSizePolicy>
 
-static const char WORKING_COPY_KIT_ID[] = "modified kit";
+const char WORKING_COPY_KIT_ID[] = "modified kit";
 
 using namespace Utils;
 
-namespace ProjectExplorer {
-namespace Internal {
+namespace ProjectExplorer::Internal {
 
 KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool &hasUniqueName) :
     m_iconButton(new QToolButton),
     m_nameEdit(new QLineEdit),
     m_fileSystemFriendlyNameLineEdit(new QLineEdit),
     m_kit(k),
-    m_modifiedKit(std::make_unique<Kit>(Utils::Id(WORKING_COPY_KIT_ID))),
+    m_modifiedKit(std::make_unique<Kit>(Id(WORKING_COPY_KIT_ID))),
     m_isDefaultKit(isDefaultKit),
     m_hasUniqueName(hasUniqueName)
 {
@@ -66,10 +66,13 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
             this, &KitManagerConfigWidget::setFileSystemFriendlyName);
 
     using namespace Layouting;
-    Grid {
+    Grid page {
+        withFormAlignment,
+        columnStretch(1, 2),
         label, m_nameEdit, m_iconButton, br,
-        fsLabel, m_fileSystemFriendlyNameLineEdit
-    }.attachTo(this, WithFormAlignment);
+        fsLabel, m_fileSystemFriendlyNameLineEdit, br,
+        noMargin
+    };
 
     m_iconButton->setToolTip(Tr::tr("Kit icon."));
     auto setIconAction = new QAction(Tr::tr("Select Icon..."), this);
@@ -98,8 +101,10 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
     chooser->addSupportedWidget(m_nameEdit);
     chooser->addMacroExpanderProvider([this] { return m_modifiedKit->macroExpander(); });
 
-    for (KitAspect *aspect : KitManager::kitAspects())
-        addAspectToWorkingCopy(aspect);
+    for (KitAspectFactory *factory : KitManager::kitAspectFactories())
+        addAspectToWorkingCopy(page, factory);
+
+    page.attachTo(this);
 
     updateVisibility();
 
@@ -110,8 +115,8 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
 
 KitManagerConfigWidget::~KitManagerConfigWidget()
 {
-    qDeleteAll(m_widgets);
-    m_widgets.clear();
+    qDeleteAll(m_kitAspects);
+    m_kitAspects.clear();
 
     // Make sure our workingCopy did not get registered somehow:
     QTC_CHECK(!Utils::contains(KitManager::kits(),
@@ -129,11 +134,17 @@ QIcon KitManagerConfigWidget::displayIcon() const
 {
     // Special case: Extra warning if there are no errors but name is not unique.
     if (m_modifiedKit->isValid() && !m_hasUniqueName) {
-        static const QIcon warningIcon(Utils::Icons::WARNING.icon());
+        static const QIcon warningIcon(Icons::WARNING.icon());
         return warningIcon;
     }
 
     return m_modifiedKit->displayIcon();
+}
+
+void KitManagerConfigWidget::setFocusToName()
+{
+    m_nameEdit->selectAll();
+    m_nameEdit->setFocus();
 }
 
 void KitManagerConfigWidget::apply()
@@ -189,38 +200,30 @@ QString KitManagerConfigWidget::validityMessage() const
     return m_modifiedKit->toHtml(tmp);
 }
 
-void KitManagerConfigWidget::addAspectToWorkingCopy(KitAspect *aspect)
+void KitManagerConfigWidget::addAspectToWorkingCopy(Layouting::LayoutItem &parent, KitAspectFactory *factory)
 {
+    QTC_ASSERT(factory, return);
+    KitAspect *aspect = factory->createKitAspect(workingCopy());
     QTC_ASSERT(aspect, return);
-    KitAspectWidget *widget = aspect->createConfigWidget(workingCopy());
-    QTC_ASSERT(widget, return);
-    QTC_ASSERT(!m_widgets.contains(widget), return);
+    QTC_ASSERT(!m_kitAspects.contains(aspect), return);
 
-    widget->addToLayoutWithLabel(this);
-    m_widgets.append(widget);
+    aspect->addToLayout(parent);
+    m_kitAspects.append(aspect);
 
-    connect(widget->mutableAction(), &QAction::toggled,
+    connect(aspect->mutableAction(), &QAction::toggled,
             this, &KitManagerConfigWidget::dirty);
 }
 
 void KitManagerConfigWidget::updateVisibility()
 {
-    int count = m_widgets.count();
-    for (int i = 0; i < count; ++i) {
-        KitAspectWidget *widget = m_widgets.at(i);
-        const KitAspect *ki = widget->kitInformation();
-        const bool visibleInKit = ki->isApplicableToKit(m_modifiedKit.get());
-        const bool irrelevant = m_modifiedKit->irrelevantAspects().contains(ki->id());
-        widget->setVisible(visibleInKit && !irrelevant);
-    }
+    for (KitAspect *aspect : std::as_const(m_kitAspects))
+        aspect->setVisible(m_modifiedKit->isAspectRelevant(aspect->factory()->id()));
 }
 
 void KitManagerConfigWidget::makeStickySubWidgetsReadOnly()
 {
-    for (KitAspectWidget *w : std::as_const(m_widgets)) {
-        if (w->kit()->isSticky(w->kitInformation()->id()))
-            w->makeReadOnly();
-    }
+    for (KitAspect *aspect : std::as_const(m_kitAspects))
+        aspect->makeStickySubWidgetsReadOnly();
 }
 
 Kit *KitManagerConfigWidget::workingCopy() const
@@ -235,7 +238,7 @@ bool KitManagerConfigWidget::isDefaultKit() const
 
 void KitManagerConfigWidget::setIcon()
 {
-    const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
+    const Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
     QList<IDeviceFactory *> allDeviceFactories = IDeviceFactory::allDeviceFactories();
     if (deviceType.isValid()) {
         const auto less = [deviceType](const IDeviceFactory *f1, const IDeviceFactory *f2) {
@@ -280,7 +283,7 @@ void KitManagerConfigWidget::setIcon()
 
 void KitManagerConfigWidget::resetIcon()
 {
-    m_modifiedKit->setIconPath(Utils::FilePath());
+    m_modifiedKit->setIconPath({});
     emit dirty();
 }
 
@@ -308,7 +311,7 @@ void KitManagerConfigWidget::workingCopyWasUpdated(Kit *k)
     k->fix();
     m_fixingKit = false;
 
-    for (KitAspectWidget *w : std::as_const(m_widgets))
+    for (KitAspect *w : std::as_const(m_kitAspects))
         w->refresh();
 
     m_cachedDisplayName.clear();
@@ -336,9 +339,8 @@ void KitManagerConfigWidget::kitWasUpdated(Kit *k)
 void KitManagerConfigWidget::showEvent(QShowEvent *event)
 {
     Q_UNUSED(event)
-    for (KitAspectWidget *widget : std::as_const(m_widgets))
-        widget->refresh();
+    for (KitAspect *aspect : std::as_const(m_kitAspects))
+        aspect->refresh();
 }
 
-} // namespace Internal
-} // namespace ProjectExplorer
+} // ProjectExplorer::Internal

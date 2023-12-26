@@ -3,17 +3,10 @@
 
 #pragma once
 
-#include "android_global.h"
-
 #include <projectexplorer/runconfiguration.h>
 
 namespace Android {
 
-class ANDROID_EXPORT AndroidRunConfiguration : public ProjectExplorer::RunConfiguration
-{
-    Q_OBJECT
-public:
-    explicit AndroidRunConfiguration(ProjectExplorer::Target *target, Utils::Id id);
-};
+void setupAndroidRunConfiguration();
 
 } // namespace Android

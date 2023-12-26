@@ -6,6 +6,8 @@
 #include <cplusplus/Literals.h>
 #include <cplusplus/TranslationUnit.h>
 
+#include <utils/algorithm.h>
+
 #include <QDir>
 
 using namespace Utils;
@@ -36,7 +38,7 @@ QByteArray FastPreprocessor::run(Document::Ptr newDoc,
                 mergeEnvironment(i.key());
         }
 
-        const QList<Document::Include> includes = doc->resolvedIncludes();
+        const QList<Document::Include> &includes = doc->resolvedIncludes();
         for (const Document::Include &i : includes)
             mergeEnvironment(i.resolvedFileName());
 
@@ -65,11 +67,9 @@ void FastPreprocessor::sourceNeeded(int line, const FilePath &filePath, IncludeT
 
 void FastPreprocessor::mergeEnvironment(const FilePath &filePath)
 {
-    if (! _merged.contains(filePath)) {
-        _merged.insert(filePath);
-
+    if (Utils::insert(_merged, filePath)) {
         if (Document::Ptr doc = _snapshot.document(filePath)) {
-            const QList<Document::Include> includes = doc->resolvedIncludes();
+            const QList<Document::Include> &includes = doc->resolvedIncludes();
             for (const Document::Include &i : includes)
                 mergeEnvironment(i.resolvedFileName());
 

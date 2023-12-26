@@ -13,16 +13,17 @@
 
 #include <texteditor/texteditorconstants.h>
 
+#include <utils/algorithm.h>
+
 #include <QAction>
 #include <QEvent>
 
 using namespace Core;
 using namespace Utils;
 
-namespace Macros {
-namespace Internal {
+namespace Macros::Internal {
 
-static const char EVENTNAME[] = "Action";
+const char EVENTNAME[] = "Action";
 static quint8 ACTIONNAME = 0;
 
 ActionMacroHandler::ActionMacroHandler()
@@ -55,8 +56,7 @@ bool ActionMacroHandler::executeEvent(const MacroEvent &macroEvent)
 
 void ActionMacroHandler::registerCommand(Id id)
 {
-    if (!m_commandIds.contains(id)) {
-        m_commandIds.insert(id);
+    if (Utils::insert(m_commandIds, id)) {
         const Command *command = ActionManager::command(id);
         if (QAction *action = command->action()) {
             connect(action, &QAction::triggered, this, [this, id, command]() {
@@ -81,5 +81,4 @@ void ActionMacroHandler::addCommand(Id id)
         registerCommand(id);
 }
 
-} // namespace Internal
-} // namespace Macros
+} // namespace Macros::Internal

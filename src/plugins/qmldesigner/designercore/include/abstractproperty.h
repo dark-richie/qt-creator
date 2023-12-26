@@ -19,7 +19,7 @@ namespace QmlDesigner {
     class InternalProperty;
 
     using InternalNodePointer = std::shared_ptr<InternalNode>;
-    using InternalPropertyPointer = QSharedPointer<InternalProperty>;
+    using InternalPropertyPointer = std::shared_ptr<InternalProperty>;
     }
 
 class Model;
@@ -45,15 +45,20 @@ class QMLDESIGNERCORE_EXPORT AbstractProperty
     friend ModelNode;
     friend Internal::ModelPrivate;
 
-    friend QMLDESIGNERCORE_EXPORT bool operator ==(const AbstractProperty &property1, const AbstractProperty &property2);
-    friend QMLDESIGNERCORE_EXPORT bool operator !=(const AbstractProperty &property1, const AbstractProperty &property2);
-
 public:
     AbstractProperty() = default;
+    AbstractProperty(const AbstractProperty &) = default;
+    AbstractProperty &operator=(const AbstractProperty &) = default;
+    AbstractProperty(AbstractProperty &&) = default;
+    AbstractProperty &operator=(AbstractProperty &&) noexcept = default;
     ~AbstractProperty();
     AbstractProperty(const AbstractProperty &property, AbstractView *view);
+    AbstractProperty(const PropertyName &propertyName,
+                     const Internal::InternalNodePointer &internalNode,
+                     Model *model,
+                     AbstractView *view);
 
-    PropertyName name() const;
+    const PropertyName &name() const;
 
     bool isValid() const;
     explicit operator bool() const { return isValid(); }
@@ -77,6 +82,8 @@ public:
     bool isNodeProperty() const;
     bool isSignalHandlerProperty() const;
     bool isSignalDeclarationProperty() const;
+
+    PropertyType type() const;
 
     bool isDynamic() const;
     TypeName dynamicTypeName() const;
@@ -103,10 +110,32 @@ public:
         return ::qHash(property.m_internalNode.get()) ^ ::qHash(property.m_propertyName);
     }
 
+    friend bool operator==(const AbstractProperty &first, const AbstractProperty &second)
+    {
+        return first.m_internalNode == second.m_internalNode
+               && first.m_propertyName == second.m_propertyName;
+    }
+
+    friend bool operator!=(const AbstractProperty &first, const AbstractProperty &second)
+    {
+        return !(first == second);
+    }
+
+    friend bool operator<(const AbstractProperty &first, const AbstractProperty &second)
+    {
+        return std::tie(first.m_internalNode, first.m_propertyName)
+               < std::tie(second.m_internalNode, second.m_propertyName);
+    }
+
 protected:
-    AbstractProperty(const PropertyName &propertyName, const Internal::InternalNodePointer &internalNode, Model* model, AbstractView *view);
-    AbstractProperty(const Internal::InternalPropertyPointer &property, Model* model, AbstractView *view);
-    Internal::InternalNodePointer internalNode() const;
+    AbstractProperty(const Internal::InternalPropertyPointer &property,
+                     Model *model,
+                     AbstractView *view);
+
+    Internal::InternalNode *internalNode() const { return m_internalNode.get(); }
+
+    Internal::InternalNodePointer internalNodeSharedPointer() const { return m_internalNode; }
+
     Internal::ModelPrivate *privateModel() const;
 
 private:
@@ -116,8 +145,8 @@ private:
     QPointer<AbstractView> m_view;
 };
 
-QMLDESIGNERCORE_EXPORT bool operator ==(const AbstractProperty &property1, const AbstractProperty &property2);
-QMLDESIGNERCORE_EXPORT bool operator !=(const AbstractProperty &property1, const AbstractProperty &property2);
+using AbstractProperties = QList<AbstractProperty>;
+
 QMLDESIGNERCORE_EXPORT QTextStream& operator<<(QTextStream &stream, const AbstractProperty &property);
 QMLDESIGNERCORE_EXPORT QDebug operator<<(QDebug debug, const AbstractProperty &AbstractProperty);
 }

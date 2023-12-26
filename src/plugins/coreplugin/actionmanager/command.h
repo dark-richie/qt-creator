@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <coreplugin/core_global.h>
+#include "../core_global.h"
 
 #include <utils/hostosinfo.h>
 #include <utils/id.h>
@@ -57,6 +57,8 @@ public:
     Utils::Id id() const;
 
     QAction *action() const;
+    QAction *actionForContext(const Utils::Id &contextId) const;
+
     Context context() const;
 
     void setAttribute(CommandAttribute attr);

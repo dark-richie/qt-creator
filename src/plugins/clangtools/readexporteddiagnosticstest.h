@@ -44,11 +44,11 @@ private slots:
     void testOffsetMultiByteCodePoint2();
 
 private:
-    QString createFile(const QString &yamlFilePath, const QString &filePathToInject) const;
+    Utils::FilePath createFile(const Utils::FilePath &yamlFilePath,
+                               const Utils::FilePath &filePathToInject) const;
     Utils::FilePath filePath(const QString &fileName) const;
 
     CppEditor::Tests::TemporaryCopiedDir * const m_baseDir;
-    QString m_message;
 };
 
 } // namespace ClangTools::Internal

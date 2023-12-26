@@ -5,6 +5,8 @@
 
 #include "imagecacheauxiliarydata.h"
 
+#include <imagecache/taskqueue.h>
+
 #include <utils/smallstring.h>
 
 #include <condition_variable>
@@ -28,8 +30,8 @@ public:
 
     ~AsynchronousImageFactory();
 
-    void generate(Utils::PathString name,
-                  Utils::SmallString extraId = {},
+    void generate(Utils::SmallStringView name,
+                  Utils::SmallStringView extraId = {},
                   ImageCache::AuxiliaryData auxiliaryData = {});
     void clean();
 
@@ -37,44 +39,52 @@ private:
     struct Entry
     {
         Entry() = default;
+
         Entry(Utils::PathString name,
               Utils::SmallString extraId,
-              ImageCache::AuxiliaryData &&auxiliaryData)
+              ImageCache::AuxiliaryData &&auxiliaryData,
+              ImageCache::TraceToken traceToken)
             : name{std::move(name)}
             , extraId{std::move(extraId)}
             , auxiliaryData{std::move(auxiliaryData)}
+            , traceToken{std::move(traceToken)}
+
         {}
 
         Utils::PathString name;
         Utils::SmallString extraId;
         ImageCache::AuxiliaryData auxiliaryData;
+        NO_UNIQUE_ADDRESS ImageCache::TraceToken traceToken;
     };
 
-    void addEntry(Utils::PathString &&name,
-                  Utils::SmallString &&extraId,
-                  ImageCache::AuxiliaryData &&auxiliaryData);
-    bool isRunning();
-    void waitForEntries();
-    std::optional<Entry> getEntry();
-    void request(Utils::SmallStringView name,
-                 Utils::SmallStringView extraId,
-                 ImageCache::AuxiliaryData auxiliaryData,
-                 ImageCacheStorageInterface &storage,
-                 TimeStampProviderInterface &timeStampProvider,
-                 ImageCacheCollectorInterface &collector);
-    void wait();
-    void clearEntries();
-    void stopThread();
+    static void request(Utils::SmallStringView name,
+                        Utils::SmallStringView extraId,
+                        ImageCache::AuxiliaryData auxiliaryData,
+                        ImageCacheStorageInterface &storage,
+                        TimeStampProviderInterface &timeStampProvider,
+                        ImageCacheCollectorInterface &collector,
+                        ImageCache::TraceToken traceToken);
+
+    struct Dispatch
+    {
+        void operator()(Entry &entry);
+
+        ImageCacheStorageInterface &storage;
+        TimeStampProviderInterface &timeStampProvider;
+        ImageCacheCollectorInterface &collector;
+    };
+
+    struct Clean
+    {
+        void operator()(Entry &) {}
+    };
 
 private:
-    std::deque<Entry> m_entries;
-    std::mutex m_mutex;
-    std::condition_variable m_condition;
-    std::thread m_backgroundThread;
     ImageCacheStorageInterface &m_storage;
     TimeStampProviderInterface &m_timeStampProvider;
     ImageCacheCollectorInterface &m_collector;
-    bool m_finishing{false};
+    TaskQueue<Entry, Dispatch, Clean> m_taskQueue{Dispatch{m_storage, m_timeStampProvider, m_collector},
+                                                  Clean{}};
 };
 
 } // namespace QmlDesigner

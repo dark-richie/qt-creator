@@ -5,7 +5,7 @@ project(manual_test_debugger_gui LANGUAGES CXX)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
@@ -16,6 +16,15 @@ add_executable(manual_test_debugger_gui
   tst_gui.cpp
 )
 target_link_libraries(manual_test_debugger_gui PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+if(APPLE)
+  # codesign in a way that allows attaching a debugger and writing core files
+  add_custom_command(TARGET manual_test_debugger_gui
+    POST_BUILD
+    VERBATIM
+    COMMAND codesign -f -s "-" --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/entitlements.plist" "$<TARGET_FILE:manual_test_debugger_gui>"
+  )
+endif()
 
 if (NOT QT_CREATOR_API_DEFINED)
    if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)

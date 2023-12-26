@@ -27,12 +27,12 @@
 #include <utils/navigationtreeview.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcsettings.h>
+#include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
 
 #include <QCoreApplication>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QSettings>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QToolButton>
@@ -53,7 +53,7 @@ enum {
 
 static Snapshot globalSnapshot()
 {
-    return CppModelManager::instance()->snapshot();
+    return CppModelManager::snapshot();
 }
 
 struct FileAndLine
@@ -332,8 +332,8 @@ public:
 
     void perform();
 
-    void saveSettings(QSettings *settings, int position);
-    void restoreSettings(QSettings *settings, int position);
+    void saveSettings(QtcSettings *settings, int position);
+    void restoreSettings(QtcSettings *settings, int position);
 
 private:
     void onItemActivated(const QModelIndex &index);
@@ -382,6 +382,7 @@ CppIncludeHierarchyWidget::CppIncludeHierarchyWidget()
             this, &CppIncludeHierarchyWidget::perform);
 
     m_toggleSync = new QToolButton(this);
+    StyleHelper::setPanelWidget(m_toggleSync);
     m_toggleSync->setIcon(Utils::Icons::LINK_TOOLBAR.icon());
     m_toggleSync->setCheckable(true);
     m_toggleSync->setToolTip(Tr::tr("Synchronize with Editor"));
@@ -428,15 +429,15 @@ void CppIncludeHierarchyWidget::perform()
 
 const bool kSyncDefault = false;
 
-void CppIncludeHierarchyWidget::saveSettings(QSettings *settings, int position)
+void CppIncludeHierarchyWidget::saveSettings(QtcSettings *settings, int position)
 {
-    const QString key = QString("IncludeHierarchy.%1.SyncWithEditor").arg(position);
-    QtcSettings::setValueWithDefault(settings, key, m_toggleSync->isChecked(), kSyncDefault);
+    const Key key = keyFromString(QString("IncludeHierarchy.%1.SyncWithEditor").arg(position));
+    settings->setValueWithDefault(key, m_toggleSync->isChecked(), kSyncDefault);
 }
 
-void CppIncludeHierarchyWidget::restoreSettings(QSettings *settings, int position)
+void CppIncludeHierarchyWidget::restoreSettings(QtcSettings *settings, int position)
 {
-    const QString key = QString("IncludeHierarchy.%1.SyncWithEditor").arg(position);
+    const Key key = keyFromString(QString("IncludeHierarchy.%1.SyncWithEditor").arg(position));
     m_toggleSync->setChecked(settings->value(key, kSyncDefault).toBool());
 }
 
@@ -530,7 +531,7 @@ void CppIncludeHierarchyFactory::saveSettings(QtcSettings *settings, int positio
     hierarchyWidget(widget)->saveSettings(settings, position);
 }
 
-void CppIncludeHierarchyFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
+void CppIncludeHierarchyFactory::restoreSettings(QtcSettings *settings, int position, QWidget *widget)
 {
     hierarchyWidget(widget)->restoreSettings(settings, position);
 }

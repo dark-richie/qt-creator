@@ -4,16 +4,16 @@
 #include "cmaketoolsettingsaccessor.h"
 
 #include "cmakeprojectmanagertr.h"
+#include "cmakespecificsettings.h"
 #include "cmaketool.h"
 
 #include <coreplugin/icore.h>
-
-#include <app/app_version.h>
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
 
 #include <QDebug>
+#include <QGuiApplication>
 
 using namespace Utils;
 
@@ -30,7 +30,7 @@ public:
     CMakeToolSettingsUpgraderV0() : VersionUpgrader(0, "4.6") { }
 
     // NOOP
-    QVariantMap upgrade(const QVariantMap &data) final { return data; }
+    Store upgrade(const Store &data) final { return data; }
 };
 
 // --------------------------------------------------------------------
@@ -44,36 +44,26 @@ const char CMAKE_TOOL_FILENAME[] = "cmaketools.xml";
 
 static std::vector<std::unique_ptr<CMakeTool>> autoDetectCMakeTools()
 {
-    Environment env = Environment::systemEnvironment();
-
-    FilePaths path = env.path();
-    path = Utils::filteredUnique(path);
+    FilePaths extraDirs;
 
     if (HostOsInfo::isWindowsHost()) {
         for (const auto &envVar : QStringList{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"}) {
             if (qtcEnvironmentVariableIsSet(envVar)) {
                 const QString progFiles = qtcEnvironmentVariable(envVar);
-                path.append(FilePath::fromUserInput(progFiles + "/CMake"));
-                path.append(FilePath::fromUserInput(progFiles + "/CMake/bin"));
+                extraDirs.append(FilePath::fromUserInput(progFiles + "/CMake"));
+                extraDirs.append(FilePath::fromUserInput(progFiles + "/CMake/bin"));
             }
         }
     }
 
     if (HostOsInfo::isMacHost()) {
-        path.append("/Applications/CMake.app/Contents/bin");
-        path.append("/usr/local/bin");    // homebrew intel
-        path.append("/opt/homebrew/bin"); // homebrew arm
-        path.append("/opt/local/bin");    // macports
+        extraDirs.append("/Applications/CMake.app/Contents/bin");
+        extraDirs.append("/usr/local/bin");    // homebrew intel
+        extraDirs.append("/opt/homebrew/bin"); // homebrew arm
+        extraDirs.append("/opt/local/bin");    // macports
     }
 
-    FilePaths suspects;
-    for (const FilePath &base : std::as_const(path)) {
-        if (base.isEmpty())
-            continue;
-        const FilePath suspect = base / "cmake";
-        if (std::optional<FilePath> foundExe = suspect.refersToExecutableFile(FilePath::WithAnySuffix))
-            suspects << *foundExe;
-    }
+    const FilePaths suspects = FilePath("cmake").searchAllInPath(extraDirs);
 
     std::vector<std::unique_ptr<CMakeTool>> found;
     for (const FilePath &command : std::as_const(suspects)) {
@@ -138,11 +128,10 @@ mergeTools(std::vector<std::unique_ptr<CMakeTool>> &sdkTools,
 // CMakeToolSettingsAccessor:
 // --------------------------------------------------------------------
 
-CMakeToolSettingsAccessor::CMakeToolSettingsAccessor() :
-    UpgradingSettingsAccessor("QtCreatorCMakeTools",
-                              Tr::tr("CMake"),
-                              Core::Constants::IDE_DISPLAY_NAME)
+CMakeToolSettingsAccessor::CMakeToolSettingsAccessor()
 {
+    setDocType("QtCreatorCMakeTools");
+    setApplicationDisplayName(QGuiApplication::applicationDisplayName());
     setBaseFilePath(Core::ICore::userResourcePath(CMAKE_TOOL_FILENAME));
 
     addVersionUpgrader(std::make_unique<CMakeToolSettingsUpgraderV0>());
@@ -181,38 +170,43 @@ void CMakeToolSettingsAccessor::saveCMakeTools(const QList<CMakeTool *> &cmakeTo
                                                const Id &defaultId,
                                                QWidget *parent)
 {
-    QVariantMap data;
-    data.insert(QLatin1String(CMAKE_TOOL_DEFAULT_KEY), defaultId.toSetting());
+    Store data;
+    data.insert(CMAKE_TOOL_DEFAULT_KEY, defaultId.toSetting());
 
     int count = 0;
-    for (const CMakeTool *item : cmakeTools) {
+    const bool autoRun = settings().autorunCMake();
+    for (CMakeTool *item : cmakeTools) {
         Utils::FilePath fi = item->cmakeExecutable();
 
+        // Gobal Autorun value will be set for all tools
+        // TODO: Remove in Qt Creator 13
+        item->setAutorun(autoRun);
+
         if (fi.needsDevice() || fi.isExecutableFile()) { // be graceful for device related stuff
-            QVariantMap tmp = item->toMap();
+            Store tmp = item->toMap();
             if (tmp.isEmpty())
                 continue;
-            data.insert(QString::fromLatin1(CMAKE_TOOL_DATA_KEY) + QString::number(count), tmp);
+            data.insert(numberedKey(CMAKE_TOOL_DATA_KEY, count), variantFromStore(tmp));
             ++count;
         }
     }
-    data.insert(QLatin1String(CMAKE_TOOL_COUNT_KEY), count);
+    data.insert(CMAKE_TOOL_COUNT_KEY, count);
 
     saveSettings(data, parent);
 }
 
 CMakeToolSettingsAccessor::CMakeTools
-CMakeToolSettingsAccessor::cmakeTools(const QVariantMap &data, bool fromSdk) const
+CMakeToolSettingsAccessor::cmakeTools(const Store &data, bool fromSdk) const
 {
     CMakeTools result;
 
-    int count = data.value(QLatin1String(CMAKE_TOOL_COUNT_KEY), 0).toInt();
+    int count = data.value(CMAKE_TOOL_COUNT_KEY, 0).toInt();
     for (int i = 0; i < count; ++i) {
-        const QString key = QString::fromLatin1(CMAKE_TOOL_DATA_KEY) + QString::number(i);
+        const Key key = numberedKey(CMAKE_TOOL_DATA_KEY, i);
         if (!data.contains(key))
             continue;
 
-        const QVariantMap dbMap = data.value(key).toMap();
+        const Store dbMap = storeFromVariant(data.value(key));
         auto item = std::make_unique<CMakeTool>(dbMap, fromSdk);
         const FilePath cmakeExecutable = item->cmakeExecutable();
         if (item->isAutoDetected() && !cmakeExecutable.needsDevice() && !cmakeExecutable.isExecutableFile()) {

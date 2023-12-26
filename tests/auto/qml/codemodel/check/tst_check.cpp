@@ -64,7 +64,8 @@ void tst_Check::initTestCase()
     // the resource path is wrong, have to load things manually
     QFileInfo builtins(resourcePath() + "/qml-type-descriptions/builtins.qmltypes");
     QStringList errors, warnings;
-    CppQmlTypesLoader::defaultQtObjects = CppQmlTypesLoader::loadQmlTypes(QFileInfoList() << builtins, &errors, &warnings);
+    CppQmlTypesLoader::defaultQtObjects()
+        = CppQmlTypesLoader::loadQmlTypes(QFileInfoList() << builtins, &errors, &warnings);
 
     if (!ModelManagerInterface::instance())
         new ModelManagerInterface;
@@ -73,7 +74,7 @@ void tst_Check::initTestCase()
     ModelManagerInterface *modelManager = ModelManagerInterface::instance();
 
     PathsAndLanguages lPaths;
-    QStringList paths(QLibraryInfo::location(QLibraryInfo::Qml2ImportsPath));
+    QStringList paths(QLibraryInfo::path(QLibraryInfo::Qml2ImportsPath));
     for (auto p: paths)
         lPaths.maybeInsert(Utils::FilePath::fromString(p), Dialect::Qml);
     ModelManagerInterface::importScan(ModelManagerInterface::workingCopy(), lPaths,

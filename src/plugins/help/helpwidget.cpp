@@ -30,6 +30,7 @@
 #include <texteditor/texteditorconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
+#include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
 
 #include <QComboBox>
@@ -228,15 +229,18 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
         m_toggleSideBarAction->setChecked(false);
         cmd = Core::ActionManager::registerAction(m_toggleSideBarAction,
                                                   Core::Constants::TOGGLE_LEFT_SIDEBAR, context);
-        connect(m_toggleSideBarAction, &QAction::toggled, m_toggleSideBarAction, [this](bool checked) {
-            m_toggleSideBarAction->setText(::Core::Tr::tr(
-                                               checked ? Core::Constants::TR_HIDE_LEFT_SIDEBAR
-                                                       : Core::Constants::TR_SHOW_LEFT_SIDEBAR));
-        });
+        connect(m_toggleSideBarAction,
+                &QAction::toggled,
+                m_toggleSideBarAction,
+                [this](bool checked) {
+                    m_toggleSideBarAction->setToolTip(
+                        ::Core::Tr::tr(checked ? Core::Constants::TR_HIDE_LEFT_SIDEBAR
+                                               : Core::Constants::TR_SHOW_LEFT_SIDEBAR));
+                });
         addSideBar();
         m_toggleSideBarAction->setChecked(m_sideBar->isVisibleTo(this));
         connect(m_toggleSideBarAction, &QAction::triggered, m_sideBar, &Core::SideBar::setVisible);
-        connect(m_sideBar, &Core::SideBar::sideBarClosed, m_toggleSideBarAction, [this]() {
+        connect(m_sideBar, &Core::SideBar::sideBarClosed, m_toggleSideBarAction, [this] {
             m_toggleSideBarAction->setChecked(false);
         });
         if (style == ExternalWindow) {
@@ -319,17 +323,14 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
     cmd = Core::ActionManager::registerAction(helpTargetAction, "Help.OpenContextHelpHere", context);
     QToolButton *helpTargetButton = Core::Command::toolButtonWithAppendedShortcut(helpTargetAction,
                                                                                   cmd);
-    helpTargetButton->setProperty("noArrow", true);
+    helpTargetButton->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
     helpTargetButton->setPopupMode(QToolButton::DelayedPopup);
     helpTargetButton->setMenu(createHelpTargetMenu(helpTargetButton));
-    connect(LocalHelpManager::instance(),
-            &LocalHelpManager::contextHelpOptionChanged,
+    connect(LocalHelpManager::instance(), &LocalHelpManager::contextHelpOptionChanged, this,
             [this, helpTargetAction] {
                 helpTargetAction->setChecked(isTargetOfContextHelp(m_style));
             });
-    connect(helpTargetAction,
-            &QAction::triggered,
-            this,
+    connect(helpTargetAction, &QAction::triggered, this,
             [this, helpTargetAction, helpTargetButton](bool checked) {
                 if (checked) {
                     LocalHelpManager::setContextHelpOption(optionForStyle(m_style));
@@ -385,7 +386,7 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
 
     m_printAction = new QAction(this);
     Core::ActionManager::registerAction(m_printAction, Core::Constants::PRINT, context);
-    connect(m_printAction, &QAction::triggered, this, [this]() { print(currentViewer()); });
+    connect(m_printAction, &QAction::triggered, this, [this] { print(currentViewer()); });
 
     m_copy = new QAction(this);
     Core::ActionManager::registerAction(m_copy, Core::Constants::COPY, context);
@@ -416,7 +417,7 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
     auto openButton = new QToolButton;
     openButton->setIcon(Utils::Icons::SPLIT_HORIZONTAL_TOOLBAR.icon());
     openButton->setPopupMode(QToolButton::InstantPopup);
-    openButton->setProperty("noArrow", true);
+    openButton->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
     layout->addWidget(openButton);
     auto openMenu = new QMenu(openButton);
     openButton->setMenu(openMenu);
@@ -425,20 +426,20 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
         openMenu->addAction(m_switchToHelp);
     if (style != SideBarWidget) {
         QAction *openSideBySide = openMenu->addAction(Tr::tr("Open in Edit Mode"));
-        connect(openSideBySide, &QAction::triggered, this, [this]() {
+        connect(openSideBySide, &QAction::triggered, this, [this] {
             postRequestShowHelpUrl(Core::HelpManager::SideBySideAlways);
         });
     }
     if (supportsPages()) {
         QAction *openPage = openMenu->addAction(Tr::tr("Open in New Page"));
-        connect(openPage, &QAction::triggered, this, [this]() {
+        connect(openPage, &QAction::triggered, this, [this] {
             if (HelpViewer *viewer = currentViewer())
                 openNewPage(viewer->source());
         });
     }
     if (style != ExternalWindow) {
         QAction *openExternal = openMenu->addAction(Tr::tr("Open in Window"));
-        connect(openExternal, &QAction::triggered, this, [this]() {
+        connect(openExternal, &QAction::triggered, this, [this] {
             postRequestShowHelpUrl(Core::HelpManager::ExternalHelpAlways);
         });
     }
@@ -457,7 +458,7 @@ HelpWidget::HelpWidget(const Core::Context &context, WidgetStyle style, QWidget 
     layout->addWidget(button);
 
     QAction *reload = openMenu->addAction(Tr::tr("Reload"));
-    connect(reload, &QAction::triggered, this, [this]() {
+    connect(reload, &QAction::triggered, this, [this] {
         const int index = m_viewerStack->currentIndex();
         HelpViewer *previous = currentViewer();
         insertViewer(index, previous->source());
@@ -620,20 +621,20 @@ void HelpWidget::addSideBar()
     m_sideBar->readSettings(Core::ICore::settings(), sideBarSettingsKey());
     m_sideBarSplitter->setSizes(QList<int>() << m_sideBar->size().width() << 300);
 
-    connect(m_contentsAction, &QAction::triggered, m_sideBar, [this]() {
+    connect(m_contentsAction, &QAction::triggered, m_sideBar, [this] {
         m_sideBar->activateItem(Constants::HELP_CONTENTS);
     });
-    connect(m_indexAction, &QAction::triggered, m_sideBar, [this]() {
+    connect(m_indexAction, &QAction::triggered, m_sideBar, [this] {
         m_sideBar->activateItem(Constants::HELP_INDEX);
     });
-    connect(m_bookmarkAction, &QAction::triggered, m_sideBar, [this]() {
+    connect(m_bookmarkAction, &QAction::triggered, m_sideBar, [this] {
         m_sideBar->activateItem(Constants::HELP_BOOKMARKS);
     });
-    connect(m_searchAction, &QAction::triggered, m_sideBar, [this]() {
+    connect(m_searchAction, &QAction::triggered, m_sideBar, [this] {
         m_sideBar->activateItem(Constants::HELP_SEARCH);
     });
     if (m_openPagesAction) {
-        connect(m_openPagesAction, &QAction::triggered, m_sideBar, [this]() {
+        connect(m_openPagesAction, &QAction::triggered, m_sideBar, [this] {
             m_sideBar->activateItem(Constants::HELP_OPENPAGES);
         });
     }
@@ -694,6 +695,8 @@ HelpViewer *HelpWidget::insertViewer(int index, const QUrl &url)
         if (currentViewer() == viewer) {
             m_addBookmarkAction->setEnabled(isBookmarkable(url));
             m_openOnlineDocumentationAction->setEnabled(LocalHelpManager::canOpenOnlineHelp(url));
+            if (m_switchToHelp)
+                m_switchToHelp->setEnabled(url != QUrl("about:blank"));
         }
     });
     connect(viewer, &HelpViewer::forwardAvailable, this, [viewer, this](bool available) {

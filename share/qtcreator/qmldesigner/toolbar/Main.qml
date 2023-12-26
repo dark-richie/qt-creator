@@ -26,26 +26,75 @@ Rectangle {
         anchors.fill: parent
         visible: !backend.isInDesignMode
 
-        ToolbarButton {
-            id: homeOther
-            anchors.verticalCenter: parent.verticalCenter
+        Rectangle {
+            id: returnExtended
+            height: homeOther.height
+            width: backTo.visible ? (homeOther.width + backTo.width + contentRow.spacing + 6) : homeOther.width
+            anchors.verticalCenter: topToolbarOtherMode.verticalCenter
             anchors.left: parent.left
             anchors.leftMargin: 10
-            tooltip: backend.isDesignModeEnabled ? qsTr("Switch to Design Mode.")
-                                                 : qsTr("Switch to Welcome Mode.")
-            buttonIcon: backend.isDesignModeEnabled ? StudioTheme.Constants.designMode_large
-                                                    : StudioTheme.Constants.home_large
-            onClicked: backend.triggerModeChange()
-        }
+            color: StudioTheme.Values.themeToolbarBackground
+            radius: StudioTheme.Values.smallRadius
+            state: "default"
 
-        Text {
-            id: backTo
-            visible: backend.isDesignModeEnabled
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Return to Design")
-            anchors.left: homeOther.right
-            anchors.leftMargin: 10
-            color: StudioTheme.Values.themeTextColor
+            Row {
+                id: contentRow
+                spacing: 6
+                anchors.fill: parent
+
+                ToolbarButton {
+                    id: homeOther
+                    tooltip: backend.isDesignModeEnabled ? qsTr("Switch to Design Mode.")
+                                                         : qsTr("Switch to Welcome Mode.")
+                    buttonIcon: backend.isDesignModeEnabled ? StudioTheme.Constants.designMode_large
+                                                            : StudioTheme.Constants.home_large
+                    hover: mouseArea.containsMouse
+                    press: mouseArea.pressed
+
+                    onClicked: backend.triggerModeChange()
+
+                }
+
+                Text {
+                    id: backTo
+                    height: homeOther.height
+                    visible: backend.isDesignModeEnabled
+                    horizontalAlignment: Text.AlignLeft
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("Return to Design")
+                    color: StudioTheme.Values.themeTextColor
+                }
+            }
+
+            MouseArea{
+                id: mouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: homeOther.onClicked()
+            }
+
+            states: [
+                State {
+                    name: "default"
+                    when: !mouseArea.containsMouse && !mouseArea.pressed
+                },
+                State {
+                    name: "hover"
+                    when: mouseArea.containsMouse && !mouseArea.pressed
+                    PropertyChanges {
+                        target: returnExtended
+                        color: StudioTheme.Values.themeControlBackground_topToolbarHover
+                    }
+                },
+                State {
+                    name: "pressed"
+                    when: mouseArea.pressed
+                    PropertyChanges {
+                        target: returnExtended
+                        color: StudioTheme.Values.themeInteraction
+                    }
+                }
+            ]
         }
     }
 
@@ -215,7 +264,7 @@ Rectangle {
         ToolbarButton {
             id: enterComponent
             anchors.verticalCenter: parent.verticalCenter
-            anchors.right: workspaces.left
+            anchors.right: lockWorkspace.left
             anchors.rightMargin: 10
             enabled: goIntoComponentBackend.available
             tooltip: goIntoComponentBackend.tooltip
@@ -230,6 +279,22 @@ Rectangle {
             }
         }
 
+        ToolbarButton {
+            id: lockWorkspace
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: workspaces.left
+            anchors.rightMargin: 10
+            tooltip: qsTr("Sets the visible <b>Views</b> to immovable across the Workspaces.")
+            buttonIcon: backend.lockWorkspace ? StudioTheme.Constants.lockOn
+                                              : StudioTheme.Constants.lockOff
+            visible: !root.flyoutEnabled
+            checkable: true
+            checked: backend.lockWorkspace
+            checkedInverted: true
+
+            onClicked: backend.setLockWorkspace(lockWorkspace.checked)
+        }
+
         StudioControls.TopLevelComboBox {
             id: workspaces
             style: StudioTheme.Values.toolbarStyle
@@ -237,28 +302,31 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: annotations.left
             anchors.rightMargin: 10
-            model: backend.workspaces
-            suffix: qsTr(" Workspace")
-            property int currentWorkspaceIndex: workspaces.find(backend.currentWorkspace)
-            onCurrentWorkspaceIndexChanged: workspaces.currentIndex = workspaces.currentWorkspaceIndex
-
             visible: !root.flyoutEnabled
+            model: WorkspaceModel { id: workspaceModel }
+            textRole: "displayName"
+            valueRole: "fileName"
+            suffix: qsTr(" Workspace")
 
-            onActivated: backend.setCurrentWorkspace(workspaces.currentText)
+            property int currentWorkspaceIndex: workspaces.indexOfValue(backend.currentWorkspace)
+
+            onCurrentWorkspaceIndexChanged: workspaces.currentIndex = workspaces.currentWorkspaceIndex
+            onActivated: backend.setCurrentWorkspace(workspaces.currentValue)
+            onCountChanged: workspaces.currentIndex = workspaces.indexOfValue(backend.currentWorkspace)
         }
 
         ToolbarButton {
             id: annotations
             visible: false
+            enabled: backend.isInDesignMode
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: shareButton.left
             anchors.rightMargin: 10
+            width: 0
             tooltip: qsTr("Edit Annotations")
             buttonIcon: StudioTheme.Constants.annotations_large
-            //visible: !root.flyoutEnabled
 
             onClicked: backend.editGlobalAnnoation()
-            width: 0
         }
 
         ToolbarButton {
@@ -374,6 +442,19 @@ Rectangle {
                         }
 
                         ToolbarButton {
+                            id: lockWorkspaceFlyout
+                            style: StudioTheme.Values.statusbarButtonStyle
+                            anchors.verticalCenter: parent.verticalCenter
+                            tooltip: lockWorkspace.tooltip
+                            buttonIcon: backend.lockWorkspace ? StudioTheme.Constants.lockOn
+                                                              : StudioTheme.Constants.lockOff
+                            checkable: true
+                            checked: backend.lockWorkspace
+
+                            onClicked: backend.setLockWorkspace(lockWorkspaceFlyout.checked)
+                        }
+
+                        ToolbarButton {
                             anchors.verticalCenter: parent.verticalCenter
                             style: StudioTheme.Values.primaryToolbarStyle
                             width: shareButton.width
@@ -391,10 +472,13 @@ Rectangle {
                         style: StudioTheme.Values.statusbarControlStyle
                         width: row.width
                         maximumPopupHeight: 400
-                        model: backend.workspaces
-                        currentIndex: workspacesFlyout.find(backend.currentWorkspace)
+                        model: workspaceModel
+                        textRole: "displayName"
+                        valueRole: "fileName"
+                        currentIndex: workspacesFlyout.indexOfValue(backend.currentWorkspace)
 
-                        onCompressedActivated: backend.setCurrentWorkspace(workspacesFlyout.currentText)
+                        onCompressedActivated: backend.setCurrentWorkspace(workspacesFlyout.currentValue)
+                        onCountChanged: workspacesFlyout.currentIndex = workspacesFlyout.indexOfValue(backend.currentWorkspace)
                     }
                 }
             }

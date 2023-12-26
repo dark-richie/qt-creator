@@ -5,33 +5,33 @@
 
 #include "languageclient_global.h"
 
-#include <coreplugin/find/searchresultitem.h>
 #include <texteditor/textdocument.h>
 
 #include <languageserverprotocol/languagefeatures.h>
 
+#include <utils/searchresultitem.h>
+
 #include <functional>
 
-namespace Core {
-class SearchResult;
-class SearchResultItem;
-}
-
+namespace Core { class SearchResult; }
 namespace LanguageServerProtocol { class MessageId; }
 
 namespace LanguageClient {
 
 class Client;
+enum class LinkTarget { SymbolDef, SymbolTypeDef, SymbolImplementation };
 
 class LANGUAGECLIENT_EXPORT SymbolSupport : public QObject
 {
 public:
     explicit SymbolSupport(Client *client);
 
-    void findLinkAt(TextEditor::TextDocument *document,
-                    const QTextCursor &cursor,
-                    Utils::LinkHandler callback,
-                    const bool resolveTarget);
+    bool supportsFindLink(TextEditor::TextDocument *document, LinkTarget target) const;
+    LanguageServerProtocol::MessageId findLinkAt(TextEditor::TextDocument *document,
+                                                 const QTextCursor &cursor,
+                                                 Utils::LinkHandler callback,
+                                                 const bool resolveTarget,
+                                                 const LinkTarget target);
 
     bool supportsFindUsages(TextEditor::TextDocument *document) const;
     using ResultHandler = std::function<void(const QList<LanguageServerProtocol::Location> &)>;
@@ -46,13 +46,16 @@ public:
                       const std::function<void()> &callback = {},
                       bool preferLowerCaseFileNames = true);
 
-    static Core::Search::TextRange convertRange(const LanguageServerProtocol::Range &range);
+    static Utils::Text::Range convertRange(const LanguageServerProtocol::Range &range);
     static QStringList getFileContents(const Utils::FilePath &filePath);
 
     using SymbolMapper = std::function<QString(const QString &)>;
     void setDefaultRenamingSymbolMapper(const SymbolMapper &mapper);
 
     void setLimitRenamingToProjects(bool limit) { m_limitRenamingToProjects = limit; }
+
+    using RenameResultsEnhancer = std::function<Utils::SearchResultItems(const Utils::SearchResultItems &)>;
+    void setRenameResultsEnhancer(const RenameResultsEnhancer &enhancer);
 
 private:
     void handleFindReferencesResponse(
@@ -76,11 +79,13 @@ private:
                            const std::function<void()> &callback, bool preferLowerCaseFileNames);
     void handleRenameResponse(Core::SearchResult *search,
                               const LanguageServerProtocol::RenameRequest::Response &response);
-    void applyRename(const QList<Core::SearchResultItem> &checkedItems, Core::SearchResult *search);
+    void applyRename(const Utils::SearchResultItems &checkedItems, Core::SearchResult *search);
     QString derivePlaceholder(const QString &oldSymbol, const QString &newSymbol);
 
     Client *m_client = nullptr;
     SymbolMapper m_defaultSymbolMapper;
+    RenameResultsEnhancer m_renameResultsEnhancer;
+    QHash<Core::SearchResult *, LanguageServerProtocol::MessageId> m_renameRequestIds;
     bool m_limitRenamingToProjects = false;
 };
 

@@ -3,7 +3,7 @@
 
 #include "configurationdialog.h"
 
-#include "abstractsettings.h"
+#include "beautifiertool.h"
 #include "beautifiertr.h"
 #include "configurationeditor.h"
 
@@ -40,7 +40,7 @@ ConfigurationDialog::ConfigurationDialog(QWidget *parent)
     m_buttonBox->setOrientation(Qt::Horizontal);
     m_buttonBox->setStandardButtons(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     Column {
         Group {

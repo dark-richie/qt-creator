@@ -35,7 +35,7 @@ public:
         rpp.setQtVersion(Utils::QtMajorVersion::Qt5);
         rpp.setHeaderPaths(headerPaths);
         rpp.setConfigFileName(projectConfigFile);
-        ToolChainInfo tcInfo;
+        ToolchainInfo tcInfo;
         tcInfo.type = toolchainType;
         tcInfo.targetTriple = targetTriple;
         tcInfo.abi = Abi::fromString(targetTriple);
@@ -46,7 +46,7 @@ public:
         tcInfo.isMsvc2015ToolChain = isMsvc2015;
         tcInfo.extraCodeModelFlags = extraFlags;
         tcInfo.macroInspectionRunner = [this](const QStringList &) {
-            return ToolChain::MacroInspectionReport{toolchainMacros, languageVersion};
+            return Toolchain::MacroInspectionReport{toolchainMacros, languageVersion};
         };
         RawProjectPartFlags rppFlags;
         rppFlags.commandLineFlags = flags;
@@ -281,6 +281,8 @@ void CompilerOptionsBuilderTest::testClangHeadersAndCppIncludePathsOrderLinux()
         t.builtIn("/usr/local/include"),
         t.builtIn("/usr/lib/gcc/x86_64-linux-gnu/4.8/include"),
         t.builtIn("/usr/include/x86_64-linux-gnu"),
+        t.builtIn("/usr/lib64/clang/16/include"),
+        t.builtIn("/usr/lib/clang/15.0.7/include"),
         t.builtIn("/usr/include")};
     CompilerOptionsBuilder compilerOptionsBuilder(t.finalize(), UseSystemHeader::No,
                 UseTweakedHeaderPaths::Yes, UseLanguageDefines::No, UseBuildSystemWarnings::No,

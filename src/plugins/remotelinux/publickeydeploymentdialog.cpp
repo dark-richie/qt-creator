@@ -10,25 +10,22 @@
 #include <projectexplorer/devicesupport/sshsettings.h>
 
 #include <utils/filepath.h>
-#include <utils/qtcprocess.h>
+#include <utils/fileutils.h>
+#include <utils/process.h>
 #include <utils/stringutils.h>
 #include <utils/theme/theme.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace RemoteLinux {
-namespace Internal {
+namespace RemoteLinux::Internal {
 
 class PublicKeyDeploymentDialogPrivate
 {
 public:
-    QtcProcess m_process;
+    Process m_process;
     bool m_done;
 };
-} // namespace Internal;
-
-using namespace Internal;
 
 PublicKeyDeploymentDialog *PublicKeyDeploymentDialog::createDialog(
         const IDevice::ConstPtr &deviceConfig, QWidget *parent)
@@ -56,7 +53,7 @@ PublicKeyDeploymentDialog::PublicKeyDeploymentDialog(const IDevice::ConstPtr &de
     setValue(0);
     connect(this, &PublicKeyDeploymentDialog::canceled, this,
             [this] { d->m_done ? accept() : reject(); });
-    connect(&d->m_process, &QtcProcess::done, this, [this] {
+    connect(&d->m_process, &Process::done, this, [this] {
         const bool succeeded = d->m_process.result() == ProcessResult::FinishedWithSuccess;
         QString finalMessage;
         if (!succeeded) {
@@ -128,4 +125,4 @@ void PublicKeyDeploymentDialog::handleDeploymentDone(bool succeeded, const QStri
     d->m_done = true;
 }
 
-} // namespace RemoteLinux
+} // namespace RemoteLinux::Internal

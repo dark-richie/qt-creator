@@ -3,25 +3,24 @@
 
 #include "documentmanager.h"
 
+#include "actionmanager/actioncontainer.h"
+#include "actionmanager/actionmanager.h"
+#include "actionmanager/command.h"
 #include "coreconstants.h"
 #include "coreplugintr.h"
+#include "diffservice.h"
+#include "dialogs/filepropertiesdialog.h"
+#include "dialogs/readonlyfilesdialog.h"
+#include "dialogs/saveitemsdialog.h"
+#include "editormanager/editormanager.h"
+#include "editormanager/editormanager_p.h"
+#include "editormanager/editorview.h"
+#include "editormanager/ieditor.h"
+#include "editormanager/ieditorfactory.h"
 #include "icore.h"
 #include "idocument.h"
 #include "idocumentfactory.h"
-
-#include <coreplugin/actionmanager/actioncontainer.h>
-#include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/actionmanager/command.h>
-#include <coreplugin/diffservice.h>
-#include <coreplugin/dialogs/filepropertiesdialog.h>
-#include <coreplugin/dialogs/readonlyfilesdialog.h>
-#include <coreplugin/dialogs/saveitemsdialog.h>
-#include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/editormanager/editormanager_p.h>
-#include <coreplugin/editormanager/editorview.h>
-#include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/editormanager/ieditorfactory.h>
-#include <coreplugin/editormanager/iexternaleditor.h>
+#include "systemsettings.h"
 
 #include <extensionsystem/pluginmanager.h>
 
@@ -47,7 +46,6 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
-#include <QSettings>
 #include <QStringList>
 #include <QTimer>
 
@@ -721,7 +719,7 @@ bool DocumentManager::saveDocument(IDocument *document,
     bool addWatcher = removeDocument(document); // So that our own IDocument gets no notification at all
 
     QString errorString;
-    if (!document->save(&errorString, filePath, false)) {
+    if (!document->save(&errorString, savePath, false)) {
         if (isReadOnly) {
             QFile ofi(savePath.toString());
             // Check whether the existing file is writable
@@ -856,7 +854,7 @@ FilePath DocumentManager::getSaveFileNameWithExtension(const QString &title, con
 FilePath DocumentManager::getSaveAsFileName(const IDocument *document)
 {
     QTC_ASSERT(document, return {});
-    const QString filter = allDocumentFactoryFiltersString();
+    QString filter = allDocumentFactoryFiltersString();
     const FilePath filePath = document->filePath();
     QString selectedFilter;
     FilePath fileDialogPath = filePath;
@@ -875,6 +873,9 @@ FilePath DocumentManager::getSaveAsFileName(const IDocument *document)
     }
     if (selectedFilter.isEmpty())
         selectedFilter = Utils::mimeTypeForName(document->mimeType()).filterString();
+
+    if (!filter.contains(selectedFilter))
+        filter.prepend(selectedFilter + QLatin1String(";;"));
 
     return getSaveFileName(Tr::tr("Save File As"),
                            fileDialogPath,
@@ -1027,6 +1028,10 @@ void DocumentManager::showFilePropertiesDialog(const FilePath &filePath)
     and \a selectedFilter arguments are interpreted like in
     QFileDialog::getOpenFileNames(). \a pathIn specifies a path to open the
     dialog in if that is not overridden by the user's policy.
+
+    The \a options argument holds various options about how to run the dialog.
+    See the QFileDialog::Option enum for more information about the flags you
+    can pass.
 */
 
 FilePaths DocumentManager::getOpenFileNames(const QString &filters,
@@ -1329,7 +1334,8 @@ void DocumentManager::addToRecentFiles(const FilePath &filePath, Id editorId)
     Utils::erase(d->m_recentFiles, [fileKey](const RecentFile &file) {
         return fileKey == filePathKey(file.first, DocumentManager::KeepLinks);
     });
-    while (d->m_recentFiles.count() >= EditorManagerPrivate::maxRecentFiles())
+    const int maxRecentFiles = systemSettings().maxRecentFiles();
+    while (d->m_recentFiles.count() >= maxRecentFiles)
         d->m_recentFiles.removeLast();
     d->m_recentFiles.prepend(RecentFile(filePath, editorId));
 }
@@ -1392,22 +1398,22 @@ void restoreRecentFiles(const QVariantList &recentFiles, const QStringList &rece
 
 void readSettings()
 {
-    QSettings *s = ICore::settings();
+    QtcSettings *s = ICore::settings();
     d->m_recentFiles.clear();
-    s->beginGroup(QLatin1String(settingsGroupC));
-    const QVariantList recentFiles = s->value(QLatin1String(filesKeyC)).toList();
-    const QStringList recentEditorIds = s->value(QLatin1String(editorsKeyC)).toStringList();
+    s->beginGroup(settingsGroupC);
+    const QVariantList recentFiles = s->value(filesKeyC).toList();
+    const QStringList recentEditorIds = s->value(editorsKeyC).toStringList();
     s->endGroup();
 
     restoreRecentFiles(recentFiles, recentEditorIds);
 
-    s->beginGroup(QLatin1String(directoryGroupC));
+    s->beginGroup(directoryGroupC);
 
     d->m_projectsDirectory = FilePath::fromSettings(
-        s->value(QLatin1String(projectDirectoryKeyC), PathChooser::homePath().toSettings()));
+        s->value(projectDirectoryKeyC, PathChooser::homePath().toSettings()));
 
     d->m_useProjectsDirectory
-        = s->value(QLatin1String(useProjectDirectoryKeyC), kUseProjectsDirectoryDefault).toBool();
+        = s->value(useProjectDirectoryKeyC, kUseProjectsDirectoryDefault).toBool();
 
     s->endGroup();
 }

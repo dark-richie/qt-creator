@@ -60,7 +60,20 @@ Project {
     }
 
     Files {
+        filter: "*.qsb"
+    }
+
+    Files {
+        filter: "*.json"
+    }
+
+    Files {
         filter: "*.mesh"
+        directory: "asset_imports"
+    }
+
+    Files {
+        filter: "*.qad"
         directory: "asset_imports"
     }
 
@@ -101,7 +114,7 @@ Project {
     /* Required for deployment */
     targetDirectory: "/opt/%{ProjectName}"
 
-    qdsVersion: "4.0"
+    qdsVersion: "4.3"
 
     quickVersion: "%{QtQuickVersion}"
 

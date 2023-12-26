@@ -4,6 +4,7 @@
 #include "pythonlanguageclient.h"
 
 #include "pipsupport.h"
+#include "pythonbuildconfiguration.h"
 #include "pysideuicextracompiler.h"
 #include "pythonconstants.h"
 #include "pythonplugin.h"
@@ -22,6 +23,8 @@
 #include <languageserverprotocol/textsynchronization.h>
 #include <languageserverprotocol/workspace.h>
 
+#include <projectexplorer/buildconfiguration.h>
+#include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/extracompiler.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
@@ -29,9 +32,9 @@
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/infobar.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/variablechooser.h>
 
 #include <QCheckBox>
@@ -69,63 +72,33 @@ static QHash<FilePath, PyLSClient*> &pythonClients()
     return clients;
 }
 
-FilePath getPylsModulePath(CommandLine pylsCommand)
+static FilePath pyLspPath(const FilePath &python)
 {
-    static QMutex mutex; // protect the access to the cache
-    QMutexLocker locker(&mutex);
-    static QMap<FilePath, FilePath> cache;
-    const FilePath &modulePath = cache.value(pylsCommand.executable());
-    if (!modulePath.isEmpty())
-        return modulePath;
-
-    pylsCommand.addArg("-h");
-
-    QtcProcess pythonProcess;
-    Environment env = pythonProcess.environment();
-    env.set("PYTHONVERBOSE", "x");
-    pythonProcess.setEnvironment(env);
-    pythonProcess.setCommand(pylsCommand);
-    pythonProcess.runBlocking();
-
-    static const QString pylsInitPattern = "(.*)"
-                                           + QRegularExpression::escape(
-                                               QDir::toNativeSeparators("/pylsp/__init__.py"))
-                                           + '$';
-    static const QRegularExpression regexCached(" matches " + pylsInitPattern,
-                                                QRegularExpression::MultilineOption);
-    static const QRegularExpression regexNotCached(" code object from " + pylsInitPattern,
-                                                   QRegularExpression::MultilineOption);
-
-    const QString output = pythonProcess.allOutput();
-    for (const auto &regex : {regexCached, regexNotCached}) {
-        const QRegularExpressionMatch result = regex.match(output);
-        if (result.hasMatch()) {
-            const FilePath &modulePath = FilePath::fromUserInput(result.captured(1));
-            cache[pylsCommand.executable()] = modulePath;
-            return modulePath;
-        }
-    }
-    return {};
+    if (python.needsDevice())
+        return {};
+    const QString version = pythonVersion(python);
+    if (version.isEmpty())
+        return {};
+    return Core::ICore::userResourcePath("pylsp") / FileUtils::fileSystemFriendlyName(version);
 }
 
 static PythonLanguageServerState checkPythonLanguageServer(const FilePath &python)
 {
     using namespace LanguageClient;
-    const CommandLine pythonLShelpCommand(python, {"-m", "pylsp", "-h"});
-    const FilePath &modulePath = getPylsModulePath(pythonLShelpCommand);
+    auto lspPath = pyLspPath(python);
+    if (lspPath.isEmpty())
+        return {PythonLanguageServerState::CanNotBeInstalled, FilePath()};
 
-    QtcProcess pythonProcess;
-    pythonProcess.setCommand(pythonLShelpCommand);
-    pythonProcess.runBlocking();
-    if (pythonProcess.allOutput().contains("Python Language Server"))
-        return {PythonLanguageServerState::AlreadyInstalled, modulePath};
+    if (lspPath.pathAppended("bin").pathAppended("pylsp").withExecutableSuffix().exists())
+        return {PythonLanguageServerState::AlreadyInstalled, lspPath};
 
+    Process pythonProcess;
+    pythonProcess.setTimeoutS(2);
     pythonProcess.setCommand({python, {"-m", "pip", "-V"}});
     pythonProcess.runBlocking();
     if (pythonProcess.allOutput().startsWith("pip "))
-        return {PythonLanguageServerState::CanBeInstalled, FilePath()};
-    else
-        return {PythonLanguageServerState::CanNotBeInstalled, FilePath()};
+        return {PythonLanguageServerState::CanBeInstalled, lspPath};
+    return {PythonLanguageServerState::CanNotBeInstalled, FilePath()};
 }
 
 
@@ -146,6 +119,12 @@ protected:
             env.appendOrSet("PYTHONPATH",
                             m_extraPythonPath.path().toString(),
                             OsSpecificAspects::pathListSeparator(env.osType()));
+            const FilePath lspPath = pyLspPath(m_cmd.executable());
+            if (!lspPath.isEmpty() && lspPath.exists()) {
+                env.appendOrSet("PYTHONPATH",
+                                pyLspPath(m_cmd.executable()).toString(),
+                                OsSpecificAspects::pathListSeparator(env.osType()));
+            }
             setEnvironment(env);
         }
         StdIOClientInterface::startImpl();
@@ -206,8 +185,13 @@ void PyLSClient::openDocument(TextEditor::TextDocument *document)
         const FilePath documentPath = document->filePath();
         if (PythonProject *project = pythonProjectForFile(documentPath)) {
             if (Target *target = project->activeTarget()) {
-                if (auto rc = qobject_cast<PythonRunConfiguration *>(target->activeRunConfiguration()))
-                    updateExtraCompilers(project, rc->extraCompilers());
+                if (BuildConfiguration *buildConfig = target->activeBuildConfiguration()) {
+                    if (BuildStepList *buildSteps = buildConfig->buildSteps()) {
+                        BuildStep *buildStep = buildSteps->firstStepWithId(PySideBuildStep::id());
+                        if (auto *pythonBuildStep = qobject_cast<PySideBuildStep *>(buildStep))
+                            updateExtraCompilers(project, pythonBuildStep->extraCompilers());
+                    }
+                }
             }
         } else if (isSupportedDocument(document)) {
             const FilePath workspacePath = documentPath.parentDir();
@@ -284,7 +268,8 @@ PyLSConfigureAssistant *PyLSConfigureAssistant::instance()
 }
 
 void PyLSConfigureAssistant::installPythonLanguageServer(const FilePath &python,
-                                                         QPointer<TextEditor::TextDocument> document)
+                                                         QPointer<TextEditor::TextDocument> document,
+                                                         const FilePath &pylsPath)
 {
     document->infoBar()->removeInfo(installPylsInfoBarId);
 
@@ -296,15 +281,19 @@ void PyLSConfigureAssistant::installPythonLanguageServer(const FilePath &python,
     auto install = new PipInstallTask(python);
 
     connect(install, &PipInstallTask::finished, this, [=](const bool success) {
+        const QList<TextEditor::TextDocument *> additionalDocuments = m_infoBarEntries.take(python);
         if (success) {
-            if (document) {
-                if (PyLSClient *client = clientForPython(python))
+            if (PyLSClient *client = clientForPython(python)) {
+                if (document)
                     LanguageClientManager::openDocumentWithClient(document, client);
+                for (TextEditor::TextDocument *additionalDocument : additionalDocuments)
+                    LanguageClientManager::openDocumentWithClient(additionalDocument, client);
             }
         }
         install->deleteLater();
     });
 
+    install->setTargetPath(pylsPath);
     install->setPackages({PipPackage{"python-lsp-server[all]", "Python Language Server"}});
     install->run();
 }
@@ -313,7 +302,7 @@ void PyLSConfigureAssistant::openDocumentWithPython(const FilePath &python,
                                                     TextEditor::TextDocument *document)
 {
     instance()->resetEditorInfoBar(document);
-    if (!PythonSettings::pylsEnabled())
+    if (!PythonSettings::pylsEnabled() || !python.exists())
         return;
 
     if (auto client = pythonClients().value(python)) {
@@ -339,9 +328,13 @@ void PyLSConfigureAssistant::openDocumentWithPython(const FilePath &python,
                 if (!document || !watcher)
                     return;
                 instance()->handlePyLSState(python, watcher->result(), document);
-                watcher->deleteLater();
             });
+    connect(watcher, &CheckPylsWatcher::finished, watcher, &CheckPylsWatcher::deleteLater);
+    connect(watcher, &CheckPylsWatcher::finished, instance(), [document](){
+        instance()->m_runningChecks.remove(document);
+    });
     watcher->setFuture(Utils::asyncRun(&checkPythonLanguageServer, python));
+    instance()->m_runningChecks[document] = watcher;
 }
 
 void PyLSConfigureAssistant::handlePyLSState(const FilePath &python,
@@ -360,21 +353,13 @@ void PyLSConfigureAssistant::handlePyLSState(const FilePath &python,
         Utils::InfoBarEntry info(installPylsInfoBarId,
                                  message,
                                  Utils::InfoBarEntry::GlobalSuppression::Enabled);
-        info.addCustomButton(Tr::tr("Install"),
-                             [=]() { installPythonLanguageServer(python, document); });
+        info.addCustomButton(Tr::tr("Install"), [=]() {
+            this->installPythonLanguageServer(python, document, state.pylsModulePath);
+        });
         infoBar->addInfo(info);
         m_infoBarEntries[python] << document;
     } else if (state.state == PythonLanguageServerState::AlreadyInstalled) {
         if (auto client = clientForPython(python))
-            LanguageClientManager::openDocumentWithClient(document, client);
-    }
-}
-
-void PyLSConfigureAssistant::updateEditorInfoBars(const FilePath &python, Client *client)
-{
-    for (TextEditor::TextDocument *document : instance()->m_infoBarEntries.take(python)) {
-        instance()->resetEditorInfoBar(document);
-        if (client)
             LanguageClientManager::openDocumentWithClient(document, client);
     }
 }
@@ -384,6 +369,8 @@ void PyLSConfigureAssistant::resetEditorInfoBar(TextEditor::TextDocument *docume
     for (QList<TextEditor::TextDocument *> &documents : m_infoBarEntries)
         documents.removeAll(document);
     document->infoBar()->removeInfo(installPylsInfoBarId);
+    if (auto watcher = m_runningChecks.value(document))
+        watcher->cancel();
 }
 
 PyLSConfigureAssistant::PyLSConfigureAssistant(QObject *parent)

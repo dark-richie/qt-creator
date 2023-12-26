@@ -9,7 +9,6 @@
 #include <cplusplus/Scope.h>
 #include <cplusplus/Symbols.h>
 
-#include <utils/linecolumn.h>
 #include <utils/link.h>
 #include <utils/theme/theme.h>
 
@@ -220,7 +219,7 @@ void OutlineModel::rebuild()
     auto root = new SymbolItem;
     if (m_cppDocument)
         buildTree(root, true);
-    setRootItem(root);
+    setRootItemInternal(root);
     endResetModel();
 }
 
@@ -239,20 +238,20 @@ Utils::Link OutlineModel::linkFromIndex(const QModelIndex &sourceIndex) const
     return symbol->toLink();
 }
 
-Utils::LineColumn OutlineModel::lineColumnFromIndex(const QModelIndex &sourceIndex) const
+Utils::Text::Position OutlineModel::positionFromIndex(const QModelIndex &sourceIndex) const
 {
-    Utils::LineColumn lineColumn;
+    Utils::Text::Position lineColumn;
     CPlusPlus::Symbol *symbol = symbolFromIndex(sourceIndex);
     if (!symbol)
         return lineColumn;
     lineColumn.line = symbol->line();
-    lineColumn.column = symbol->column();
+    lineColumn.column = symbol->column() - 1;
     return lineColumn;
 }
 
 OutlineModel::Range OutlineModel::rangeFromIndex(const QModelIndex &sourceIndex) const
 {
-    Utils::LineColumn lineColumn = lineColumnFromIndex(sourceIndex);
+    Utils::Text::Position lineColumn = positionFromIndex(sourceIndex);
     return {lineColumn, lineColumn};
 }
 

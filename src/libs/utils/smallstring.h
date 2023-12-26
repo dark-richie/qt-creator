@@ -11,6 +11,7 @@
 #include "smallstringmemory.h"
 
 #include <QByteArray>
+#include <QLocale>
 #include <QString>
 #include <QStringEncoder>
 
@@ -33,11 +34,6 @@
 #define unittest_public private
 #endif
 
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
 namespace Utils {
 
 template<uint Size>
@@ -50,29 +46,23 @@ public:
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
     using size_type = std::size_t;
 
-    static_assert(Size < 64
-                ? sizeof(Internal::StringDataLayout<Size>) == Size + 1
-                : sizeof(Internal::StringDataLayout<Size>) == Size + 2,
+    static_assert(Size < 64 ? sizeof(Internal::StringDataLayout<Size>) == Size + 1
+                            : sizeof(Internal::StringDataLayout<Size>) == Size + 2,
                   "Size is wrong");
-    constexpr
-    BasicSmallString() noexcept
-        : m_data(Internal::StringDataLayout<Size>())
-    {
-    }
 
-    constexpr
-    BasicSmallString(const BasicSmallStringLiteral<Size> &stringReference)
+    BasicSmallString() noexcept = default;
+
+    constexpr BasicSmallString(const BasicSmallStringLiteral<Size> &stringReference) noexcept
         : m_data(stringReference.m_data)
     {
     }
 
     template<size_type ArraySize>
-    constexpr
-    BasicSmallString(const char(&string)[ArraySize])
+    constexpr BasicSmallString(const char (&string)[ArraySize]) noexcept
         : m_data(string)
     {}
 
-    BasicSmallString(const char *string, size_type size, size_type capacity)
+    BasicSmallString(const char *string, size_type size, size_type capacity) noexcept
     {
         if (Q_LIKELY(capacity <= shortStringCapacity())) {
             m_data.control = Internal::ControlBlock<Size>(size, false, false);
@@ -84,58 +74,52 @@ public:
         }
     }
 
-    explicit BasicSmallString(SmallStringView stringView)
+    explicit BasicSmallString(SmallStringView stringView) noexcept
         : BasicSmallString(stringView.data(), stringView.size(), stringView.size())
     {}
 
-    BasicSmallString(const char *string, size_type size)
+    BasicSmallString(const char *string, size_type size) noexcept
         : BasicSmallString(string, size, size)
     {}
 
-    explicit BasicSmallString(const_iterator begin, const_iterator end)
-        : BasicSmallString{std::addressof(*begin), static_cast<std::size_t>(std::distance(begin, end))}
+    explicit BasicSmallString(const_iterator begin, const_iterator end) noexcept
+        : BasicSmallString{std::addressof(*begin),
+                           static_cast<std::size_t>(std::distance(begin, end))}
     {}
 
-    explicit BasicSmallString(iterator begin, iterator end)
+    explicit BasicSmallString(iterator begin, iterator end) noexcept
 
-        : BasicSmallString{std::addressof(*begin), static_cast<std::size_t>(std::distance(begin, end))}
+        : BasicSmallString{std::addressof(*begin),
+                           static_cast<std::size_t>(std::distance(begin, end))}
     {}
 
     template<typename Type, typename = std::enable_if_t<std::is_pointer<Type>::value>>
-    BasicSmallString(Type characterPointer)
+    BasicSmallString(Type characterPointer) noexcept
         : BasicSmallString(characterPointer, std::char_traits<char>::length(characterPointer))
     {
         static_assert(!std::is_array<Type>::value, "Input type is array and not char pointer!");
     }
 
-    BasicSmallString(const QString &qString)
-        : BasicSmallString(BasicSmallString::fromQString(qString))
-    {}
+    BasicSmallString(const QString &qString) noexcept { append(qString); }
 
-    BasicSmallString(const QStringView qStringView)
-        : BasicSmallString(BasicSmallString::fromQStringView(qStringView))
-    {}
+    BasicSmallString(const QStringView qStringView) noexcept { append(qStringView); }
 
-    BasicSmallString(const QByteArray &qByteArray)
+    BasicSmallString(const QByteArray &qByteArray) noexcept
         : BasicSmallString(qByteArray.constData(), qByteArray.size())
     {}
 
-    template<typename String,
-             typename Utils::enable_if_has_char_data_pointer<String> = 0>
-    BasicSmallString(const String &string)
+    template<typename String, typename Utils::enable_if_has_char_data_pointer<String> = 0>
+    BasicSmallString(const String &string) noexcept
         : BasicSmallString(string.data(), string.size())
     {
     }
 
-    BasicSmallString(const std::wstring &wstring)
-        : BasicSmallString(BasicSmallString::fromQStringView(wstring))
-    {}
+    BasicSmallString(const std::wstring &wstring) noexcept { append(wstring); }
 
     template<typename BeginIterator,
              typename EndIterator,
-             typename = std::enable_if_t<std::is_same<BeginIterator, EndIterator>::value>
-             >
-    BasicSmallString(BeginIterator begin, EndIterator end)
+             typename = std::enable_if_t<std::is_same<BeginIterator, EndIterator>::value>>
+    BasicSmallString(BeginIterator begin, EndIterator end) noexcept
         : BasicSmallString(&(*begin), size_type(end - begin))
     {}
 
@@ -145,7 +129,7 @@ public:
             Memory::deallocate(m_data.reference.pointer);
     }
 
-    BasicSmallString(const BasicSmallString &other)
+    BasicSmallString(const BasicSmallString &other) noexcept
     {
         if (Q_LIKELY(other.isShortString() || other.isReadOnlyReference()))
             m_data = other.m_data;
@@ -153,7 +137,7 @@ public:
             new (this) BasicSmallString{other.data(), other.size()};
     }
 
-    BasicSmallString &operator=(const BasicSmallString &other)
+    BasicSmallString &operator=(const BasicSmallString &other) noexcept
     {
         if (Q_LIKELY(this != &other)) {
             this->~BasicSmallString();
@@ -186,7 +170,7 @@ public:
     }
 
     BasicSmallString take() noexcept { return std::move(*this); }
-    BasicSmallString clone() const
+    BasicSmallString clone() const noexcept
     {
         BasicSmallString clonedString(m_data);
 
@@ -210,26 +194,22 @@ public:
         return QByteArray(data(), int(size()));
     }
 
-    QString toQString() const
+    QString toQString() const noexcept { return QString::fromUtf8(data(), int(size())); }
+
+    SmallStringView toStringView() const noexcept { return SmallStringView(data(), size()); }
+
+    operator SmallStringView() const noexcept { return SmallStringView(data(), size()); }
+    explicit operator QLatin1StringView() const noexcept
     {
-        return QString::fromUtf8(data(), int(size()));
+        return QLatin1StringView(data(), Utils::ssize(*this));
     }
 
-    SmallStringView toStringView() const
+    operator QUtf8StringView() const noexcept
     {
-        return SmallStringView(data(), size());
+        return QUtf8StringView(data(), Utils::ssize(*this));
     }
 
-    operator SmallStringView() const
-    {
-        return SmallStringView(data(), size());
-    }
-
-    explicit
-    operator QString() const
-    {
-        return toQString();
-    }
+    explicit operator QString() const noexcept { return toQString(); }
 
     explicit
     operator std::string() const
@@ -237,13 +217,12 @@ public:
         return std::string(data(), size());
     }
 
-    static
-    BasicSmallString fromUtf8(const char *characterPointer)
+    static BasicSmallString fromUtf8(const char *characterPointer) noexcept
     {
         return BasicSmallString(characterPointer, std::char_traits<char>::length(characterPointer));
     }
 
-    void reserve(size_type newCapacity)
+    void reserve(size_type newCapacity) noexcept
     {
         if (fitsNotInCapacity(newCapacity)) {
             if (Q_UNLIKELY(hasAllocatedMemory())) {
@@ -256,11 +235,13 @@ public:
         }
     }
 
-    void resize(size_type newSize)
+    void resize(size_type newSize) noexcept
     {
         reserve(newSize);
         setSize(newSize);
     }
+
+    void pop_back() noexcept { setSize(size() - 1); }
 
     void clear() noexcept
     {
@@ -276,11 +257,6 @@ public:
     const char *data() const noexcept
     {
         return Q_LIKELY(isShortString()) ? m_data.shortString : m_data.reference.pointer;
-    }
-
-    const char *constData() const noexcept
-    {
-        return data();
     }
 
     iterator begin() noexcept
@@ -315,7 +291,7 @@ public:
 
     const_iterator begin() const noexcept
     {
-        return constData();
+        return data();
     }
 
     const_iterator end() const noexcept
@@ -333,7 +309,7 @@ public:
         return end();
     }
 
-    static BasicSmallString fromQString(const QString &qString)
+    static BasicSmallString fromQString(const QString &qString) noexcept
     {
         BasicSmallString string;
         string.append(qString);
@@ -341,7 +317,7 @@ public:
         return string;
     }
 
-    static BasicSmallString fromQStringView(QStringView qStringView)
+    static BasicSmallString fromQStringView(QStringView qStringView) noexcept
     {
         BasicSmallString string;
         string.append(qStringView);
@@ -349,20 +325,18 @@ public:
         return string;
     }
 
-    static BasicSmallString fromQByteArray(const QByteArray &utf8ByteArray)
+    static BasicSmallString fromQByteArray(const QByteArray &utf8ByteArray) noexcept
     {
         return BasicSmallString(utf8ByteArray.constData(), uint(utf8ByteArray.size()));
     }
 
-    // precondition: has to be null terminated
-    bool contains(SmallStringView subStringToSearch) const
+    bool contains(SmallStringView subStringToSearch) const noexcept
     {
-        const char *found = std::strstr(data(), subStringToSearch.data());
-
-        return found != nullptr;
+        return SmallStringView{*this}.find(subStringToSearch)
+               != SmallStringView::npos;
     }
 
-    bool contains(char characterToSearch) const
+    bool contains(char characterToSearch) const noexcept
     {
         auto found = std::char_traits<char>::find(data(), size(), characterToSearch);
 
@@ -443,24 +417,26 @@ public:
         return SmallStringView(data() + position, length);
     }
 
-    void append(SmallStringView string)
+    void append(SmallStringView string) noexcept
     {
         size_type oldSize = size();
         size_type newSize = oldSize + string.size();
 
         reserve(optimalCapacity(newSize));
-        std::char_traits<char>::copy(data() + oldSize, string.data(), string.size());
+        std::char_traits<char>::copy(std::next(data(), static_cast<std::ptrdiff_t>(oldSize)),
+                                     string.data(),
+                                     string.size());
         setSize(newSize);
     }
 
-    void append(QStringView string)
+    void append(QStringView string) noexcept
     {
         QStringEncoder encoder{QStringEncoder::Utf8};
 
         constexpr size_type temporaryArraySize = Size * 6;
 
         size_type oldSize = size();
-        size_type maximumRequiredSize = static_cast<size_type>(encoder.requiredSpace(oldSize));
+        size_type maximumRequiredSize = static_cast<size_type>(encoder.requiredSpace(string.size()));
         char *newEnd = nullptr;
 
         if (maximumRequiredSize > temporaryArraySize) {
@@ -485,28 +461,28 @@ public:
         setSize(newEnd - data());
     }
 
-    BasicSmallString &operator+=(SmallStringView string)
+    BasicSmallString &operator+=(SmallStringView string) noexcept
     {
         append(string);
 
         return *this;
     }
 
-    BasicSmallString &operator+=(QStringView string)
+    BasicSmallString &operator+=(QStringView string) noexcept
     {
         append(string);
 
         return *this;
     }
 
-    BasicSmallString &operator+=(std::initializer_list<SmallStringView> list)
+    BasicSmallString &operator+=(std::initializer_list<SmallStringView> list) noexcept
     {
         appendInitializerList(list, size());
 
         return *this;
     }
 
-    void replace(SmallStringView fromText, SmallStringView toText)
+    void replace(SmallStringView fromText, SmallStringView toText) noexcept
     {
         if (toText.size() == fromText.size())
             replaceEqualSized(fromText, toText);
@@ -516,14 +492,14 @@ public:
             replaceLargerSized(fromText, toText);
     }
 
-    void replace(char fromCharacter, char toCharacter)
+    void replace(char fromCharacter, char toCharacter) noexcept
     {
         reserve(size());
 
         std::replace(begin(), end(), fromCharacter, toCharacter);
     }
 
-    void replace(size_type position, size_type length, SmallStringView replacementText)
+    void replace(size_type position, size_type length, SmallStringView replacementText) noexcept
     {
         size_type newSize = size() - length + replacementText.size();
 
@@ -541,7 +517,7 @@ public:
         setSize(newSize);
     }
 
-    BasicSmallString toCarriageReturnsStripped() const
+    BasicSmallString toCarriageReturnsStripped() const noexcept
     {
         BasicSmallString text = *this;
 
@@ -564,10 +540,12 @@ public:
         return size;
     }
 
-    constexpr size_type shortStringSize() const { return m_data.control.shortStringSize(); }
+    constexpr size_type shortStringSize() const noexcept
+    {
+        return m_data.control.shortStringSize();
+    }
 
-    static
-    BasicSmallString join(std::initializer_list<SmallStringView> list)
+    static BasicSmallString join(std::initializer_list<SmallStringView> list) noexcept
     {
         size_type totalSize = 0;
         for (SmallStringView string : list)
@@ -585,50 +563,42 @@ public:
     static
     BasicSmallString number(int number)
     {
-#ifdef __cpp_lib_to_chars
-        // +1 for the sign, +1 for the extra digit
+        // 2 bytes for the sign and because digits10 returns the floor
         char buffer[std::numeric_limits<int>::digits10 + 2];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), number, 10);
-        Q_ASSERT(result.ec == std::errc{});
+        auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
         auto endOfConversionString = result.ptr;
         return BasicSmallString(buffer, endOfConversionString);
-#else
-        return std::to_string(number);
-#endif
     }
 
-    static
-    BasicSmallString number(long long int number)
+    static BasicSmallString number(long long int number) noexcept
     {
-#ifdef __cpp_lib_to_chars
-        // +1 for the sign, +1 for the extra digit
+        // 2 bytes for the sign and because digits10 returns the floor
         char buffer[std::numeric_limits<long long int>::digits10 + 2];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), number, 10);
-        Q_ASSERT(result.ec == std::errc{});
+        auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
+        auto endOfConversionString = result.ptr;
+        return BasicSmallString(buffer, endOfConversionString);
+    }
+
+    static BasicSmallString number(double number) noexcept
+    {
+#if defined(__cpp_lib_to_chars) && (__cpp_lib_to_chars >= 201611L)
+        // 2 bytes for the sign and because digits10 returns the floor
+        char buffer[std::numeric_limits<double>::digits10 + 2];
+        auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
         auto endOfConversionString = result.ptr;
         return BasicSmallString(buffer, endOfConversionString);
 #else
-        return std::to_string(number);
+        QLocale locale{QLocale::Language::C};
+        return BasicSmallString{locale.toString(number)};
 #endif
     }
 
-    static
-    BasicSmallString number(double number)
-    {
-        return std::to_string(number);
-    }
+    char &operator[](std::size_t index) noexcept { return *(data() + index); }
 
-    char &operator[](std::size_t index)
-    {
-        return *(data() + index);
-    }
+    char operator[](std::size_t index) const noexcept { return *(data() + index); }
 
-    char operator[](std::size_t index) const
-    {
-        return *(data() + index);
-    }
-
-    friend BasicSmallString operator+(const BasicSmallString &first, const BasicSmallString &second)
+    friend BasicSmallString operator+(const BasicSmallString &first,
+                                      const BasicSmallString &second) noexcept
     {
         BasicSmallString text;
         text.reserve(first.size() + second.size());
@@ -639,7 +609,7 @@ public:
         return text;
     }
 
-    friend BasicSmallString operator+(const BasicSmallString &first, SmallStringView second)
+    friend BasicSmallString operator+(const BasicSmallString &first, SmallStringView second) noexcept
     {
         BasicSmallString text;
         text.reserve(first.size() + second.size());
@@ -650,7 +620,7 @@ public:
         return text;
     }
 
-    friend BasicSmallString operator+(SmallStringView first, const BasicSmallString &second)
+    friend BasicSmallString operator+(SmallStringView first, const BasicSmallString &second) noexcept
     {
         BasicSmallString text;
         text.reserve(first.size() + second.size());
@@ -662,14 +632,16 @@ public:
     }
 
     template<size_type ArraySize>
-    friend BasicSmallString operator+(const BasicSmallString &first, const char(&second)[ArraySize])
+    friend BasicSmallString operator+(const BasicSmallString &first,
+                                      const char (&second)[ArraySize]) noexcept
     {
 
         return operator+(first, SmallStringView(second));
     }
 
     template<size_type ArraySize>
-    friend BasicSmallString operator+(const char(&first)[ArraySize], const BasicSmallString &second)
+    friend BasicSmallString operator+(const char (&first)[ArraySize],
+                                      const BasicSmallString &second) noexcept
     {
         return operator+(SmallStringView(first), second);
     }
@@ -699,8 +671,7 @@ unittest_public:
                || (!isShortString() && capacity > m_data.reference.capacity);
     }
 
-    static
-    size_type optimalHeapCapacity(const size_type size)
+    static size_type optimalHeapCapacity(const size_type size) noexcept
     {
         const size_type cacheLineSize = 64;
 
@@ -709,7 +680,7 @@ unittest_public:
         return (cacheLineBlocks  + 1) * cacheLineSize;
     }
 
-    size_type countOccurrence(SmallStringView text)
+    size_type countOccurrence(SmallStringView text) noexcept
     {
         auto found = begin();
 
@@ -736,7 +707,8 @@ private:
     {
     }
 
-    void appendInitializerList(std::initializer_list<SmallStringView> list, std::size_t initialSize)
+    void appendInitializerList(std::initializer_list<SmallStringView> list,
+                               std::size_t initialSize) noexcept
     {
         auto addSize =  [] (std::size_t size, SmallStringView string) {
             return size + string.size();
@@ -755,7 +727,7 @@ private:
         }
     }
 
-    constexpr void initializeLongString(char *pointer, size_type size, size_type capacity)
+    constexpr void initializeLongString(char *pointer, size_type size, size_type capacity) noexcept
     {
         m_data.control = Internal::ControlBlock<Size>(0, false, true);
         m_data.reference.pointer = pointer;
@@ -763,17 +735,11 @@ private:
         m_data.reference.capacity = capacity;
     }
 
-    char &at(size_type index)
-    {
-        return *(data() + index);
-    }
+    char &at(size_type index) noexcept { return *(data() + index); }
 
-    char at(size_type index) const
-    {
-        return *(data() + index);
-    }
+    char at(size_type index) const noexcept { return *(data() + index); }
 
-    void replaceEqualSized(SmallStringView fromText, SmallStringView toText)
+    void replaceEqualSized(SmallStringView fromText, SmallStringView toText) noexcept
     {
         reserve(size());
 
@@ -796,7 +762,7 @@ private:
         }
     }
 
-    void replaceSmallerSized(SmallStringView fromText, SmallStringView toText)
+    void replaceSmallerSized(SmallStringView fromText, SmallStringView toText) noexcept
     {
         auto found = std::search(begin(),
                                  end(),
@@ -840,7 +806,7 @@ private:
     iterator replaceLargerSizedRecursive(size_type startIndex,
                                          SmallStringView fromText,
                                          SmallStringView toText,
-                                         size_type sizeDifference)
+                                         size_type sizeDifference) noexcept
     {
         auto found = std::search(begin() + startIndex,
                                  end(),
@@ -877,7 +843,7 @@ private:
         return begin() + foundIndex;
     }
 
-    void replaceLargerSized(SmallStringView fromText, SmallStringView toText)
+    void replaceLargerSized(SmallStringView fromText, SmallStringView toText) noexcept
     {
         size_type sizeDifference = 0;
         size_type startIndex = 0;
@@ -893,7 +859,7 @@ private:
         }
     }
 
-    void setSize(size_type size)
+    void setSize(size_type size) noexcept
     {
         if (isShortString())
             m_data.control.setShortStringSize(size);
@@ -935,8 +901,7 @@ Type clone(const Type &vector)
 using SmallString = BasicSmallString<31>;
 using PathString = BasicSmallString<190>;
 
-inline
-SmallString operator+(SmallStringView first, SmallStringView second)
+inline SmallString operator+(SmallStringView first, SmallStringView second) noexcept
 {
     SmallString text;
     text.reserve(first.size() + second.size());
@@ -948,8 +913,7 @@ SmallString operator+(SmallStringView first, SmallStringView second)
 }
 
 template<std::size_t Size>
-inline
-SmallString operator+(SmallStringView first, const char(&second)[Size])
+inline SmallString operator+(SmallStringView first, const char (&second)[Size]) noexcept
 {
     return operator+(first, SmallStringView(second));
 }
@@ -962,7 +926,3 @@ SmallString operator+(const char(&first)[Size], SmallStringView second)
 }
 
 } // namespace Utils
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif

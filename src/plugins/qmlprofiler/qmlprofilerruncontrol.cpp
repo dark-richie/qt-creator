@@ -8,20 +8,20 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/helpmanager.h>
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectexplorericons.h>
 #include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtsupportconstants.h>
 
 #include <qmldebug/qmldebugcommandlinearguments.h>
 
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/url.h>
 
 #include <QMessageBox>
@@ -31,7 +31,7 @@ using namespace ProjectExplorer;
 
 namespace QmlProfiler::Internal {
 
-const QString QmlServerUrl = "QmlServerUrl";
+const char QmlServerUrl[] = "QmlServerUrl";
 
 //
 // QmlProfilerRunControlPrivate
@@ -239,18 +239,33 @@ LocalQmlProfilerSupport::LocalQmlProfilerSupport(RunControl *runControl, const Q
 // Factories
 
 // The bits plugged in in remote setups.
-QmlProfilerRunWorkerFactory::QmlProfilerRunWorkerFactory()
+class QmlProfilerRunWorkerFactory final : public RunWorkerFactory
 {
-    setProduct<QmlProfilerRunner>();
-    addSupportedRunMode(ProjectExplorer::Constants::QML_PROFILER_RUNNER);
-}
+public:
+    QmlProfilerRunWorkerFactory()
+    {
+        setProduct<QmlProfilerRunner>();
+        addSupportedRunMode(ProjectExplorer::Constants::QML_PROFILER_RUNNER);
+    }
+};
 
 // The full local profiler.
-LocalQmlProfilerRunWorkerFactory::LocalQmlProfilerRunWorkerFactory()
+class LocalQmlProfilerRunWorkerFactory final : public RunWorkerFactory
 {
-    setProduct<LocalQmlProfilerSupport>();
-    addSupportedRunMode(ProjectExplorer::Constants::QML_PROFILER_RUN_MODE);
-    addSupportedDeviceType(ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE);
+public:
+    LocalQmlProfilerRunWorkerFactory()
+    {
+        setProduct<LocalQmlProfilerSupport>();
+        addSupportedRunMode(ProjectExplorer::Constants::QML_PROFILER_RUN_MODE);
+        addSupportedDeviceType(ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE);
+    }
+};
+
+void setupQmlProfilerRunning()
+{
+    static QmlProfilerRunWorkerFactory theQmlProfilerRunWorkerFactory;
+    static LocalQmlProfilerRunWorkerFactory theLocalQmlProfilerRunWorkerFactory;
 }
+
 
 } // QmlProfiler::Internal

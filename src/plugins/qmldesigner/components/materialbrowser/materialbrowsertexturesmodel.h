@@ -10,6 +10,8 @@
 
 namespace QmlDesigner {
 
+class MaterialBrowserView;
+
 class MaterialBrowserTexturesModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -20,7 +22,7 @@ class MaterialBrowserTexturesModel : public QAbstractListModel
     Q_PROPERTY(bool hasSceneEnv READ hasSceneEnv NOTIFY hasSceneEnvChanged)
 
 public:
-    MaterialBrowserTexturesModel(QObject *parent = nullptr);
+    MaterialBrowserTexturesModel(MaterialBrowserView *view, QObject *parent = nullptr);
     ~MaterialBrowserTexturesModel() override;
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -55,6 +57,7 @@ public:
     Q_INVOKABLE void addNewTexture();
     Q_INVOKABLE void duplicateTexture(int idx);
     Q_INVOKABLE void deleteTexture(int idx);
+    Q_INVOKABLE void setTextureId(int idx, const QString &newId);
     Q_INVOKABLE void applyToSelectedMaterial(qint64 internalId);
     Q_INVOKABLE void applyToSelectedModel(qint64 internalId);
     Q_INVOKABLE void openTextureEditor();
@@ -88,9 +91,12 @@ private:
     bool m_hasSingleModelSelection = false;
     bool m_hasSceneEnv = false;
 
+    QPointer<MaterialBrowserView> m_view;
+
     enum {
         RoleTexHasDynamicProps = Qt::UserRole + 1,
         RoleTexInternalId,
+        RoleTexId,
         RoleTexSource,
         RoleTexToolTip,
         RoleTexVisible

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <coreplugin/core_global.h>
+#include "../core_global.h"
 
 #include <QWidget>
 
@@ -11,8 +11,6 @@ QT_BEGIN_NAMESPACE
 class QTreeWidget;
 class QTreeWidgetItem;
 QT_END_NAMESPACE
-
-namespace Utils { class FancyLineEdit; }
 
 namespace Core {
 

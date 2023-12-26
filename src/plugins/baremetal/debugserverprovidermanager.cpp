@@ -24,14 +24,14 @@
 #include <utils/persistentsettings.h>
 #include <utils/qtcassert.h>
 
+using namespace Utils;
+
 namespace BareMetal::Internal {
 
 const char dataKeyC[] = "DebugServerProvider.";
 const char countKeyC[] = "DebugServerProvider.Count";
 const char fileVersionKeyC[] = "Version";
 const char fileNameKeyC[] = "debugserverproviders.xml";
-
-static DebugServerProviderManager *m_instance = nullptr;
 
 // DebugServerProviderManager
 
@@ -46,7 +46,6 @@ DebugServerProviderManager::DebugServerProviderManager()
                    new StLinkUvscServerProviderFactory,
                    new JLinkUvscServerProviderFactory})
 {
-    m_instance = this;
     m_writer = new Utils::PersistentSettingsWriter(
                 m_configFile, "QtCreatorDebugServerProviders");
 
@@ -67,37 +66,49 @@ DebugServerProviderManager::~DebugServerProviderManager()
     m_providers.clear();
     qDeleteAll(m_factories);
     delete m_writer;
-    m_instance = nullptr;
 }
+
+static DebugServerProviderManager *m_instance = nullptr;
 
 DebugServerProviderManager *DebugServerProviderManager::instance()
 {
+    if (!m_instance) {
+        m_instance = new DebugServerProviderManager;
+        m_instance->restoreProviders();
+    }
+
     return m_instance;
+}
+
+void setupDebugServerProviderManager(QObject *guard)
+{
+    DebugServerProviderManager::instance(); // force creation
+    m_instance->setParent(guard);
 }
 
 void DebugServerProviderManager::restoreProviders()
 {
-    Utils::PersistentSettingsReader reader;
+    PersistentSettingsReader reader;
     if (!reader.load(m_configFile))
         return;
 
-    const QVariantMap data = reader.restoreValues();
+    const Store data = reader.restoreValues();
     const int version = data.value(fileVersionKeyC, 0).toInt();
     if (version < 1)
         return;
 
     const int count = data.value(countKeyC, 0).toInt();
     for (int i = 0; i < count; ++i) {
-        const QString key = QString::fromLatin1(dataKeyC) + QString::number(i);
+        const Key key = numberedKey(dataKeyC, i);
         if (!data.contains(key))
             break;
 
-        QVariantMap map = data.value(key).toMap();
-        const QStringList keys = map.keys();
-        for (const QString &key : keys) {
-            const int lastDot = key.lastIndexOf('.');
+        Store map = storeFromVariant(data.value(key));
+        const KeyList keys = map.keys();
+        for (const Key &key : keys) {
+            const int lastDot = key.view().lastIndexOf('.');
             if (lastDot != -1)
-                map[key.mid(lastDot + 1)] = map[key];
+                map[key.toByteArray().mid(lastDot + 1)] = map[key];
         }
         bool restored = false;
         for (IDebugServerProviderFactory *f : std::as_const(m_factories)) {
@@ -120,17 +131,18 @@ void DebugServerProviderManager::restoreProviders()
 
 void DebugServerProviderManager::saveProviders()
 {
-    QVariantMap data;
+    Store data;
     data.insert(fileVersionKeyC, 1);
 
     int count = 0;
     for (const IDebugServerProvider *p : std::as_const(m_providers)) {
         if (p->isValid()) {
-            const QVariantMap tmp = p->toMap();
+            Store tmp;
+            p->toMap(tmp);
             if (tmp.isEmpty())
                 continue;
-            const QString key = QString::fromLatin1(dataKeyC) + QString::number(count);
-            data.insert(key, tmp);
+            const Key key = numberedKey(dataKeyC, count);
+            data.insert(key, variantFromStore(tmp));
             ++count;
         }
     }

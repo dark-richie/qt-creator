@@ -30,8 +30,6 @@ public:
     void connectUndoActions(DesignDocument *designDocument);
     void disconnectUndoActions(DesignDocument *designDocument);
     void updateUndoActions(DesignDocument *designDocument);
-    DesignDocument *currentDesignDocument() const;
-
     void updateActions(Core::IEditor* editor);
 
 private:
@@ -43,8 +41,6 @@ private:
     void duplicateSelected();
     void paste();
     void selectAll();
-    void undoAvailable(bool isAvailable);
-    void redoAvailable(bool isAvailable);
     void goIntoComponent();
 
 private:
@@ -52,6 +48,7 @@ private:
     QAction m_saveAction;
     QAction m_saveAsAction;
     QAction m_exportAsImageAction;
+    QAction m_takeScreenshotAction;
     QAction m_closeCurrentEditorAction;
     QAction m_closeAllEditorsAction;
     QAction m_closeOtherEditorsAction;

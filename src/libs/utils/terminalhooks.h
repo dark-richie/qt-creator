@@ -8,6 +8,8 @@
 #include "filepath.h"
 #include "id.h"
 
+#include <QIcon>
+
 #include <functional>
 #include <memory>
 
@@ -17,15 +19,13 @@ class ProcessInterface;
 template<typename R, typename... Params>
 class Hook
 {
+    Q_DISABLE_COPY_MOVE(Hook)
+
 public:
     using Callback = std::function<R(Params...)>;
 
 public:
     Hook() = delete;
-    Hook(const Hook &other) = delete;
-    Hook(Hook &&other) = delete;
-    Hook &operator=(const Hook &other) = delete;
-    Hook &operator=(Hook &&other) = delete;
 
     explicit Hook(Callback defaultCallback) { set(defaultCallback); }
 
@@ -43,9 +43,24 @@ enum class ExitBehavior { Close, Restart, Keep };
 
 struct OpenTerminalParameters
 {
+    OpenTerminalParameters() = default;
+    OpenTerminalParameters(const CommandLine &commandLine) : shellCommand(commandLine) {}
+    OpenTerminalParameters(const FilePath &directory, std::optional<Environment> env) :
+        workingDirectory(directory),
+        environment(env)
+    {}
+    OpenTerminalParameters(const CommandLine &commandLine,
+                           const FilePath &directory,
+                           std::optional<Environment> env) :
+        shellCommand(commandLine),
+        workingDirectory(directory),
+        environment(env)
+    {}
+
     std::optional<CommandLine> shellCommand;
     std::optional<FilePath> workingDirectory;
     std::optional<Environment> environment;
+    QIcon icon;
     ExitBehavior m_exitBehavior{ExitBehavior::Close};
     std::optional<Id> identifier{std::nullopt};
 };
@@ -56,7 +71,7 @@ struct NameAndCommandLine
     CommandLine commandLine;
 };
 
-QTCREATOR_UTILS_EXPORT FilePath defaultShellForDevice(const FilePath &deviceRoot);
+QTCREATOR_UTILS_EXPORT expected_str<FilePath> defaultShellForDevice(const FilePath &deviceRoot);
 
 class QTCREATOR_UTILS_EXPORT Hooks
 {
@@ -70,13 +85,9 @@ public:
         CreateTerminalProcessInterface createTerminalProcessInterface;
     };
 
-    using GetTerminalCommandsForDevicesHook = Hook<QList<NameAndCommandLine>>;
-
 public:
     static Hooks &instance();
     ~Hooks();
-
-    GetTerminalCommandsForDevicesHook &getTerminalCommandsForDevicesHook();
 
     void openTerminal(const OpenTerminalParameters &parameters) const;
     ProcessInterface *createTerminalProcessInterface() const;

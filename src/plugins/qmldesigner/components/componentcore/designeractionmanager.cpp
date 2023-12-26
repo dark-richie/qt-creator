@@ -15,6 +15,7 @@
 #include "qmleditormenu.h"
 #include "rewritingexception.h"
 #include <bindingproperty.h>
+#include <customnotifications.h>
 #include <nodehints.h>
 #include <nodelistproperty.h>
 #include <nodemetainfo.h>
@@ -23,10 +24,11 @@
 
 #include <formeditortoolbutton.h>
 
-#include <documentmanager.h>
-#include <qmldesignerplugin.h>
-#include <viewmanager.h>
 #include <actioneditor.h>
+#include <documentmanager.h>
+#include <model/modelutils.h>
+#include <viewmanager.h>
+#include <qmldesignerplugin.h>
 
 #include <listmodeleditor/listmodeleditordialog.h>
 #include <listmodeleditor/listmodeleditormodel.h>
@@ -50,7 +52,7 @@
 
 namespace QmlDesigner {
 
-static inline QString captionForModelNode(const ModelNode &modelNode)
+inline static QString captionForModelNode(const ModelNode &modelNode)
 {
     if (modelNode.id().isEmpty())
         return modelNode.simplifiedTypeName();
@@ -58,7 +60,7 @@ static inline QString captionForModelNode(const ModelNode &modelNode)
     return modelNode.id();
 }
 
-static inline bool contains(const QmlItemNode &node, const QPointF &position)
+inline static bool contains(const QmlItemNode &node, const QPointF &position)
 {
     return node.isValid() && node.instanceSceneTransform().mapRect(node.instanceBoundingRect()).contains(position);
 }
@@ -296,6 +298,11 @@ QIcon DesignerActionManager::contextIcon(int contextId) const
     return m_designerIcons->icon(DesignerIcons::IconId(contextId), DesignerIcons::ContextMenuArea);
 }
 
+QIcon DesignerActionManager::toolbarIcon(int contextId) const
+{
+    return m_designerIcons->icon(DesignerIcons::IconId(contextId), DesignerIcons::ToolbarArea);
+}
+
 void DesignerActionManager::addAddActionCallback(ActionAddedInterface callback)
 {
     m_callBacks.append(callback);
@@ -414,7 +421,7 @@ public:
 
                 parentNode = selectionContext().currentSingleSelectedNode().parentProperty().parentModelNode();
 
-                if (!ModelNode::isThisOrAncestorLocked(parentNode)) {
+                if (!ModelUtils::isThisOrAncestorLocked(parentNode)) {
                     ActionTemplate *selectionAction = new ActionTemplate("SELECTION", {}, &ModelNodeOperations::select);
                     selectionAction->setParent(menu());
                     selectionAction->setText(QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Parent")));
@@ -427,11 +434,9 @@ public:
                 }
             }
             for (const ModelNode &node : selectionContext().view()->allModelNodes()) {
-                if (node != selectionContext().currentSingleSelectedNode()
-                        && node != parentNode
-                        && contains(node, selectionContext().scenePosition())
-                        && !node.isRootNode()
-                        && !ModelNode::isThisOrAncestorLocked(node)) {
+                if (node != selectionContext().currentSingleSelectedNode() && node != parentNode
+                    && contains(node, selectionContext().scenePosition()) && !node.isRootNode()
+                    && !ModelUtils::isThisOrAncestorLocked(node)) {
                     selectionContext().setTargetNode(node);
                     QString what = QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Select: %1")).arg(captionForModelNode(node));
                     ActionTemplate *selectionAction = new ActionTemplate("SELECT", what, &ModelNodeOperations::select);
@@ -587,9 +592,9 @@ QList<SlotList> getSlotsLists(const ModelNode &node)
 ModelNode createNewConnection(ModelNode targetNode)
 {
     NodeMetaInfo connectionsMetaInfo = targetNode.view()->model()->qtQuickConnectionsMetaInfo();
-    ModelNode newConnectionNode = targetNode.view()->createModelNode(connectionsMetaInfo.typeName(),
-                                                                     connectionsMetaInfo.majorVersion(),
-                                                                     connectionsMetaInfo.minorVersion());
+    const auto typeName = useProjectStorage() ? "Connections" : "QtQuick.Connections";
+    ModelNode newConnectionNode = targetNode.view()->createModelNode(
+        typeName, connectionsMetaInfo.majorVersion(), connectionsMetaInfo.minorVersion());
     if (QmlItemNode::isValidQmlItemNode(targetNode)) {
         targetNode.nodeAbstractProperty("data").reparentHere(newConnectionNode);
     } else {
@@ -635,7 +640,7 @@ public:
         const auto selection = selectionContext();
 
         bool showMenu = false;
-        auto cleanup = qScopeGuard([&]{ menu()->setEnabled(showMenu); });
+        const QScopeGuard cleanup([&]{ menu()->setEnabled(showMenu); });
 
         if (!selection.isValid())
             return;
@@ -738,21 +743,21 @@ public:
 
                     ActionTemplate *openEditorAction = new ActionTemplate(
                         (propertyName + "OpenEditorId").toLatin1(),
-                        QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Open Connections Editor")),
+                        QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Edit the Connection")),
                         [=](const SelectionContext &) {
-                            signalHandler.parentModelNode().view()->executeInTransaction(
-                                "ConnectionsModelNodeActionGroup::"
-                                "openConnectionsEditor",
-                                [signalHandler]() {
-                                    ActionEditor::invokeEditor(signalHandler, removeSignal);
-                                });
+                            signalHandler.view()
+                                ->emitCustomNotification(EditConnectionNotification,
+                                                         {signalHandler.parentModelNode()},
+                                                         {signalHandler.name()});
+                            //ActionEditor::invokeEditor(signalHandler, removeSignal);
                         });
 
                     activeSignalHandlerGroup->addAction(openEditorAction);
 
                     ActionTemplate *removeSignalHandlerAction = new ActionTemplate(
                         (propertyName + "RemoveSignalHandlerId").toLatin1(),
-                        QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Remove This Handler")),
+                        QString(
+                            QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Remove the Connection")),
                         [signalHandler](const SelectionContext &) {
                             signalHandler.parentModelNode().view()->executeInTransaction(
                                 "ConnectionsModelNodeActionGroup::"
@@ -769,7 +774,7 @@ public:
 
         //singular add connection:
         QMenu *addConnection = new QmlEditorMenu(QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu",
-                                                                           "Add Signal Handler")),
+                                                                           "Add new Connection")),
                                                  menu());
 
         for (const auto &signalStr : signalsList) {
@@ -819,21 +824,11 @@ public:
 
             ActionTemplate *openEditorAction = new ActionTemplate(
                 (signalStr + "OpenEditorId").toLatin1(),
-                QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Open Connections Editor")),
+                QString(QT_TRANSLATE_NOOP("QmlDesignerContextMenu", "Add new Connection")),
                 [=](const SelectionContext &) {
-                    currentNode.view()->executeInTransaction(
-                        "ConnectionsModelNodeActionGroup::"
-                        "openConnectionsEditor",
-                        [=]() {
-                            ModelNode newConnectionNode = createNewConnection(currentNode);
-
-                            SignalHandlerProperty newHandler = newConnectionNode.signalHandlerProperty(
-                                prependSignal(signalStr).toLatin1());
-
-                            newHandler.setSource(
-                                QString("console.log(\"%1.%2\")").arg(currentNode.id(), signalStr));
-                            ActionEditor::invokeEditor(newHandler, removeSignal, true);
-                        });
+                    currentNode.view()->emitCustomNotification(AddConnectionNotification,
+                                                               {currentNode},
+                                                               {signalStr});
                 });
             newSignal->addAction(openEditorAction);
 
@@ -886,14 +881,18 @@ public:
         NodeMetaInfo elementMetaInfo = view->model()->metaInfo("ListElement");
 
         ListModelEditorModel model{[&] {
-                                       return view->createModelNode(modelMetaInfo.typeName(),
+                                       return view->createModelNode(useProjectStorage()
+                                                                        ? "ListModel"
+                                                                        : "QtQml.Models.ListModel",
                                                                     modelMetaInfo.majorVersion(),
                                                                     modelMetaInfo.minorVersion());
                                    },
                                    [&] {
-                                       return view->createModelNode(elementMetaInfo.typeName(),
-                                                                    elementMetaInfo.majorVersion(),
-                                                                    elementMetaInfo.minorVersion());
+                                       return view->createModelNode(
+                                           useProjectStorage() ? "ListElement"
+                                                               : "QtQml.Models.ListElement",
+                                           elementMetaInfo.majorVersion(),
+                                           elementMetaInfo.minorVersion());
                                    },
                                    [&](const ModelNode &node) {
                                        bool isNowInComponent = ModelNodeOperations::goIntoComponent(
@@ -1208,7 +1207,7 @@ bool isStackedContainerAndIndexCanBeIncreased(const SelectionContext &context)
 
     const int value = containerItemNode.instanceValue(propertyName).toInt();
 
-    const int maxValue = currentSelectedNode.directSubModelNodes().count() - 1;
+    const int maxValue = currentSelectedNode.directSubModelNodes().size() - 1;
 
     return value < maxValue;
 }
@@ -1261,9 +1260,9 @@ bool isPositioner(const SelectionContext &context)
 
 bool layoutOptionVisible(const SelectionContext &context)
 {
-    return selectionCanBeLayoutedAndQtQuickLayoutPossible(context)
-            || singleSelectionAndInQtQuickLayout(context)
-            || isLayout(context);
+    return (selectionCanBeLayoutedAndQtQuickLayoutPossible(context)
+            || singleSelectionAndInQtQuickLayout(context) || isLayout(context))
+           && !DesignerMcuManager::instance().isMCUProject();
 }
 
 bool positionOptionVisible(const SelectionContext &context)
@@ -1675,8 +1674,8 @@ void DesignerActionManager::createDefaultDesignerActions()
                           setFlowStartDisplayName,
                           {},
                           flowCategory,
-                          2,
                           {},
+                          2,
                           &setFlowStartItem,
                           &isFlowItem,
                           &flowOptionVisible));
@@ -1831,29 +1830,31 @@ void DesignerActionManager::createDefaultDesignerActions()
                           &isStackedContainerAndIndexCanBeIncreased,
                           &isStackedContainer));
 
-    addDesignerAction(new ModelNodeAction(
-                          layoutRowLayoutCommandId,
-                          layoutRowLayoutDisplayName,
-                          Utils::Icon({{":/qmldesigner/icon/designeractions/images/row.png",
-                                        Utils::Theme::IconsBaseColor}}).icon(),
-                          layoutRowLayoutToolTip,
-                          layoutCategory,
-                          QKeySequence("Ctrl+u"),
-                          2,
-                          &layoutRowLayout,
-                          &selectionCanBeLayoutedAndQtQuickLayoutPossible));
+    addDesignerAction(
+        new ModelNodeAction(layoutRowLayoutCommandId,
+                            layoutRowLayoutDisplayName,
+                            Utils::Icon({{":/qmldesigner/icon/designeractions/images/row.png",
+                                          Utils::Theme::IconsBaseColor}})
+                                .icon(),
+                            layoutRowLayoutToolTip,
+                            layoutCategory,
+                            QKeySequence("Ctrl+u"),
+                            2,
+                            &layoutRowLayout,
+                            &selectionCanBeLayoutedAndQtQuickLayoutPossibleAndNotMCU));
 
-    addDesignerAction(new ModelNodeAction(
-                          layoutColumnLayoutCommandId,
-                          layoutColumnLayoutDisplayName,
-                          Utils::Icon({{":/qmldesigner/icon/designeractions/images/column.png",
-                                        Utils::Theme::IconsBaseColor}}).icon(),
-                          layoutColumnLayoutToolTip,
-                          layoutCategory,
-                          QKeySequence("Ctrl+l"),
-                          3,
-                          &layoutColumnLayout,
-                          &selectionCanBeLayoutedAndQtQuickLayoutPossible));
+    addDesignerAction(
+        new ModelNodeAction(layoutColumnLayoutCommandId,
+                            layoutColumnLayoutDisplayName,
+                            Utils::Icon({{":/qmldesigner/icon/designeractions/images/column.png",
+                                          Utils::Theme::IconsBaseColor}})
+                                .icon(),
+                            layoutColumnLayoutToolTip,
+                            layoutCategory,
+                            QKeySequence("Ctrl+l"),
+                            3,
+                            &layoutColumnLayout,
+                            &selectionCanBeLayoutedAndQtQuickLayoutPossibleAndNotMCU));
 
     addDesignerAction(new ModelNodeAction(
                           layoutGridLayoutCommandId,
@@ -1896,15 +1897,23 @@ void DesignerActionManager::createDefaultDesignerActions()
     addDesignerAction(new SeparatorDesignerAction(rootCategory, Priorities::ViewOprionsSection));
     addDesignerAction(new SeparatorDesignerAction(rootCategory, Priorities::CustomActionsSection));
 
-    addDesignerAction(new ModelNodeContextMenuAction(
-                          goIntoComponentCommandId,
-                          enterComponentDisplayName,
-                          contextIcon(DesignerIcons::EnterComponentIcon),
-                          rootCategory,
-                          QKeySequence(Qt::Key_F2),
-                          Priorities::ComponentActions + 2,
-                          &goIntoComponentOperation,
-                          &selectionIsComponent));
+    addDesignerAction(new ModelNodeContextMenuAction(goIntoComponentCommandId,
+                                                     enterComponentDisplayName,
+                                                     contextIcon(DesignerIcons::EnterComponentIcon),
+                                                     rootCategory,
+                                                     QKeySequence(Qt::Key_F2),
+                                                     Priorities::ComponentActions + 2,
+                                                     &goIntoComponentOperation,
+                                                     &selectionIsComponent));
+
+    addDesignerAction(new ModelNodeContextMenuAction(jumpToCodeCommandId,
+                                                     JumpToCodeDisplayName,
+                                                     contextIcon(DesignerIcons::JumpToCodeIcon),
+                                                     rootCategory,
+                                                     QKeySequence(Qt::Key_F4),
+                                                     Priorities::JumpToCode,
+                                                     &jumpToCodeOperation,
+                                                     &singleSelection));
 
     addDesignerAction(new ModelNodeContextMenuAction(
                           editAnnotationsCommandId,
@@ -1928,9 +1937,7 @@ void DesignerActionManager::createDefaultDesignerActions()
                           &addMouseAreaFillCheck,
                           &singleSelection));
 
-    const bool standaloneMode = QmlProjectManager::QmlProject::isQtDesignStudio();
-
-    if (!standaloneMode) {
+    if (!Core::ICore::isQtDesignStudio()) {
         addDesignerAction(new ModelNodeContextMenuAction(goToImplementationCommandId,
                                                          goToImplementationDisplayName,
                                                          {},

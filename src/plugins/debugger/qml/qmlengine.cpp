@@ -36,18 +36,17 @@
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
 
-#include <app/app_version.h>
-
 #include <utils/basetreeview.h>
 #include <utils/fileinprojectfinder.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/treemodel.h>
 
 #include <QDebug>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -142,7 +141,7 @@ public:
     void evaluate(const QString expr, qint64 context, const QmlCallback &cb);
     void lookup(const LookupItems &items);
     void backtrace();
-    void updateLocals();
+    void updateLocals(bool focusOnFrame = true);
     void scope(int number, int frameNumber = -1);
     void scripts(int types = 4, const QList<int> ids = QList<int>(),
                  bool includeSource = false, const QVariant filter = QVariant());
@@ -200,7 +199,7 @@ public:
 
     QHash<QString, QTextDocument*> sourceDocuments;
     InteractiveInterpreter interpreter;
-    QtcProcess process;
+    Process process;
     QmlInspectorAgent inspectorAgent;
 
     QList<quint32> queryIds;
@@ -209,6 +208,7 @@ public:
     bool unpausedEvaluate = false;
     bool contextEvaluate = false;
     bool supportChangeBreakpoint = false;
+    bool hasQuit = false;
 
     QTimer connectionTimer;
     QmlDebug::QDebugMessageClient *msgClient = nullptr;
@@ -216,6 +216,8 @@ public:
     QHash<int, QmlCallback> callbackForToken;
 
     FileInProjectFinder fileFinder;
+
+    bool skipFocusOnNextHandleFrame = false;
 
 private:
     ConsoleItem *constructLogItemTree(const QmlV8ObjectData &objectData, QList<int> &seenHandles);
@@ -249,17 +251,17 @@ QmlEngine::QmlEngine()
     connect(stackHandler(), &StackHandler::currentIndexChanged,
             this, &QmlEngine::updateCurrentContext);
 
-    connect(&d->process, &QtcProcess::readyReadStandardOutput, this, [this] {
+    connect(&d->process, &Process::readyReadStandardOutput, this, [this] {
         // FIXME: Redirect to RunControl
         showMessage(d->process.readAllStandardOutput(), AppOutput);
     });
-    connect(&d->process, &QtcProcess::readyReadStandardError, this, [this] {
+    connect(&d->process, &Process::readyReadStandardError, this, [this] {
         // FIXME: Redirect to RunControl
         showMessage(d->process.readAllStandardError(), AppOutput);
     });
 
-    connect(&d->process, &QtcProcess::done, this, &QmlEngine::disconnected);
-    connect(&d->process, &QtcProcess::started, this, &QmlEngine::handleLauncherStarted);
+    connect(&d->process, &Process::done, this, &QmlEngine::disconnected);
+    connect(&d->process, &Process::started, this, &QmlEngine::handleLauncherStarted);
 
     debuggerConsole()->populateFileFinder();
     debuggerConsole()->setScriptEvaluator([this](const QString &expr) {
@@ -378,6 +380,9 @@ void QmlEngine::beginConnection()
 
 void QmlEngine::connectionStartupFailed()
 {
+    if (d->hasQuit)
+        return;
+
     if (d->retryOnConnectFail) {
         // retry after 3 seconds ...
         QTimer::singleShot(3000, this, [this] { beginConnection(); });
@@ -386,7 +391,7 @@ void QmlEngine::connectionStartupFailed()
 
     auto infoBox = new QMessageBox(ICore::dialogParent());
     infoBox->setIcon(QMessageBox::Critical);
-    infoBox->setWindowTitle(Core::Constants::IDE_DISPLAY_NAME);
+    infoBox->setWindowTitle(QGuiApplication::applicationDisplayName());
     infoBox->setText(Tr::tr("Could not connect to the in-process QML debugger."
                         "\nDo you want to retry?"));
     infoBox->setStandardButtons(QMessageBox::Retry | QMessageBox::Cancel |
@@ -404,18 +409,18 @@ void QmlEngine::appStartupFailed(const QString &errorMessage)
 {
     QString error = Tr::tr("Could not connect to the in-process QML debugger. %1").arg(errorMessage);
 
-    if (companionEngine()) {
+    if (companionEngines().isEmpty()) {
+        debuggerConsole()->printItem(ConsoleItem::WarningType, error);
+    } else {
         auto infoBox = new QMessageBox(ICore::dialogParent());
         infoBox->setIcon(QMessageBox::Critical);
-        infoBox->setWindowTitle(Core::Constants::IDE_DISPLAY_NAME);
+        infoBox->setWindowTitle(QGuiApplication::applicationDisplayName());
         infoBox->setText(error);
         infoBox->setStandardButtons(QMessageBox::Ok | QMessageBox::Help);
         infoBox->setDefaultButton(QMessageBox::Ok);
         connect(infoBox, &QDialog::finished,
                 this, &QmlEngine::errorMessageBoxFinished);
         infoBox->show();
-    } else {
-        debuggerConsole()->printItem(ConsoleItem::WarningType, error);
     }
 
     notifyEngineRunFailed();
@@ -603,10 +608,10 @@ void QmlEngine::executeRunToLine(const ContextData &data)
 {
     QTC_ASSERT(state() == InferiorStopOk, qDebug() << state());
     showStatusMessage(Tr::tr("Run to line %1 (%2) requested...")
-                          .arg(data.lineNumber)
+                          .arg(data.textPosition.line)
                           .arg(data.fileName.toString()),
                       5000);
-    d->setBreakpoint(SCRIPTREGEXP, data.fileName.toString(), true, data.lineNumber);
+    d->setBreakpoint(SCRIPTREGEXP, data.fileName.toString(), true, data.textPosition.line);
     clearExceptionSelection();
     d->continueDebugging(Continue);
 
@@ -658,7 +663,7 @@ void QmlEngine::insertBreakpoint(const Breakpoint &bp)
 
     } else if (requested.type == BreakpointByFileAndLine) {
         d->setBreakpoint(SCRIPTREGEXP, requested.fileName.toString(),
-                         requested.enabled, requested.lineNumber, 0,
+                         requested.enabled, requested.textPosition.line, 0,
                          requested.condition, requested.ignoreCount);
 
     } else if (requested.type == BreakpointOnQmlSignalEmit) {
@@ -716,7 +721,7 @@ void QmlEngine::updateBreakpoint(const Breakpoint &bp)
     } else {
         d->clearBreakpoint(bp);
         d->setBreakpoint(SCRIPTREGEXP, requested.fileName.toString(),
-                         requested.enabled, requested.lineNumber, 0,
+                         requested.enabled, requested.textPosition.line, 0,
                          requested.condition, requested.ignoreCount);
         d->breakpointsSync.insert(d->sequence, bp);
     }
@@ -776,7 +781,7 @@ void QmlEngine::assignValueInDebugger(WatchItem *item,
     const QString &expression, const QVariant &editValue)
 {
     if (!expression.isEmpty()) {
-        QTC_CHECK(editValue.type() == QVariant::String);
+        QTC_CHECK(editValue.typeId() == QVariant::String);
         QVariant value;
         QString val = editValue.toString();
         if (item->type == "boolean")
@@ -792,7 +797,7 @@ void QmlEngine::assignValueInDebugger(WatchItem *item,
             StackHandler *handler = stackHandler();
             QString exp = QString("%1 = %2;").arg(expression).arg(value.toString());
             if (handler->isContentsValid() && handler->currentFrame().isUsable()) {
-                d->evaluate(exp, -1, [this](const QVariantMap &) { d->updateLocals(); });
+                d->evaluate(exp, -1, [this](const QVariantMap &) { d->updateLocals(false); });
             } else {
                 showMessage(Tr::tr("Cannot evaluate %1 in current stack frame.")
                             .arg(expression), ConsoleOutput);
@@ -846,16 +851,15 @@ bool compareConsoleItems(const ConsoleItem *a, const ConsoleItem *b)
     return a->text() < b->text();
 }
 
-static ConsoleItem *constructLogItemTree(const QVariant &result,
-                                         const QString &key = QString())
+static ConsoleItem *constructLogItemTree(const QVariant &result, const QString &key = {})
 {
-    bool sorted = debuggerSettings()->sortStructMembers.value();
+    const bool sorted = settings().sortStructMembers();
     if (!result.isValid())
         return nullptr;
 
     QString text;
     ConsoleItem *item = nullptr;
-    if (result.type() == QVariant::Map) {
+    if (result.typeId() == QVariant::Map) {
         if (key.isEmpty())
             text = "Object";
         else
@@ -879,7 +883,7 @@ static ConsoleItem *constructLogItemTree(const QVariant &result,
                 item->appendChild(child);
         }
 
-    } else if (result.type() == QVariant::List) {
+    } else if (result.typeId() == QVariant::List) {
         if (key.isEmpty())
             text = "List";
         else
@@ -937,14 +941,14 @@ void QmlEngine::quitDebugger()
 {
     d->automaticConnect = false;
     d->retryOnConnectFail = false;
+    d->hasQuit = true;
     stopProcess();
     closeConnection();
 }
 
 void QmlEngine::doUpdateLocals(const UpdateParameters &params)
 {
-    Q_UNUSED(params)
-    d->updateLocals();
+    d->updateLocals(params.qmlFocusOnFrame);
 }
 
 Context QmlEngine::languageContext() const
@@ -1030,7 +1034,7 @@ bool QmlEngine::companionPreventsActions() const
 {
     // We need a C++ Engine in a Running state to do anything sensible
     // as otherwise the debugger services in the debuggee are unresponsive.
-    if (DebuggerEngine *companion = companionEngine())
+    if (DebuggerEngine *companion = companionEngines().value(0))
         return companion->state() != InferiorRunOk;
 
     return false;
@@ -1294,13 +1298,14 @@ void QmlEnginePrivate::backtrace()
     runCommand(cmd, CB(handleBacktrace));
 }
 
-void QmlEnginePrivate::updateLocals()
+void QmlEnginePrivate::updateLocals(bool focusOnFrame)
 {
     //    { "seq"       : <number>,
     //      "type"      : "request",
     //      "command"   : "frame",
     //      "arguments" : { "number" : <frame number> }
     //    }
+    skipFocusOnNextHandleFrame = focusOnFrame;
 
     DebuggerCommand cmd(FRAME);
     cmd.arg(NUMBER, stackIndexLookup.value(engine->stackHandler()->currentIndex()));
@@ -1354,9 +1359,9 @@ void QmlEnginePrivate::scripts(int types, const QList<int> ids, bool includeSour
     if (includeSource)
         cmd.arg(INCLUDESOURCE, includeSource);
 
-    if (filter.type() == QVariant::String)
+    if (filter.typeId() == QVariant::String)
         cmd.arg(FILTER, filter.toString());
-    else if (filter.type() == QVariant::Int)
+    else if (filter.typeId() == QVariant::Int)
         cmd.arg(FILTER, filter.toInt());
     else
         QTC_CHECK(!filter.isValid());
@@ -1727,7 +1732,7 @@ void QmlEnginePrivate::messageReceived(const QByteArray &data)
                             //The breakpoint requested line should be same as
                             //actual line
                             if (bp && bp->state() != BreakpointInserted) {
-                                bp->setLineNumber(line);
+                                bp->setTextPosition({line, -1});
                                 bp->setPending(false);
                                 engine->notifyBreakpointInsertOk(bp);
                             }
@@ -1865,7 +1870,7 @@ void QmlEnginePrivate::messageReceived(const QByteArray &data)
                             setBreakpoint(SCRIPTREGEXP,
                                           params.fileName.toString(),
                                           params.enabled,
-                                          params.lineNumber,
+                                          params.textPosition.line,
                                           newColumn,
                                           params.condition,
                                           params.ignoreCount);
@@ -1889,7 +1894,7 @@ void QmlEnginePrivate::messageReceived(const QByteArray &data)
                                 bp->setFunctionName(invocationText);
                             }
                             if (bp->state() != BreakpointInserted) {
-                                bp->setLineNumber(breakData.value("sourceLine").toInt() + 1);
+                                bp->setTextPosition({breakData.value("sourceLine").toInt() + 1, -1});
                                 bp->setPending(false);
                                 engine->notifyBreakpointInsertOk(bp);
                             }
@@ -2039,7 +2044,7 @@ StackFrame QmlEnginePrivate::extractStackFrame(const QVariant &bodyVal)
     }
 
     auto extractString = [this](const QVariant &item) {
-        return ((item.type() == QVariant::String) ? item : extractData(item).value).toString();
+        return (item.typeId() == QVariant::String ? item : extractData(item).value).toString();
     };
 
     stackFrame.function = extractString(body.value("func"));
@@ -2138,7 +2143,9 @@ void QmlEnginePrivate::handleFrame(const QVariantMap &response)
         currentFrameScopes.append(scopeIndex);
         this->scope(scopeIndex);
     }
-    engine->gotoLocation(stackHandler->currentFrame());
+
+    if (skipFocusOnNextHandleFrame)
+        engine->gotoLocation(stackHandler->currentFrame());
 
     // Send watchers list
     if (stackHandler->isContentsValid() && stackHandler->currentFrame().isUsable()) {
@@ -2235,7 +2242,7 @@ void QmlEnginePrivate::constructChildLogItems(ConsoleItem *item, const QmlV8Obje
     for (const QVariant &property : objectData.properties)
         *(it++) = constructLogItemTree(extractData(property), seenHandles);
 
-    if (debuggerSettings()->sortStructMembers.value())
+    if (settings().sortStructMembers())
         std::sort(children.begin(), children.end(), compareConsoleItems);
 
     for (ConsoleItem *child : std::as_const(children))
@@ -2347,7 +2354,7 @@ void QmlEnginePrivate::insertSubItems(WatchItem *parent, const QVariantList &pro
         parent->appendChild(item.release());
     }
 
-    if (debuggerSettings()->sortStructMembers.value()) {
+    if (settings().sortStructMembers()) {
         parent->sortChildren([](const WatchItem *item1, const WatchItem *item2) {
             return item1->name < item2->name;
         });

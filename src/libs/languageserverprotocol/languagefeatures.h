@@ -678,8 +678,8 @@ public:
     void clearTrimFinalNewlines() { remove(trimFinalNewlinesKey); }
 
     QHash<QString, DocumentFormattingProperty> properties() const;
-    void setProperty(const QString &key, const DocumentFormattingProperty &property);
-    void removeProperty(const QString &key) { remove(key); }
+    void setProperty(const Key key, const DocumentFormattingProperty &property);
+    void removeProperty(const Key &key) { remove(key); }
 
     bool isValid() const override { return contains(insertSpaceKey) && contains(tabSizeKey); }
 };

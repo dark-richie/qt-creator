@@ -37,6 +37,7 @@
 #include <utils/qtcassert.h>
 #include <utils/qtcsettings.h>
 #include <utils/styledbar.h>
+#include <utils/stylehelper.h>
 #include <utils/treemodel.h>
 #include <utils/utilsicons.h>
 
@@ -246,8 +247,7 @@ QVariant MiscSettingsPanelItem::data(int column, int role) const
 
     if (role == ActiveItemRole)  // We are the active one.
         return QVariant::fromValue<TreeItem *>(const_cast<MiscSettingsPanelItem *>(this));
-
-    return QVariant();
+    return {};
 }
 
 Qt::ItemFlags MiscSettingsPanelItem::flags(int column) const
@@ -300,7 +300,7 @@ public:
             if (0 <= m_currentPanelIndex && m_currentPanelIndex < childCount())
                 return childAt(m_currentPanelIndex)->data(column, role);
         }
-        return QVariant();
+        return {};
     }
 
     bool setData(int column, const QVariant &data, int role) override
@@ -363,7 +363,7 @@ public:
             if (m_currentChildIndex == 1)
                 return m_miscItem->data(column, role);
         }
-        return QVariant();
+        return {};
     }
 
     bool setData(int column, const QVariant &dat, int role) override
@@ -561,10 +561,6 @@ public:
             m_importBuild->setEnabled(project && project->projectImporter());
         });
 
-        m_manageKits = new QPushButton(Tr::tr("Manage Kits..."));
-        connect(m_manageKits, &QPushButton::clicked,
-                this, &ProjectWindowPrivate::handleManageKits);
-
         auto styledBar = new StyledBar; // The black blob on top of the side bar
         styledBar->setObjectName("ProjectModeStyledBar");
 
@@ -572,15 +568,9 @@ public:
         selectorView->setObjectName("ProjectSelector"); // Needed for dock widget state saving
         selectorView->setWindowTitle(Tr::tr("Project Selector"));
         selectorView->setAutoFillBackground(true);
-        selectorView->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(selectorView, &QWidget::customContextMenuRequested,
-                this, &ProjectWindowPrivate::openContextMenu);
 
         auto activeLabel = new QLabel(Tr::tr("Active Project"));
-        QFont font = activeLabel->font();
-        font.setBold(true);
-        font.setPointSizeF(font.pointSizeF() * 1.2);
-        activeLabel->setFont(font);
+        activeLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
 
         auto innerLayout = new QVBoxLayout;
         innerLayout->setSpacing(10);
@@ -588,8 +578,12 @@ public:
                                         PanelsWidget::PanelVMargin, 0);
 
         QStringList list = Core::ICore::settings()->value("HideOptionCategories").toStringList();
-        if (!list.contains("Kit")) {
-            innerLayout->addWidget(m_manageKits);
+        if (!list.contains("Kits")) {
+            auto manageKits = new QPushButton(Tr::tr("Manage Kits..."));
+            connect(manageKits, &QPushButton::clicked,
+                    this, &ProjectWindowPrivate::handleManageKits);
+
+            innerLayout->addWidget(manageKits);
             innerLayout->addSpacerItem(new QSpacerItem(10, 30, QSizePolicy::Maximum, QSizePolicy::Maximum));
         }
 
@@ -745,9 +739,17 @@ public:
 
     void handleManageKits()
     {
-        if (ProjectItem *projectItem = m_projectsModel.rootItem()->childAt(0)) {
-            if (auto kitPage = KitOptionsPage::instance())
-                kitPage->showKit(KitManager::kit(Id::fromSetting(projectItem->data(0, KitIdRole))));
+        const QModelIndexList selected = m_selectorTree->selectionModel()->selectedIndexes();
+        if (!selected.isEmpty()) {
+            TreeItem *treeItem = m_projectsModel.itemForIndex(selected.front());
+            while (treeItem) {
+                const Id kitId = Id::fromSetting(treeItem->data(0, KitIdRole));
+                if (kitId.isValid()) {
+                    setSelectectKitId(kitId);
+                    break;
+                }
+                treeItem = treeItem->parent();
+            }
         }
         ICore::showOptionsDialog(Constants::KITS_SETTINGS_PAGE_ID);
     }
@@ -808,7 +810,6 @@ public:
     QComboBox *m_projectSelection;
     SelectorTree *m_selectorTree;
     QPushButton *m_importBuild;
-    QPushButton *m_manageKits;
     QAction m_toggleRightSidebarAction;
     QDockWidget *m_outputDock;
     BuildSystemOutputWindow *m_buildSystemOutput;
@@ -858,7 +859,7 @@ void ProjectWindow::savePersistentSettings() const
 {
     if (!centralWidget())
         return;
-    QSettings * const settings = ICore::settings();
+    QtcSettings * const settings = ICore::settings();
     settings->beginGroup(PROJECT_WINDOW_KEY);
     saveSettings(settings);
     settings->endGroup();
@@ -868,7 +869,7 @@ void ProjectWindow::loadPersistentSettings()
 {
     if (!centralWidget())
         return;
-    QSettings * const settings = ICore::settings();
+    QtcSettings * const settings = ICore::settings();
     settings->beginGroup(PROJECT_WINDOW_KEY);
     restoreSettings(settings);
     settings->endGroup();
@@ -902,8 +903,7 @@ void SelectorDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
         case 2: {
             QColor col = creatorTheme()->color(Theme::TextColorNormal);
             opt.palette.setColor(QPalette::Text, col);
-            opt.font.setBold(true);
-            opt.font.setPointSizeF(opt.font.pointSizeF() * 1.2);
+            opt.font = StyleHelper::uiFont(StyleHelper::UiElementH4);
             break;
             }
         }

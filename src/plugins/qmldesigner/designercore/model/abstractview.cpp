@@ -8,12 +8,13 @@
 #include "internalnode_p.h"
 #include "model.h"
 #include "model_p.h"
+#include "modelutils.h"
 #include "nodeinstanceview.h"
 #include "nodelistproperty.h"
 #include "nodemetainfo.h"
+#include "qmldesignerconstants.h"
 #include "qmlstate.h"
 #include "qmltimeline.h"
-#include "qmldesignerconstants.h"
 #include "rewritertransaction.h"
 #include "variantproperty.h"
 
@@ -64,8 +65,12 @@ RewriterTransaction AbstractView::beginRewriterTransaction(const QByteArray &ide
 
 ModelNode AbstractView::createModelNode(const TypeName &typeName)
 {
-    const NodeMetaInfo metaInfo = model()->metaInfo(typeName);
-    return createModelNode(typeName, metaInfo.majorVersion(), metaInfo.minorVersion());
+    if constexpr (useProjectStorage()) {
+        return createModelNode(typeName, -1, -1);
+    } else {
+        const NodeMetaInfo metaInfo = model()->metaInfo(typeName);
+        return createModelNode(typeName, metaInfo.majorVersion(), metaInfo.minorVersion());
+    }
 }
 
 ModelNode AbstractView::createModelNode(const TypeName &typeName,
@@ -124,12 +129,6 @@ WidgetInfo AbstractView::createWidgetInfo(QWidget *widget,
     return widgetInfo;
 }
 
-// Returns the model of the view.
-Model* AbstractView::model() const
-{
-    return m_model.data();
-}
-
 bool AbstractView::isAttached() const
 {
     return model();
@@ -143,9 +142,6 @@ The default implementation is setting the reference of the model to the view.
 void AbstractView::modelAttached(Model *model)
 {
     setModel(model);
-
-    if (model)
-        model->d->updateEnabledViews();
 }
 
 /*!
@@ -161,6 +157,8 @@ void AbstractView::modelAboutToBeDetached(Model *)
 {
     removeModel();
 }
+
+void AbstractView::refreshMetaInfos(const TypeIds &) {}
 
 /*!
     \enum QmlDesigner::AbstractView::PropertyChangeFlag
@@ -315,15 +313,15 @@ void AbstractView::nodeTypeChanged(const ModelNode & /*node*/, const TypeName & 
 
 }
 
-void AbstractView::importsChanged(const QList<Import> &/*addedImports*/, const QList<Import> &/*removedImports*/)
+void AbstractView::importsChanged(const Imports &/*addedImports*/, const Imports &/*removedImports*/)
 {
 }
 
-void AbstractView::possibleImportsChanged(const QList<Import> &/*possibleImports*/)
+void AbstractView::possibleImportsChanged(const Imports &/*possibleImports*/)
 {
 }
 
-void AbstractView::usedImportsChanged(const QList<Import> &/*usedImports*/)
+void AbstractView::usedImportsChanged(const Imports &/*usedImports*/)
 {
 }
 
@@ -379,14 +377,16 @@ void AbstractView::dragEnded() {}
 
 QList<ModelNode> AbstractView::toModelNodeList(const QList<Internal::InternalNode::Pointer> &nodeList) const
 {
-    return QmlDesigner::toModelNodeList(nodeList, const_cast<AbstractView*>(this));
+    return QmlDesigner::toModelNodeList(nodeList, m_model, const_cast<AbstractView *>(this));
 }
 
-QList<ModelNode> toModelNodeList(const QList<Internal::InternalNode::Pointer> &nodeList, AbstractView *view)
+QList<ModelNode> toModelNodeList(const QList<Internal::InternalNode::Pointer> &nodeList,
+                                 Model *model,
+                                 AbstractView *view)
 {
     QList<ModelNode> newNodeList;
     for (const Internal::InternalNode::Pointer &node : nodeList)
-        newNodeList.append(ModelNode(node, view->model(), view));
+        newNodeList.append(ModelNode(node, model, view));
 
     return newNodeList;
 }
@@ -409,7 +409,7 @@ void AbstractView::setSelectedModelNodes(const QList<ModelNode> &selectedNodeLis
     QList<ModelNode> unlockedNodes;
 
     for (const auto &modelNode : selectedNodeList) {
-        if (!ModelNode::isThisOrAncestorLocked(modelNode))
+        if (!ModelUtils::isThisOrAncestorLocked(modelNode))
             unlockedNodes.push_back(modelNode);
     }
 
@@ -418,7 +418,7 @@ void AbstractView::setSelectedModelNodes(const QList<ModelNode> &selectedNodeLis
 
 void AbstractView::setSelectedModelNode(const ModelNode &modelNode)
 {
-    if (ModelNode::isThisOrAncestorLocked(modelNode)) {
+    if (ModelUtils::isThisOrAncestorLocked(modelNode)) {
         clearSelectedModelNodes();
         return;
     }
@@ -437,7 +437,7 @@ bool AbstractView::hasSelectedModelNodes() const
 
 bool AbstractView::hasSingleSelectedModelNode() const
 {
-    return model()->d->selectedNodes().count() == 1;
+    return model()->d->selectedNodes().size() == 1;
 }
 
 bool AbstractView::isSelectedModelNode(const ModelNode &modelNode) const
@@ -617,15 +617,17 @@ bool AbstractView::isEnabled() const
 void AbstractView::setEnabled(bool b)
 {
     m_enabled = b;
-
-    if (model())
-        model()->d->updateEnabledViews();
 }
 
 QList<ModelNode> AbstractView::allModelNodes() const
 {
     QTC_ASSERT(model(), return {});
-    return toModelNodeList(model()->d->allNodes());
+    return toModelNodeList(model()->d->allNodesOrdered());
+}
+
+QList<ModelNode> AbstractView::allModelNodesUnordered() const
+{
+    return toModelNodeList(model()->d->allNodesUnordered());
 }
 
 QList<ModelNode> AbstractView::allModelNodesOfType(const NodeMetaInfo &type) const
@@ -782,12 +784,16 @@ void AbstractView::ensureMaterialLibraryNode()
     }
 
     executeInTransaction(__FUNCTION__, [&] {
-        // Create material library node
+    // Create material library node
+#ifdef QDS_USE_PROJECTSTORAGE
+        TypeName nodeTypeName = rootModelNode().metaInfo().isQtQuick3DNode() ? "Node" : "Item";
+        matLib = createModelNode(nodeTypeName, -1, -1);
+#else
         auto nodeType = rootModelNode().metaInfo().isQtQuick3DNode()
                             ? model()->qtQuick3DNodeMetaInfo()
                             : model()->qtQuickItemMetaInfo();
         matLib = createModelNode(nodeType.typeName(), nodeType.majorVersion(), nodeType.minorVersion());
-
+#endif
         matLib.setIdWithoutRefactoring(Constants::MATERIAL_LIB_ID);
         rootModelNode().defaultNodeListProperty().reparentHere(matLib);
     });
@@ -893,32 +899,28 @@ QmlTimeline AbstractView::currentTimeline() const
 
 static int getMinorVersionFromImport(const Model *model)
 {
-    const QList<Import> imports = model->imports();
-    for (const Import &import : imports) {
-        if (import.isLibraryImport() && import.url() == "QtQuick") {
-            const QString versionString = import.version();
-            if (versionString.contains(".")) {
-                const QString minorVersionString = versionString.split(".").constLast();
-                return minorVersionString.toInt();
-            }
-        }
-    }
+    const Imports &imports = model->imports();
+
+    auto found = std::find_if(imports.begin(), imports.end(), [](const auto &import) {
+        return import.url() == "QtQuick";
+    });
+
+    if (found != imports.end())
+        return found->minorVersion();
 
     return -1;
 }
 
 static int getMajorVersionFromImport(const Model *model)
 {
-    const QList<Import> imports = model->imports();
-    for (const Import &import : imports) {
-        if (import.isLibraryImport() && import.url() == QStringLiteral("QtQuick")) {
-            const QString versionString = import.version();
-            if (versionString.contains(QStringLiteral("."))) {
-                const QString majorVersionString = versionString.split(QStringLiteral(".")).constFirst();
-                return majorVersionString.toInt();
-            }
-        }
-    }
+    const Imports &imports = model->imports();
+
+    auto found = std::find_if(imports.begin(), imports.end(), [](const auto &import) {
+        return import.url() == "QtQuick";
+    });
+
+    if (found != imports.end())
+        return found->majorVersion();
 
     return -1;
 }
@@ -926,12 +928,9 @@ static int getMajorVersionFromImport(const Model *model)
 static int getMajorVersionFromNode(const ModelNode &modelNode)
 {
     if (modelNode.metaInfo().isValid()) {
-        for (const NodeMetaInfo &info :  modelNode.metaInfo().classHierarchy()) {
-            if (info.typeName() == "QtQml.QtObject"
-             || info.typeName() == "QtQuick.QtObject"
-             || info.typeName() == "QtQuick.Item") {
+        for (const NodeMetaInfo &info : modelNode.metaInfo().selfAndPrototypes()) {
+            if (info.isQtObject() || info.isQtQuickItem())
                 return info.majorVersion();
-            }
         }
     }
 
@@ -941,9 +940,9 @@ static int getMajorVersionFromNode(const ModelNode &modelNode)
 static int getMinorVersionFromNode(const ModelNode &modelNode)
 {
     if (modelNode.metaInfo().isValid()) {
-        const NodeMetaInfos infos =  modelNode.metaInfo().classHierarchy();
+        const NodeMetaInfos infos = modelNode.metaInfo().selfAndPrototypes();
         for (const NodeMetaInfo &info :  infos) {
-            if (info.typeName() == "QtQuick.QtObject" || info.typeName() == "QtQuick.Item")
+            if (info.isQtObject() || info.isQtQuickItem())
                 return info.minorVersion();
         }
     }

@@ -9,8 +9,11 @@
 #include <QRegularExpression>
 
 #include "task.h"
+#include "taskhub.h"
 
 namespace ProjectExplorer {
+class TaskCategory;
+
 namespace Internal {
 
 class TaskModel : public QAbstractItemModel
@@ -29,9 +32,8 @@ public:
     Task task(const QModelIndex &index) const;
     Tasks tasks(const QModelIndexList &indexes) const;
 
-    QList<Utils::Id> categoryIds() const;
-    QString categoryDisplayName(Utils::Id categoryId) const;
-    void addCategory(Utils::Id categoryId, const QString &categoryName, int priority);
+    QList<TaskCategory> categories() const;
+    void addCategory(const TaskCategory &category);
 
     Tasks tasks(Utils::Id categoryId = Utils::Id()) const;
     void addTask(const Task &t);
@@ -44,7 +46,7 @@ public:
     int sizeOfLineNumber(const QFont &font);
     void setFileNotFound(const QModelIndex &index, bool b);
 
-    enum Roles { Description = Qt::UserRole, };
+    enum Roles { Description = Qt::UserRole, Type};
 
     int taskCount(Utils::Id categoryId);
     int errorTaskCount(Utils::Id categoryId);
@@ -84,8 +86,7 @@ private:
             errors = 0;
         }
 
-        QString displayName;
-        int priority = 0;
+        TaskCategory category;
         int count = 0;
         int warnings = 0;
         int errors = 0;
@@ -117,8 +118,12 @@ public:
     bool filterIncludesErrors() const { return m_includeErrors; }
     void setFilterIncludesErrors(bool b) { m_includeErrors = b; invalidateFilter(); }
 
-    QList<Utils::Id> filteredCategories() const { return m_categoryIds; }
-    void setFilteredCategories(const QList<Utils::Id> &categoryIds) { m_categoryIds = categoryIds; invalidateFilter(); }
+    QSet<Utils::Id> filteredCategories() const { return m_categoryIds; }
+    void setFilteredCategories(const QSet<Utils::Id> &categoryIds)
+    {
+        m_categoryIds = categoryIds;
+        invalidateFilter();
+    }
 
     Task task(const QModelIndex &index) const { return taskModel()->task(mapToSource(index)); }
     Tasks tasks(const QModelIndexList &indexes) const;
@@ -144,7 +149,7 @@ private:
     bool m_filterStringIsRegexp = false;
     bool m_filterIsInverted = false;
     Qt::CaseSensitivity m_filterCaseSensitivity = Qt::CaseInsensitive;
-    QList<Utils::Id> m_categoryIds;
+    QSet<Utils::Id> m_categoryIds;
     QString m_filterText;
     QRegularExpression m_filterRegexp;
 };

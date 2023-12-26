@@ -5,13 +5,11 @@
 #include "auxiliarydataproperties.h"
 #include "bindingproperty.h"
 #include "invalidmodelnodeexception.h"
-#include "itemlibraryinfo.h"
 #include "nodehints.h"
 #include "nodelistproperty.h"
 #include "qmlanchors.h"
 #include "qmlchangeset.h"
 #include "variantproperty.h"
-#include <metainfo.h>
 
 #include "plaintexteditmodifier.h"
 #include "rewriterview.h"
@@ -41,26 +39,15 @@ bool Qml3DNode::isValidVisualRoot(const ModelNode &modelNode)
            && (modelNode.metaInfo().isQtQuick3DNode() || modelNode.metaInfo().isQtQuick3DMaterial());
 }
 
-void Qml3DNode::setVariantProperty(const PropertyName &name, const QVariant &value)
+bool Qml3DNode::handleEulerRotation(const PropertyName &name)
 {
     if (isBlocked(name))
-        return;
+        return false;
 
     if (name.startsWith("eulerRotation"))
         handleEulerRotationSet();
 
-    QmlObjectNode::setVariantProperty(name, value);
-}
-
-void Qml3DNode::setBindingProperty(const PropertyName &name, const QString &expression)
-{
-    if (isBlocked(name))
-        return;
-
-    if (name.startsWith("eulerRotation"))
-        handleEulerRotationSet();
-
-    QmlObjectNode::setBindingProperty(name, expression);
+    return true;
 }
 
 bool Qml3DNode::isBlocked(const PropertyName &propName) const

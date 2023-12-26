@@ -3,13 +3,14 @@
 
 #include "cppcheckmanualrundialog.h"
 
-#include "cppcheckoptions.h"
+#include "cppchecksettings.h"
 #include "cppchecktr.h"
 
 #include <projectexplorer/selectablefilesmodel.h>
 
 #include <cppeditor/projectinfo.h>
 
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 
 #include <QBoxLayout>
@@ -18,11 +19,8 @@
 
 namespace Cppcheck::Internal {
 
-ManualRunDialog::ManualRunDialog(const CppcheckOptions &options,
-                                 const ProjectExplorer::Project *project)
-    : QDialog(),
-    m_options(new OptionsWidget(this)),
-    m_model(new ProjectExplorer::SelectableFilesFromDirModel(this))
+ManualRunDialog::ManualRunDialog(const ProjectExplorer::Project *project)
+    : m_model(new ProjectExplorer::SelectableFilesFromDirModel(this))
 {
     QTC_ASSERT(project, return );
 
@@ -54,22 +52,15 @@ ManualRunDialog::ManualRunDialog(const CppcheckOptions &options,
         analyzeButton->setEnabled(m_model->hasCheckedFiles());
     });
 
+    auto optionsWidget = settings().layouter()().emerge();
+
     auto layout = new QVBoxLayout(this);
-    layout->addWidget(m_options);
+    layout->addWidget(optionsWidget);
     layout->addWidget(view);
     layout->addWidget(buttons);
 
-    if (auto layout = m_options->layout())
+    if (auto layout = optionsWidget->layout())
         layout->setContentsMargins(0, 0, 0, 0);
-
-    m_options->load(options);
-}
-
-CppcheckOptions ManualRunDialog::options() const
-{
-    CppcheckOptions result;
-    m_options->save(result);
-    return result;
 }
 
 Utils::FilePaths ManualRunDialog::filePaths() const

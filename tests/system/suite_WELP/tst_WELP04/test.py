@@ -3,6 +3,13 @@
 
 source("../../shared/qtcreator.py")
 
+
+def __waitForListView__():
+    listView = waitForObject("{container=':Qt Creator.WelcomeScreenStackedWidget' "
+                             "type='QListView' name='AllItemsView' visible='1'}")
+    return listView
+
+
 def main():
     # open Qt Creator
     startQC()
@@ -22,21 +29,21 @@ def main():
     searchTutorials = waitForObject("{type='QLineEdit' placeholderText='Search in Tutorials...'}")
     mouseClick(searchTutorials)
     replaceEditorContent(searchTutorials, "qwerty")
-    listView = waitForObject("{type='QListView' unnamed='1' visible='1' "
-                              "window=':Qt Creator_Core::Internal::MainWindow'}")
+    listView = __waitForListView__()
     waitFor('findExampleOrTutorial(listView, ".*") is None', 3000)
     tutorial = findExampleOrTutorial(listView, ".*", True)
     test.verify(tutorial is None,
                 "Verifying: 'Tutorials' topic is opened and nothing is shown.")
-    bnr = "Help: Building and Running an Example"
+    bnr = "Building and Running an Example"
     replaceEditorContent(searchTutorials, bnr.lower())
+    listView = __waitForListView__()
     waitFor('findExampleOrTutorial(listView, "%s.*") is not None' % bnr, 3000)
     tutorial = findExampleOrTutorial(listView, "%s.*" % bnr, True)
     test.verify(tutorial is not None, "Verifying: Expected Text tutorial is shown.")
     # clicking before documentation was updated will open the tutorial in browser
     progressBarWait(warn=False)
     # select a text tutorial
-    mouseClick(tutorial)
+    mouseClick(waitForObjectItem(listView, str(tutorial.text)))
     test.verify("Building and Running an Example" in
                 str(waitForObject(":Help Widget_Help::Internal::HelpWidget").windowTitle),
                 "Verifying: The tutorial is opened inside Help.")
@@ -45,7 +52,8 @@ def main():
     # check a demonstration video link
     mouseClick(searchTutorials)
     replaceEditorContent(searchTutorials, "embedded device")
-    embeddedTutorial = "Online: How to install and set up Qt for Device Creation.*"
+    embeddedTutorial = "How to install and set up Qt for Device Creation.*"
+    listView = __waitForListView__()
     waitFor('findExampleOrTutorial(listView, embeddedTutorial) is not None', 3000)
     tutorial = findExampleOrTutorial(listView, embeddedTutorial, True)
     test.verify(tutorial is not None,

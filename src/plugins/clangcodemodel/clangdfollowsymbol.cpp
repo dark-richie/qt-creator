@@ -39,11 +39,11 @@ public:
     VirtualFunctionAssistProcessor(ClangdFollowSymbol *followSymbol)
         : m_followSymbol(followSymbol) {}
 
-    void cancel() override { resetData(true); }
+    void cancel() override { resetData(); }
     bool running() override { return m_followSymbol && m_running; }
     void update();
     void finalize();
-    void resetData(bool resetFollowSymbolData);
+    void resetData();
 
 private:
     IAssistProposal *perform() override
@@ -90,6 +90,7 @@ public:
     void closeTempDocuments();
     bool addOpenFile(const FilePath &filePath);
     bool defLinkIsAmbiguous() const;
+    void cancel();
 
     ClangdFollowSymbol * const q;
     ClangdClient * const client;
@@ -153,7 +154,11 @@ ClangdFollowSymbol::ClangdFollowSymbol(ClangdClient *client, const QTextCursor &
         if (self->d->cursorNode)
             self->d->handleGotoDefinitionResult();
     };
-    client->symbolSupport().findLinkAt(document, cursor, std::move(gotoDefCallback), true);
+    client->symbolSupport().findLinkAt(document,
+                                       cursor,
+                                       std::move(gotoDefCallback),
+                                       true,
+                                       LanguageClient::LinkTarget::SymbolDef);
 
     const auto astHandler = [self = QPointer(this)](const ClangdAstNode &ast, const MessageId &) {
         qCDebug(clangdLog) << "received ast response for cursor";
@@ -169,16 +174,15 @@ ClangdFollowSymbol::ClangdFollowSymbol(ClangdClient *client, const QTextCursor &
 
 ClangdFollowSymbol::~ClangdFollowSymbol()
 {
-    d->closeTempDocuments();
-    if (d->virtualFuncAssistProcessor)
-        d->virtualFuncAssistProcessor->resetData(false);
-    for (const MessageId &id : std::as_const(d->pendingSymbolInfoRequests))
-        d->client->cancelRequest(id);
-    for (const MessageId &id : std::as_const(d->pendingGotoImplRequests))
-        d->client->cancelRequest(id);
-    for (const MessageId &id : std::as_const(d->pendingGotoDefRequests))
-        d->client->cancelRequest(id);
+    d->cancel();
     delete d;
+}
+
+void ClangdFollowSymbol::cancel()
+{
+    d->cancel();
+    clear();
+    emitDone();
 }
 
 void ClangdFollowSymbol::clear()
@@ -195,8 +199,7 @@ void ClangdFollowSymbol::emitDone(const Link &link)
         return;
 
     d->done = true;
-    if (link.hasValidTarget())
-        d->callback(link);
+    d->callback(link);
     emit done();
 }
 
@@ -219,6 +222,19 @@ bool ClangdFollowSymbol::Private::defLinkIsAmbiguous() const
     // Otherwise, we accept potentially doing more work than needed rather than not catching
     // possible overrides.
     return true;
+}
+
+void ClangdFollowSymbol::Private::cancel()
+{
+    closeTempDocuments();
+    if (virtualFuncAssistProcessor)
+        virtualFuncAssistProcessor->resetData();
+    for (const MessageId &id : std::as_const(pendingSymbolInfoRequests))
+        client->cancelRequest(id);
+    for (const MessageId &id : std::as_const(pendingGotoImplRequests))
+        client->cancelRequest(id);
+    for (const MessageId &id : std::as_const(pendingGotoDefRequests))
+        client->cancelRequest(id);
 }
 
 bool ClangdFollowSymbol::Private::addOpenFile(const FilePath &filePath)
@@ -285,16 +301,14 @@ void ClangdFollowSymbol::VirtualFunctionAssistProcessor::finalize()
     } else {
         setAsyncProposalAvailable(proposal);
     }
-    resetData(true);
+    resetData();
 }
 
-void ClangdFollowSymbol::VirtualFunctionAssistProcessor::resetData(bool resetFollowSymbolData)
+void ClangdFollowSymbol::VirtualFunctionAssistProcessor::resetData()
 {
     if (!m_followSymbol)
         return;
     m_followSymbol->d->virtualFuncAssistProcessor = nullptr;
-    if (resetFollowSymbolData)
-        m_followSymbol->emitDone();
     m_followSymbol = nullptr;
 }
 
@@ -323,7 +337,7 @@ IAssistProposal *ClangdFollowSymbol::VirtualFunctionAssistProcessor::createPropo
         items << createEntry({}, m_followSymbol->d->defLink);
     if (!final) {
         const auto infoItem = new VirtualFunctionProposalItem({}, false);
-        infoItem->setText(Tr::tr("collecting overrides ..."));
+        infoItem->setText(Tr::tr("collecting overrides..."));
         infoItem->setOrder(-1);
         items << infoItem;
     }
@@ -446,7 +460,7 @@ void ClangdFollowSymbol::Private::handleGotoImplementationResult(
     //         Also get the AST for the base declaration, so we can find out whether it's
     //         pure virtual and mark it accordingly.
     //         In addition, we need to follow all override links, because for these, clangd
-    //         gives us the declaration instead of the definition.
+    //         gives us the declaration instead of the definition (until clangd 16).
     for (const Link &link : std::as_const(allLinks)) {
         if (!client->documentForFilePath(link.targetFilePath) && addOpenFile(link.targetFilePath))
             client->openExtraFile(link.targetFilePath);
@@ -472,6 +486,9 @@ void ClangdFollowSymbol::Private::handleGotoImplementationResult(
         qCDebug(clangdLog) << "sending symbol info request";
 
         if (link == defLink)
+            continue;
+
+        if (client->versionNumber().majorVersion() >= 17)
             continue;
 
         const TextDocumentIdentifier doc(client->hostPathToServerUri(link.targetFilePath));

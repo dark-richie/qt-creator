@@ -9,10 +9,11 @@ QtcPlugin {
     Depends { name: "Utils" }
 
     Depends { name: "Core" }
-    Depends { name: "TextEditor" }
-    Depends { name: "ProjectExplorer" }
     Depends { name: "LanguageClient" }
     Depends { name: "LanguageServerProtocol" }
+    Depends { name: "ProjectExplorer" }
+    Depends { name: "QtSupport" }
+    Depends { name: "TextEditor" }
 
     Group {
         name: "General"
@@ -21,11 +22,13 @@ QtcPlugin {
             "pipsupport.h",
             "pyside.cpp",
             "pyside.h",
-            "pysidebuildconfiguration.cpp",
-            "pysidebuildconfiguration.h",
+            "pythonbuildconfiguration.cpp",
+            "pythonbuildconfiguration.h",
             "pysideuicextracompiler.cpp",
             "pysideuicextracompiler.h",
             "python.qrc",
+            "pythonbuildsystem.cpp",
+            "pythonbuildsystem.h",
             "pythonconstants.h",
             "pythoneditor.cpp",
             "pythoneditor.h",
@@ -34,6 +37,8 @@ QtcPlugin {
             "pythonhighlighter.h",
             "pythonindenter.cpp",
             "pythonindenter.h",
+            "pythonkitaspect.cpp",
+            "pythonkitaspect.h",
             "pythonlanguageclient.cpp",
             "pythonlanguageclient.h",
             "pythonplugin.cpp",

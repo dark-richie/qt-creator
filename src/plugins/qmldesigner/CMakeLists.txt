@@ -1,40 +1,43 @@
 #only if the plugin is requested by qtc_plugin_enabled continue if not stop as early as possible
-add_qtc_plugin(QmlDesigner
-  PLUGIN_RECOMMENDS QmlPreview
-  CONDITION Qt6_VERSION VERSION_GREATER_EQUAL 6.2.0 AND TARGET Qt::QuickWidgets AND TARGET Qt::Svg
-  PROPERTIES COMPILE_WARNING_AS_ERROR ON
-  PLUGIN_DEPENDS
-    Core ProjectExplorer QmlDesignerBase QmlJSEditor QmakeProjectManager QmlProjectManager
-    QtSupport
-)
-qtc_plugin_enabled(_qmlDesignerEnabled QmlDesigner)
-if (NOT _qmlDesignerEnabled)
-  return()
-endif()
 
-find_package(Qt6 COMPONENTS QmlDomPrivate QmlCompilerPrivate)
+
+find_package(Qt6 COMPONENTS QmlDomPrivate QmlCompilerPrivate QUIET)
 
 set(QmlDesignerPluginInstallPrefix "${IDE_PLUGIN_PATH}/qmldesigner")
 if (APPLE)
   set(QmlDesignerPluginInstallPrefix "${IDE_PLUGIN_PATH}/QmlDesigner")
 endif()
 
+add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,Clang>:-Wno-error=maybe-uninitialized>")
+add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,GNU>:-Wno-error=maybe-uninitialized>")
 
 env_with_default("QDS_USE_PROJECTSTORAGE" ENV_QDS_USE_PROJECTSTORAGE OFF)
 option(USE_PROJECTSTORAGE "Use ProjectStorage" ${ENV_QDS_USE_PROJECTSTORAGE})
 add_feature_info("ProjectStorage" ${USE_PROJECTSTORAGE} "")
 
+env_with_default("QTC_ENABLE_PROJECT_STORAGE_TRACING" ENV_QTC_ENABLE_PROJECT_STORAGE_TRACING OFF)
+option(ENABLE_PROJECT_STORAGE_TRACING "Enable sqlite tracing" ${ENV_QTC_ENABLE_PROJECT_STORAGE_TRACING})
+add_feature_info("Sqlite tracing" ${ENABLE_PROJECT_STORAGE_TRACING} "")
+
+env_with_default("QTC_ENABLE_IMAGE_CACHE_TRACING" ENV_QTC_ENABLE_IMAGE_CACHE_TRACING OFF)
+option(ENABLE_IMAGE_CACHE_TRACING "Enable image cache tracing" ${ENV_QTC_ENABLE_IMAGE_CACHE_TRACING})
+add_feature_info("Image cache tracing" ${ENABLE_IMAGE_CACHE_TRACING} "")
+
+env_with_default("QTC_ENABLE_MODEL_TRACING" ENV_QTC_ENABLE_MODEL_TRACING OFF)
+option(ENABLE_MODEL_TRACING "Enable model tracing" ${ENV_QTC_ENABLE_MODEL_TRACING})
+add_feature_info("Model tracing" ${ENABLE_MODEL_TRACING} "")
+
+
+
 add_qtc_library(QmlDesignerUtils STATIC
-  PROPERTIES COMPILE_WARNING_AS_ERROR ON
   DEPENDS
-    Qt::Gui Utils Qt::QmlPrivate
-  DEFINES QMLDESIGNERUTILS_LIBRARY
-  PUBLIC_DEFINES $<$<BOOL:${QTC_STATIC_BUILD}>:QMLDESIGNER_STATIC_LIBRARY>
+    Qt::Gui Utils Qt::QmlPrivate Core
 
   PUBLIC_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/utils
   SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/utils
   SOURCES
     asset.cpp asset.h
+    designeralgorithm.h
     filedownloader.cpp filedownloader.h
     multifiledownloader.cpp multifiledownloader.h
     fileextractor.cpp fileextractor.h
@@ -44,8 +47,15 @@ add_qtc_library(QmlDesignerUtils STATIC
     qmldesignerutils_global.h
 )
 
+extend_qtc_library(QmlDesignerUtils
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
 add_qtc_library(QmlDesignerCore STATIC
+  CONDITION TARGET QmlDesignerBase AND TARGET Qt6::QmlPrivate AND TARGET Qt6::QmlDomPrivate AND TARGET Qt6::QmlCompilerPrivate
   EXCLUDE_FROM_INSTALL
+  PROPERTIES SKIP_AUTOUIC ON
   DEPENDS
     Threads::Threads
     Qt::CorePrivate
@@ -53,6 +63,9 @@ add_qtc_library(QmlDesignerCore STATIC
     Utils
     Qt::Widgets
     Qt::Qml
+    Qt::QmlPrivate
+    Qt6::QmlDomPrivate
+    Qt6::QmlCompilerPrivate
     Core
     ProjectExplorer
     QmakeProjectManager
@@ -67,7 +80,8 @@ add_qtc_library(QmlDesignerCore STATIC
     QmlDesignerUtils
     TextEditor
     Sqlite
-  DEFINES QMLDESIGNERCORE_LIBRARY QMLDESIGNERUTILS_LIBRARY
+  DEFINES
+     $<$<BOOL:${USE_PROJECTSTORAGE}>:QDS_USE_PROJECTSTORAGE>
   INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}
   PUBLIC_INCLUDES
@@ -80,29 +94,28 @@ add_qtc_library(QmlDesignerCore STATIC
 )
 
 extend_qtc_library(QmlDesignerCore
-  CONDITION TARGET Qt6::QmlDomPrivate AND TARGET Qt6::QmlCompilerPrivate AND Qt6_VERSION VERSION_GREATER_EQUAL 6.5.0
-
-  DEPENDS Qt6::QmlDomPrivate Qt6::QmlCompilerPrivate
-  DEFINES QDS_HAS_QMLDOM
+  CONDITION TARGET Nanotrace
+  DEPENDS Nanotrace
+  DEFINES
+    ENABLE_QMLDESIGNER_TRACING
+    $<$<BOOL:${ENABLE_PROJECT_STORAGE_TRACING}>:ENABLE_PROJECT_STORAGE_TRACING>
+    $<$<BOOL:${ENABLE_IMAGE_CACHE_TRACING}>:ENABLE_IMAGE_CACHE_TRACING>
+    $<$<BOOL:${ENABLE_MODEL_TRACING}>:ENABLE_MODEL_TRACING>
 )
 
+extend_qtc_library(QmlDesignerCore
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
+extend_qtc_library(QmlDesignerCore
+  CONDITION Qt6_VERSION VERSION_GREATER_EQUAL 6.5.0 AND Qt6_VERSION VERSION_LESS 6.6.0
+  PUBLIC_DEFINES QDS_BUILD_QMLPARSER
+)
 extend_qtc_library(QmlDesignerCore
   CONDITION UNIX AND NOT APPLE
   PUBLIC_DEPENDS rt
 )
-
-set(UI_FILES
-  ${CMAKE_CURRENT_LIST_DIR}/designercore/instances/puppetbuildprogressdialog.ui
-)
-qt_wrap_ui(UI_SOURCES ${UI_FILES})
-
-extend_qtc_library(QmlDesignerCore
-  INCLUDES ${CMAKE_CURRENT_BINARY_DIR}
-  SOURCES
-    ${UI_SOURCES}
-    ${UI_FILES}
-)
-set_source_files_properties(${UI_FILES} PROPERTIES SKIP_AUTOUIC ON)
 
 extend_qtc_library(QmlDesignerCore
   INCLUDES ${CMAKE_CURRENT_LIST_DIR}/designercore/exceptions
@@ -183,6 +196,7 @@ extend_qtc_library(QmlDesignerCore
     meshimagecachecollector.cpp
     meshimagecachecollector.h
     synchronousimagecache.cpp
+    taskqueue.h
     textureimagecachecollector.cpp
     textureimagecachecollector.h
     timestampprovider.cpp
@@ -191,25 +205,56 @@ extend_qtc_library(QmlDesignerCore
 )
 
 extend_qtc_library(QmlDesignerCore
+  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/tracing
+  SOURCES
+    qmldesignertracing.cpp qmldesignertracing.h
+)
+
+extend_qtc_library(QmlDesignerCore
+  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/include
+  SOURCES
+    abstractview.h
+    basetexteditmodifier.h
+    bytearraymodifier.h
+    componenttextmodifier.h
+    forwardview.h
+    itemlibraryentry.h
+    model.h
+    nodehints.h
+    plaintexteditmodifier.h
+    nodeinstanceview.h
+    propertyparser.h
+    rewriterview.h
+    textmodifier.h
+)
+
+extend_qtc_library(QmlDesignerCore
+  CONDITION NOT USE_PROJECTSTORAGE
+  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/include
+  SOURCES
+    itemlibraryinfo.h
+    metainforeader.h
+    subcomponentmanager.h
+    metainfo.h
+)
+
+extend_qtc_library(QmlDesignerCore
+  SOURCES_PROPERTIES SKIP_AUTOGEN ON
   SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/include
   SOURCES
     abstractproperty.h
-    abstractview.h
     anchorline.h
     annotation.h
     asynchronousexplicitimagecache.h
     asynchronousimagecache.h
     auxiliarydata.h
     auxiliarydataproperties.h
-    basetexteditmodifier.h
     bindingproperty.h
-    componenttextmodifier.h
     customnotifications.h
     documentmessage.h
     enumerationmetainfo.h
     exception.h
     externaldependenciesinterface.h
-    forwardview.h
     imagecacheauxiliarydata.h
     import.h
     invalidargumentexception.h
@@ -221,30 +266,25 @@ extend_qtc_library(QmlDesignerCore
     invalidqmlsourceexception.h
     invalidreparentingexception.h
     invalidslideindexexception.h
-    itemlibraryinfo.h
     mathutils.h
-    metainfo.h
-    metainforeader.h
-    model.h
+    modelfwd.h
     modelmerger.h
     modelnode.h
     modelnodepositionstorage.h
+    module.h
     nodeabstractproperty.h
-    nodehints.h
     nodeinstance.h
-    nodeinstanceview.h
     nodelistproperty.h
     nodemetainfo.h
     nodeproperty.h
     notimplementedexception.h
-    plaintexteditmodifier.h
     propertycontainer.h
     propertymetainfo.h
     propertynode.h
-    propertyparser.h
     qmlanchors.h
     qmlchangeset.h
     qmlconnections.h
+    qmldesignercorelib_exports.h
     qmldesignercorelib_global.h
     qmlitemnode.h
     qmlmodelnodefacade.h
@@ -253,13 +293,11 @@ extend_qtc_library(QmlDesignerCore
     qmltimeline.h
     qmltimelinekeyframegroup.h
     removebasestateexception.h
-    rewriterview.h
     rewritingexception.h
     signalhandlerproperty.h
+    stringutils.h
     stylesheetmerger.h
-    subcomponentmanager.h
     synchronousimagecache.h
-    textmodifier.h
     variantproperty.h
 )
 
@@ -267,14 +305,23 @@ extend_qtc_library(QmlDesignerCore
   INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}/designercore/metainfo
   SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/metainfo
+  DEFINES SHARE_QML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../../share/qtcreator/qmldesigner"
+  SOURCES
+    itemlibraryentry.cpp
+    nodehints.cpp
+    nodemetainfo.cpp
+)
+
+extend_qtc_library(QmlDesignerCore
+  CONDITION NOT USE_PROJECTSTORAGE
+  SOURCES_PREFIX ${CMAKE_CURRENT_LIST_DIR}/designercore/metainfo
   SOURCES
     itemlibraryinfo.cpp
     metainfo.cpp
     metainforeader.cpp
-    nodehints.cpp
-    nodemetainfo.cpp
     subcomponentmanager.cpp
 )
+
 
 extend_qtc_library(QmlDesignerCore
   PUBLIC_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/designercore/instances
@@ -290,8 +337,6 @@ extend_qtc_library(QmlDesignerCore
     nodeinstanceserverproxy.cpp
     nodeinstanceserverproxy.h
     nodeinstanceview.cpp
-    puppetbuildprogressdialog.cpp
-    puppetbuildprogressdialog.h
     puppetstartdata.h
     puppetstarter.cpp
     puppetstarter.h
@@ -333,8 +378,13 @@ extend_qtc_library(QmlDesignerCore
     modelnodepositionrecalculator.cpp
     modelnodepositionrecalculator.h
     modelnodepositionstorage.cpp
+    modelresourcemanagementinterface.h
+    modelresourcemanagementfwd.h
+    modelresourcemanagement.cpp modelresourcemanagement.h
     modeltotextmerger.cpp
     modeltotextmerger.h
+    modelutils.cpp
+    modelutils.h
     nodeabstractproperty.cpp
     nodelistproperty.cpp
     nodeproperty.cpp
@@ -361,6 +411,7 @@ extend_qtc_library(QmlDesignerCore
     rewriteactioncompressor.h
     rewriterview.cpp
     signalhandlerproperty.cpp
+    skipiterator.h
     stylesheetmerger.cpp
     textmodifier.cpp
     texttomodelmerger.cpp
@@ -381,6 +432,7 @@ extend_qtc_library(QmlDesignerCore
 extend_qtc_library(QmlDesignerCore
   SOURCES_PREFIX designercore/projectstorage
   PUBLIC_INCLUDES designercore/projectstorage
+  SOURCES_PROPERTIES SKIP_AUTOGEN ON
   SOURCES
     commontypecache.h
     directorypathcompressor.h
@@ -388,11 +440,13 @@ extend_qtc_library(QmlDesignerCore
     filesystem.cpp filesystem.h
     filestatus.h
     filestatuscache.cpp filestatuscache.h
+    modulescanner.cpp modulescanner.h
     nonlockingmutex.h
     projectstorageexceptions.cpp projectstorageexceptions.h
     projectstorageinterface.h
     projectstoragefwd.h
     projectstorageinfotypes.h
+    projectstorageobserver.h
     projectstoragepathwatcher.h
     projectstoragepathwatcherinterface.h
     projectstoragepathwatchernotifierinterface.h
@@ -404,38 +458,38 @@ extend_qtc_library(QmlDesignerCore
     projectstorage.cpp projectstorage.h
     sourcepath.h
     sourcepathcache.h
-    sourcepathcache.h
+    sourcepathcacheinterface.h
     sourcepathcachetypes.h
     sourcepathview.h
     storagecache.h
     storagecacheentry.h
     storagecachefwd.h
+    typeannotationreader.cpp typeannotationreader.h
     qmldocumentparserinterface.h
     qmltypesparserinterface.h
     qmltypesparser.cpp qmltypesparser.h
     qmldocumentparser.cpp qmldocumentparser.h
 )
 
-file(GLOB PROJECTSTORAGE_EXCLUDED_SOURCES designercore/projectstorage/*.cpp)
-set_property(SOURCE ${PROJECTSTORAGE_EXCLUDED_SOURCES} PROPERTY SKIP_AUTOMOC ON)
-
-extend_qtc_plugin(QmlDesigner
-  PUBLIC_DEPENDS
-    QmlDesignerUtils
-    QmlDesignerBase
-    QmlPuppetCommunication
+add_qtc_plugin(QmlDesigner
+  PLUGIN_RECOMMENDS QmlPreview
+  CONDITION TARGET QmlDesignerCore AND TARGET Qt::QuickWidgets AND TARGET Qt::Svg
+  PLUGIN_DEPENDS
+    Core ProjectExplorer QmlDesignerBase QmlJSEditor QmakeProjectManager QmlProjectManager
+    QtSupport
   DEPENDS
-    QmlDesignerCore
-    QmlJS LanguageUtils QmlEditorWidgets AdvancedDockingSystem Sqlite
-    Qt::QuickWidgets Qt::CorePrivate Qt::Xml Qt::Svg
+    QmlJS LanguageUtils QmlEditorWidgets AdvancedDockingSystem
+    Qt::QuickWidgets Qt::CorePrivate Qt::Xml Qt::Svg QmlDesignerCore Sqlite
+  PUBLIC_DEPENDS
+    QmlDesignerUtils QmlPuppetCommunication QmlDesignerBase
   DEFINES
     IDE_LIBRARY_BASENAME=\"${IDE_LIBRARY_BASE_PATH}\"
     SHARE_QML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../../share/qtcreator/qmldesigner"
     $<$<BOOL:${USE_PROJECTSTORAGE}>:QDS_USE_PROJECTSTORAGE>
-    QMLDESIGNER_LIBRARY QMLDESIGNERCORE_LIBRARY QMLDESIGNERUTILS_LIBRARY
   INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}/components
     ${CMAKE_CURRENT_LIST_DIR}/components/assetslibrary
+    ${CMAKE_CURRENT_LIST_DIR}/components/collectioneditor
     ${CMAKE_CURRENT_LIST_DIR}/components/debugview
     ${CMAKE_CURRENT_LIST_DIR}/components/edit3d
     ${CMAKE_CURRENT_LIST_DIR}/components/formeditor
@@ -448,6 +502,7 @@ extend_qtc_plugin(QmlDesigner
     ${CMAKE_CURRENT_LIST_DIR}/components/propertyeditor
     ${CMAKE_CURRENT_LIST_DIR}/components/stateseditor
     ${CMAKE_CURRENT_LIST_DIR}/components/texteditor
+    ${CMAKE_CURRENT_LIST_DIR}/components/effectmaker
   PUBLIC_INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/designercore #can not be a public dependency -> EXCLUDE_FROM_INSTALL in QmlDesignerCore
@@ -474,11 +529,16 @@ extend_qtc_plugin(QmlDesigner
     editorproxy.cpp editorproxy.h
   EXPLICIT_MOC
     components/propertyeditor/propertyeditorvalue.h
-    components/connectioneditor/connectionviewwidget.h
+    qmldesignerplugin.h
   EXTRA_TRANSLATIONS
     "${PROJECT_SOURCE_DIR}/share/qtcreator/qmldesigner"
   PROPERTIES
     QMLDESIGNER_PLUGIN_PATH "${QmlDesignerPluginInstallPrefix}"
+)
+
+extend_qtc_plugin(QmlDesigner
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
 )
 
 function(get_and_add_as_subdirectory name repository git_tag build_dir source_dir source_subdir)
@@ -517,78 +577,12 @@ function(get_and_add_as_subdirectory name repository git_tag build_dir source_di
 endfunction()
 
 if (QTC_STATIC_BUILD AND TARGET QmlDesigner)
-  get_target_property(_designerType Qt5::Designer TYPE)
-  if (${_designerType} STREQUAL "STATIC_LIBRARY")
-    extend_qtc_target(QmlDesigner PUBLIC_DEFINES QT_DESIGNER_STATIC)
-  endif()
   get_target_property(_designerType Qt::Designer TYPE)
   if (${_designerType} STREQUAL "STATIC_LIBRARY")
     extend_qtc_target(QmlDesigner PUBLIC_DEFINES QT_DESIGNER_STATIC)
   endif()
   extend_qtc_target(QmlDesigner PUBLIC_DEPENDS TextEditor)
 endif()
-
-add_qtc_plugin(assetexporterplugin
-  PLUGIN_CLASS AssetExporterPlugin
-  CONDITION TARGET QmlDesigner
-  DEPENDS Core ProjectExplorer QmlDesigner Utils Qt::Qml Qt::QuickPrivate
-  PUBLIC_INCLUDES assetexporterplugin
-  SOURCES
-    assetexporterplugin/assetexportdialog.h assetexporterplugin/assetexportdialog.cpp assetexporterplugin/assetexportdialog.ui
-    assetexporterplugin/assetexporter.h assetexporterplugin/assetexporter.cpp
-    assetexporterplugin/assetexporterplugin.h assetexporterplugin/assetexporterplugin.cpp
-    assetexporterplugin/assetexporterview.h assetexporterplugin/assetexporterview.cpp
-    assetexporterplugin/assetexportpluginconstants.h
-    assetexporterplugin/componentexporter.h assetexporterplugin/componentexporter.cpp
-    assetexporterplugin/exportnotification.h assetexporterplugin/exportnotification.cpp
-    assetexporterplugin/filepathmodel.h assetexporterplugin/filepathmodel.cpp
-    assetexporterplugin/dumpers/assetnodedumper.h assetexporterplugin/dumpers/assetnodedumper.cpp
-    assetexporterplugin/dumpers/itemnodedumper.h assetexporterplugin/dumpers/itemnodedumper.cpp
-    assetexporterplugin/dumpers/nodedumper.h assetexporterplugin/dumpers/nodedumper.cpp
-    assetexporterplugin/dumpers/textnodedumper.h assetexporterplugin/dumpers/textnodedumper.cpp
-    assetexporterplugin/assetexporterplugin.qrc
-  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
-)
-
-add_qtc_plugin(componentsplugin
-  PLUGIN_CLASS ComponentsPlugin
-  CONDITION TARGET QmlDesigner
-  DEPENDS Core QmlDesigner Utils Qt::Qml
-  DEFINES COMPONENTS_LIBRARY
-  SOURCES
-    componentsplugin/addtabdesigneraction.cpp componentsplugin/addtabdesigneraction.h
-    componentsplugin/addtabtotabviewdialog.cpp componentsplugin/addtabtotabviewdialog.h
-    componentsplugin/addtabtotabviewdialog.ui
-    componentsplugin/componentsplugin.cpp componentsplugin/componentsplugin.h
-    componentsplugin/componentsplugin.qrc
-    componentsplugin/entertabdesigneraction.cpp componentsplugin/entertabdesigneraction.h
-    componentsplugin/tabviewindexmodel.cpp componentsplugin/tabviewindexmodel.h
-  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
-)
-
-add_qtc_plugin(qmlpreviewplugin
-  PLUGIN_CLASS QmlPreviewWidgetPlugin
-  CONDITION TARGET QmlDesigner
-  DEPENDS Core ProjectExplorer QmlDesigner Utils Qt::Qml
-  SOURCES
-    qmlpreviewplugin/qmlpreviewactions.cpp qmlpreviewplugin/qmlpreviewactions.h
-    qmlpreviewplugin/qmlpreviewplugin.cpp qmlpreviewplugin/qmlpreviewplugin.h
-    qmlpreviewplugin/qmlpreviewplugin.qrc
-  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
-)
-
-add_qtc_plugin(qtquickplugin
-  PLUGIN_CLASS QtQuickPlugin
-  CONDITION TARGET QmlDesigner
-  DEPENDS Core QmlDesigner Utils Qt::Qml
-  DEFINES QTQUICK_LIBRARY
-  SOURCES
-    qtquickplugin/qtquickplugin.cpp qtquickplugin/qtquickplugin.h
-    qtquickplugin/qtquickplugin.qrc
-  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
-)
-
-add_subdirectory(studioplugin)
 
 extend_qtc_plugin(QmlDesigner
   SOURCES_PREFIX components
@@ -623,6 +617,9 @@ extend_qtc_plugin(QmlDesigner
     modelnodeoperations.cpp modelnodeoperations.h
     formatoperation.cpp formatoperation.h
     navigation2d.cpp navigation2d.h
+    propertyeditorcomponentgenerator.cpp propertyeditorcomponentgenerator.h
+    propertycomponentgenerator.cpp propertycomponentgenerator.h
+    propertycomponentgeneratorinterface.h
     qmldesignericonprovider.cpp qmldesignericonprovider.h
     qmleditormenu.cpp qmleditormenu.h
     selectioncontext.cpp selectioncontext.h
@@ -648,8 +645,12 @@ extend_qtc_plugin(QmlDesigner
   edit3dwidget.cpp edit3dwidget.h
   edit3dcanvas.cpp edit3dcanvas.h
   edit3dactions.cpp edit3dactions.h
-  edit3dvisibilitytogglesmenu.cpp edit3dvisibilitytogglesmenu.h
+  edit3dtoolbarmenu.cpp edit3dtoolbarmenu.h
   backgroundcolorselection.cpp backgroundcolorselection.h
+  bakelights.cpp bakelights.h
+  snapconfiguration.cpp snapconfiguration.h
+  bakelightsdatamodel.cpp bakelightsdatamodel.h
+  bakelightsconnectionmanager.cpp bakelightsconnectionmanager.h
   edit3d.qrc
 )
 
@@ -728,6 +729,7 @@ extend_qtc_plugin(QmlDesigner
     assetimportupdatetreemodel.cpp assetimportupdatetreemodel.h
     assetimportupdatetreeview.cpp assetimportupdatetreeview.h
     itemlibrary.qrc
+    itemlibraryconstants.h
     itemlibraryimageprovider.cpp itemlibraryimageprovider.h
     itemlibraryitem.cpp itemlibraryitem.h
     itemlibrarymodel.cpp itemlibrarymodel.h
@@ -781,6 +783,7 @@ extend_qtc_plugin(QmlDesigner
     designerpropertymap.cpp designerpropertymap.h
     fileresourcesmodel.cpp fileresourcesmodel.h
     itemfiltermodel.cpp itemfiltermodel.h
+    listvalidator.cpp listvalidator.h
     gradientmodel.cpp gradientmodel.h
     dynamicpropertiesproxymodel.cpp dynamicpropertiesproxymodel.h
     gradientpresetcustomlistmodel.cpp gradientpresetcustomlistmodel.h
@@ -811,6 +814,10 @@ extend_qtc_plugin(QmlDesigner
     contentlibrarymaterialsmodel.cpp contentlibrarymaterialsmodel.h
     contentlibrarymaterialscategory.cpp contentlibrarymaterialscategory.h
     contentlibrarymaterial.cpp contentlibrarymaterial.h
+    contentlibraryiconprovider.cpp contentlibraryiconprovider.h
+    contentlibraryeffect.cpp contentlibraryeffect.h
+    contentlibraryeffectscategory.cpp contentlibraryeffectscategory.h
+    contentlibraryeffectsmodel.cpp contentlibraryeffectsmodel.h
 )
 
 extend_qtc_plugin(QmlDesigner
@@ -822,6 +829,22 @@ extend_qtc_plugin(QmlDesigner
     materialeditortransaction.cpp materialeditortransaction.h
     materialeditorview.cpp materialeditorview.h
     materialeditor.qrc
+)
+
+extend_qtc_plugin(QmlDesigner
+  SOURCES_PREFIX components/collectioneditor
+  SOURCES
+    collectiondetails.cpp collectiondetails.h
+    collectiondetailsmodel.cpp collectiondetailsmodel.h
+    collectiondetailssortfiltermodel.cpp collectiondetailssortfiltermodel.h
+    collectioneditorconstants.h
+    collectioneditorutils.cpp collectioneditorutils.h
+    collectionimporttools.cpp collectionimporttools.h
+    collectionlistmodel.cpp collectionlistmodel.h
+    collectionsourcemodel.cpp collectionsourcemodel.h
+    collectionview.cpp collectionview.h
+    collectionwidget.cpp collectionwidget.h
+    datastoremodelnode.cpp datastoremodelnode.h
 )
 
 extend_qtc_plugin(QmlDesigner
@@ -852,15 +875,6 @@ extend_qtc_plugin(QmlDesigner
 
 extend_qtc_plugin(QmlDesigner
   SOURCES_PREFIX components/stateseditor
-  SOURCES
-    stateseditorimageprovider.cpp stateseditorimageprovider.h
-    stateseditormodel.cpp stateseditormodel.h
-    stateseditorview.cpp stateseditorview.h
-    stateseditorwidget.cpp stateseditorwidget.h
-)
-
-extend_qtc_plugin(QmlDesigner
-  SOURCES_PREFIX components/stateseditornew
   SOURCES
     propertychangesmodel.cpp propertychangesmodel.h
     propertymodel.cpp propertymodel.h
@@ -971,13 +985,17 @@ extend_qtc_plugin(QmlDesigner
     addnewbackenddialog.cpp addnewbackenddialog.h addnewbackenddialog.ui
     backendmodel.cpp backendmodel.h
     bindingmodel.cpp bindingmodel.h
+    bindingmodelitem.cpp bindingmodelitem.h
     connectioneditor.qrc
+    connectioneditorevaluator.cpp connectioneditorevaluator.h
+    connectioneditorstatements.cpp connectioneditorstatements.h
     connectionmodel.cpp connectionmodel.h
     connectionview.cpp connectionview.h
-    connectionviewwidget.cpp connectionviewwidget.h connectionviewwidget.ui
-    delegates.cpp delegates.h
     dynamicpropertiesmodel.cpp dynamicpropertiesmodel.h
+    dynamicpropertiesitem.cpp dynamicpropertiesitem.h
+    connectioneditorutils.cpp connectioneditorutils.h
     selectiondynamicpropertiesproxymodel.cpp selectiondynamicpropertiesproxymodel.h
+    propertytreemodel.cpp propertytreemodel.h
 )
 
 extend_qtc_plugin(QmlDesigner
@@ -1011,7 +1029,7 @@ extend_qtc_plugin(QmlDesigner
   SOURCES_PREFIX components/richtexteditor
   SOURCES
     hyperlinkdialog.cpp hyperlinkdialog.h hyperlinkdialog.ui
-    richtexteditor.cpp richtexteditor.h hyperlinkdialog.ui
+    richtexteditor.cpp richtexteditor.h
     richtexteditorproxy.cpp richtexteditorproxy.h
 )
 
@@ -1028,11 +1046,11 @@ extend_qtc_plugin(QmlDesigner
     timeline.qrc
     timelineabstracttool.cpp timelineabstracttool.h
     timelineactions.cpp timelineactions.h
-    timelineanimationform.cpp timelineanimationform.h timelineanimationform.ui
+    timelineanimationform.cpp timelineanimationform.h
     timelineconstants.h
     timelinecontext.cpp timelinecontext.h
     timelinecontrols.cpp timelinecontrols.h
-    timelineform.cpp timelineform.h timelineform.ui
+    timelineform.cpp timelineform.h
     timelinegraphicslayout.cpp timelinegraphicslayout.h
     timelinegraphicsscene.cpp timelinegraphicsscene.h
     timelineicons.h
@@ -1043,8 +1061,7 @@ extend_qtc_plugin(QmlDesigner
     timelinepropertyitem.cpp timelinepropertyitem.h
     timelinesectionitem.cpp timelinesectionitem.h
     timelineselectiontool.cpp timelineselectiontool.h
-    timelinesettingsdialog.cpp
-    timelinesettingsdialog.h timelinesettingsdialog.ui
+    timelinesettingsdialog.cpp timelinesettingsdialog.h
     timelinesettingsmodel.cpp timelinesettingsmodel.h
     timelinetoolbar.cpp timelinetoolbar.h
     timelinetoolbutton.cpp timelinetoolbutton.h
@@ -1135,4 +1152,101 @@ extend_qtc_plugin(QmlDesigner
 extend_qtc_plugin(QmlDesigner
   CONDITION TARGET Nanotrace
   DEPENDS Nanotrace
+)
+
+add_qtc_plugin(assetexporterplugin
+  PLUGIN_CLASS AssetExporterPlugin
+  CONDITION TARGET QmlDesigner
+  PLUGIN_DEPENDS
+    Core ProjectExplorer QmlDesigner
+  DEPENDS Utils Qt::Qml Qt::QuickPrivate
+  PUBLIC_INCLUDES assetexporterplugin
+  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
+)
+
+extend_qtc_plugin(assetexporterplugin
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
+extend_qtc_plugin(assetexporterplugin
+  SOURCES_PREFIX assetexporterplugin
+  SOURCES
+    assetexportdialog.h assetexportdialog.cpp
+    assetexporter.h assetexporter.cpp
+    assetexporterplugin.h assetexporterplugin.cpp
+    assetexporterview.h assetexporterview.cpp
+    assetexportpluginconstants.h
+    componentexporter.h componentexporter.cpp
+    exportnotification.h exportnotification.cpp
+    filepathmodel.h filepathmodel.cpp
+    dumpers/assetnodedumper.h dumpers/assetnodedumper.cpp
+    dumpers/itemnodedumper.h dumpers/itemnodedumper.cpp
+    dumpers/nodedumper.h dumpers/nodedumper.cpp
+    dumpers/textnodedumper.h dumpers/textnodedumper.cpp
+    assetexporterplugin.qrc
+)
+
+add_qtc_plugin(componentsplugin
+  PLUGIN_CLASS ComponentsPlugin
+  CONDITION TARGET QmlDesigner
+  PLUGIN_DEPENDS Core QmlDesigner
+  DEPENDS Utils Qt::Qml
+  DEFINES COMPONENTS_LIBRARY
+
+  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
+)
+
+extend_qtc_plugin(componentsplugin
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
+extend_qtc_plugin(componentsplugin
+  SOURCES_PREFIX componentsplugin
+  SOURCES
+    componentsplugin.cpp componentsplugin.h
+    componentsplugin.qrc
+)
+
+add_qtc_plugin(qmlpreviewplugin
+  PLUGIN_CLASS QmlPreviewWidgetPlugin
+  CONDITION TARGET QmlDesigner
+  PLUGIN_DEPENDS Core ProjectExplorer QmlDesigner
+  DEPENDS Utils Qt::Qml
+  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
+)
+
+extend_qtc_plugin(qmlpreviewplugin
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
+extend_qtc_plugin(qmlpreviewplugin
+    SOURCES_PREFIX qmlpreviewplugin
+    SOURCES
+      qmlpreviewactions.cpp qmlpreviewactions.h
+      qmlpreviewplugin.cpp qmlpreviewplugin.h
+      qmlpreviewplugin.qrc
+)
+
+add_qtc_plugin(qtquickplugin
+  PLUGIN_CLASS QtQuickPlugin
+  CONDITION TARGET QmlDesigner
+  PLUGIN_DEPENDS Core QmlDesigner
+  DEPENDS Utils Qt::Qml
+  DEFINES QTQUICK_LIBRARY
+  PLUGIN_PATH ${QmlDesignerPluginInstallPrefix}
+)
+
+extend_qtc_plugin(qtquickplugin
+    CONDITION ENABLE_COMPILE_WARNING_AS_ERROR
+    PROPERTIES COMPILE_WARNING_AS_ERROR ON
+)
+
+extend_qtc_plugin(qtquickplugin
+    SOURCES_PREFIX qtquickplugin
+    SOURCES
+      qtquickplugin.cpp qtquickplugin.h
+      qtquickplugin.qrc
 )

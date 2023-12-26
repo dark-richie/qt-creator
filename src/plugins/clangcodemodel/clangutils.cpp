@@ -16,7 +16,7 @@
 #include <cppeditor/editordocumenthandle.h>
 #include <cppeditor/projectpart.h>
 #include <projectexplorer/buildconfiguration.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 #include <texteditor/codeassist/textdocumentmanipulatorinterface.h>
@@ -230,7 +230,7 @@ QString DiagnosticTextInfo::option() const
         return QString();
 
     const int index = m_squareBracketStartIndex + 1;
-    return m_text.mid(index, m_text.count() - index - 1);
+    return m_text.mid(index, m_text.size() - index - 1);
 }
 
 QString DiagnosticTextInfo::category() const

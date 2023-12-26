@@ -15,15 +15,15 @@ class BuildInfo;
 class Kit;
 class Project;
 class Target;
-class ToolChain;
+class Toolchain;
 
 // Documentation inside.
 class PROJECTEXPLORER_EXPORT ProjectImporter : public QObject
 {
     Q_OBJECT
 public:
-    struct ToolChainData {
-        QList<ToolChain *> tcs;
+    struct ToolchainData {
+        QList<Toolchain *> tcs;
         bool areTemporary = false;
     };
 
@@ -87,7 +87,7 @@ protected:
     // Does *any* kit feature the requested data yet?
     bool hasKitWithTemporaryData(Utils::Id id, const QVariant &data) const;
 
-    ToolChainData findOrCreateToolChains(const ToolChainDescription &tcd) const;
+    ToolchainData findOrCreateToolChains(const ToolchainDescription &tcd) const;
 
 private:
     void markKitAsTemporary(Kit *k) const;

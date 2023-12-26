@@ -11,8 +11,8 @@
 #include <vcsbase/vcsoutputwindow.h>
 
 #include <utils/environment.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 
 #include <QDateTime>
@@ -20,6 +20,7 @@
 
 #include <set>
 
+using namespace Tasking;
 using namespace Utils;
 using namespace VcsBase;
 
@@ -200,9 +201,8 @@ public:
 class BranchModel::Private
 {
 public:
-    explicit Private(BranchModel *q, GitClient *client) :
+    explicit Private(BranchModel *q) :
         q(q),
-        client(client),
         rootNode(new BranchNode)
     {
     }
@@ -221,7 +221,6 @@ public:
     void updateAllUpstreamStatus(BranchNode *node);
 
     BranchModel *q;
-    GitClient *client;
     FilePath workingDirectory;
     BranchNode *rootNode;
     BranchNode *currentBranch = nullptr;
@@ -248,12 +247,10 @@ public:
 // BranchModel:
 // --------------------------------------------------------------------------
 
-BranchModel::BranchModel(GitClient *client, QObject *parent) :
+BranchModel::BranchModel(QObject *parent) :
     QAbstractItemModel(parent),
-    d(new Private(this, client))
+    d(new Private(this))
 {
-    QTC_CHECK(d->client);
-
     // Abuse the sha field for ref prefix
     d->rootNode->append(new BranchNode(Tr::tr("Local Branches"), "refs/heads"));
     d->rootNode->append(new BranchNode(Tr::tr("Remote Branches"), "refs/remotes"));
@@ -267,22 +264,22 @@ BranchModel::~BranchModel()
 QModelIndex BranchModel::index(int row, int column, const QModelIndex &parentIdx) const
 {
     if (column > 1)
-        return QModelIndex();
+        return {};
     BranchNode *parentNode = indexToNode(parentIdx);
 
     if (row >= parentNode->count())
-        return QModelIndex();
+        return {};
     return nodeToIndex(parentNode->children.at(row), column);
 }
 
 QModelIndex BranchModel::parent(const QModelIndex &index) const
 {
     if (!index.isValid())
-        return QModelIndex();
+        return {};
 
     BranchNode *node = indexToNode(index);
     if (node->parent == d->rootNode)
-        return QModelIndex();
+        return {};
     return nodeToIndex(node->parent, ColumnBranch);
 }
 
@@ -307,7 +304,7 @@ QVariant BranchModel::data(const QModelIndex &index, int role) const
 
     BranchNode *node = indexToNode(index);
     if (!node)
-        return QVariant();
+        return {};
 
     switch (role) {
     case Qt::DisplayRole: {
@@ -315,8 +312,11 @@ QVariant BranchModel::data(const QModelIndex &index, int role) const
         switch (index.column()) {
         case ColumnBranch: {
             res = node->name;
+            if (!node->isLocal() || !node->isLeaf())
+                break;
+
+            res += ' ' + arrowUp + QString::number(node->status.ahead);
             if (!node->tracking.isEmpty()) {
-                res += ' ' + arrowUp + QString::number(node->status.ahead);
                 res += ' ' + arrowDown + QString::number(node->status.behind);
                 res += " [" + node->tracking + ']';
             }
@@ -333,7 +333,7 @@ QVariant BranchModel::data(const QModelIndex &index, int role) const
         return index.column() == 0 ? node->fullRef() : QVariant();
     case Qt::ToolTipRole:
         if (!node->isLeaf())
-            return QVariant();
+            return {};
         if (node->toolTip.isEmpty())
             node->toolTip = toolTip(node->sha);
         return node->toolTip;
@@ -349,7 +349,7 @@ QVariant BranchModel::data(const QModelIndex &index, int role) const
         return font;
     }
     default:
-        return QVariant();
+        return {};
     }
 }
 
@@ -394,7 +394,7 @@ void BranchModel::clear()
         d->rootNode->children.takeLast();
 
     d->currentSha.clear();
-    d->currentDateTime = QDateTime();
+    d->currentDateTime = {};
     d->currentBranch = nullptr;
     d->headNode = nullptr;
     d->obsoleteLocalBranches.clear();
@@ -413,27 +413,36 @@ void BranchModel::refresh(const FilePath &workingDirectory, ShowError showError)
         return;
     }
 
-    using namespace Tasking;
-    const Process topRevisionProc =
-        d->client->topRevision(workingDirectory,
-                               [=](const QString &ref, const QDateTime &dateTime) {
-                                   d->currentSha = ref;
-                                   d->currentDateTime = dateTime;
-                               });
+    const GroupItem topRevisionProc = gitClient().topRevision(workingDirectory,
+        [this](const QString &ref, const QDateTime &dateTime) {
+            d->currentSha = ref;
+            d->currentDateTime = dateTime;
+        });
 
-    const auto setupForEachRef = [=](QtcProcess &process) {
+    const auto onForEachRefSetup = [this, workingDirectory](Process &process) {
         d->workingDirectory = workingDirectory;
         QStringList args = {"for-each-ref",
                             "--format=%(objectname)\t%(refname)\t%(upstream:short)\t"
                             "%(*objectname)\t%(committerdate:raw)\t%(*committerdate:raw)",
                             "refs/heads/**",
                             "refs/remotes/**"};
-        if (d->client->settings().showTags.value())
+        if (settings().showTags())
             args << "refs/tags/**";
-        d->client->setupCommand(process, workingDirectory, args);
+        gitClient().setupCommand(process, workingDirectory, args);
     };
 
-    const auto forEachRefDone = [=](const QtcProcess &process) {
+    const auto onForEachRefDone = [this, workingDirectory, showError](const Process &process,
+                                                                      DoneWith result) {
+        if (result != DoneWith::Success) {
+            if (showError == ShowError::No)
+                return;
+            const QString message = Tr::tr("Cannot run \"%1\" in \"%2\": %3")
+                                        .arg("git for-each-ref")
+                                        .arg(workingDirectory.toUserOutput())
+                                        .arg(process.cleanedStdErr());
+            VcsBase::VcsOutputWindow::appendError(message);
+            return;
+        }
         const QString output = process.stdOut();
         const QStringList lines = output.split('\n');
         for (const QString &l : lines)
@@ -454,16 +463,6 @@ void BranchModel::refresh(const FilePath &workingDirectory, ShowError showError)
         }
     };
 
-    const auto forEachRefError = [=](const QtcProcess &process) {
-        if (showError == ShowError::No)
-            return;
-        const QString message = Tr::tr("Cannot run \"%1\" in \"%2\": %3")
-                                    .arg("git for-each-ref")
-                                    .arg(workingDirectory.toUserOutput())
-                                    .arg(process.cleanedStdErr());
-        VcsBase::VcsOutputWindow::appendError(message);
-    };
-
     const auto finalize = [this] {
         endResetModel();
         d->refreshTask.release()->deleteLater();
@@ -471,9 +470,8 @@ void BranchModel::refresh(const FilePath &workingDirectory, ShowError showError)
 
     const Group root {
         topRevisionProc,
-        Process(setupForEachRef, forEachRefDone, forEachRefError),
-        OnGroupDone(finalize),
-        OnGroupError(finalize)
+        ProcessTask(onForEachRefSetup, onForEachRefDone),
+        onGroupDone(finalize)
     };
     d->refreshTask.reset(new TaskTree(root));
     d->refreshTask->start();
@@ -481,7 +479,7 @@ void BranchModel::refresh(const FilePath &workingDirectory, ShowError showError)
 
 void BranchModel::setCurrentBranch()
 {
-    const QString currentBranch = d->client->synchronousCurrentLocalBranch(d->workingDirectory);
+    const QString currentBranch = gitClient().synchronousCurrentLocalBranch(d->workingDirectory);
     if (currentBranch.isEmpty())
         return;
 
@@ -499,8 +497,8 @@ void BranchModel::renameBranch(const QString &oldName, const QString &newName)
 {
     QString errorMessage;
     QString output;
-    if (!d->client->synchronousBranchCmd(d->workingDirectory, {"-m", oldName,  newName},
-                                        &output, &errorMessage))
+    if (!gitClient().synchronousBranchCmd(d->workingDirectory, {"-m", oldName,  newName},
+                                          &output, &errorMessage))
         VcsOutputWindow::appendError(errorMessage);
     else
         refresh(d->workingDirectory);
@@ -510,10 +508,10 @@ void BranchModel::renameTag(const QString &oldName, const QString &newName)
 {
     QString errorMessage;
     QString output;
-    if (!d->client->synchronousTagCmd(d->workingDirectory, {newName, oldName},
-                                     &output, &errorMessage)
-            || !d->client->synchronousTagCmd(d->workingDirectory, {"-d", oldName},
-                                            &output, &errorMessage)) {
+    if (!gitClient().synchronousTagCmd(d->workingDirectory, {newName, oldName},
+                                       &output, &errorMessage)
+            || !gitClient().synchronousTagCmd(d->workingDirectory, {"-d", oldName},
+                                          &output, &errorMessage)) {
         VcsOutputWindow::appendError(errorMessage);
     } else {
         refresh(d->workingDirectory);
@@ -528,17 +526,17 @@ FilePath BranchModel::workingDirectory() const
 QModelIndex BranchModel::currentBranch() const
 {
     if (!d->currentBranch)
-        return QModelIndex();
+        return {};
     return nodeToIndex(d->currentBranch, ColumnBranch);
 }
 
 QString BranchModel::fullName(const QModelIndex &idx, bool includePrefix) const
 {
     if (!idx.isValid())
-        return QString();
+        return {};
     BranchNode *node = indexToNode(idx);
     if (!node || !node->isLeaf())
-        return QString();
+        return {};
     if (node == d->headNode)
         return QString("HEAD");
     return node->fullRef(includePrefix);
@@ -547,15 +545,14 @@ QString BranchModel::fullName(const QModelIndex &idx, bool includePrefix) const
 QStringList BranchModel::localBranchNames() const
 {
     if (!d->rootNode || !d->rootNode->count())
-        return QStringList();
-
+        return {};
     return d->rootNode->children.at(LocalBranches)->childrenNames() + d->obsoleteLocalBranches;
 }
 
 QString BranchModel::sha(const QModelIndex &idx) const
 {
     if (!idx.isValid())
-        return QString();
+        return {};
     BranchNode *node = indexToNode(idx);
     return node->sha;
 }
@@ -563,12 +560,10 @@ QString BranchModel::sha(const QModelIndex &idx) const
 QDateTime BranchModel::dateTime(const QModelIndex &idx) const
 {
     if (!idx.isValid())
-        return QDateTime();
+        return {};
     BranchNode *node = indexToNode(idx);
     return node->dateTime;
 }
-
-
 
 bool BranchModel::isHead(const QModelIndex &idx) const
 {
@@ -610,7 +605,7 @@ void BranchModel::removeBranch(const QModelIndex &idx)
     QString errorMessage;
     QString output;
 
-    if (!d->client->synchronousBranchCmd(d->workingDirectory, {"-D", branch}, &output, &errorMessage)) {
+    if (!gitClient().synchronousBranchCmd(d->workingDirectory, {"-D", branch}, &output, &errorMessage)) {
         VcsOutputWindow::appendError(errorMessage);
         return;
     }
@@ -626,7 +621,7 @@ void BranchModel::removeTag(const QModelIndex &idx)
     QString errorMessage;
     QString output;
 
-    if (!d->client->synchronousTagCmd(d->workingDirectory, {"-d", tag}, &output, &errorMessage)) {
+    if (!gitClient().synchronousTagCmd(d->workingDirectory, {"-d", tag}, &output, &errorMessage)) {
         VcsOutputWindow::appendError(errorMessage);
         return;
     }
@@ -642,8 +637,8 @@ void BranchModel::checkoutBranch(const QModelIndex &idx, const QObject *context,
 
     // No StashGuard since this function for now is only used with clean working dir.
     // If it is ever used from another place, please add StashGuard here
-    d->client->checkout(d->workingDirectory, branch, GitClient::StashMode::NoStash,
-                        context, handler);
+    gitClient().checkout(d->workingDirectory, branch, GitClient::StashMode::NoStash,
+                         context, handler);
 }
 
 bool BranchModel::branchIsMerged(const QModelIndex &idx)
@@ -655,8 +650,8 @@ bool BranchModel::branchIsMerged(const QModelIndex &idx)
     QString errorMessage;
     QString output;
 
-    if (!d->client->synchronousBranchCmd(d->workingDirectory, {"-a", "--contains", sha(idx)},
-                                        &output, &errorMessage)) {
+    if (!gitClient().synchronousBranchCmd(d->workingDirectory, {"-a", "--contains", sha(idx)},
+                                          &output, &errorMessage)) {
         VcsOutputWindow::appendError(errorMessage);
     }
 
@@ -684,7 +679,7 @@ static int positionForName(BranchNode *node, const QString &name)
 QModelIndex BranchModel::addBranch(const QString &name, bool track, const QModelIndex &startPoint)
 {
     if (!d->rootNode || !d->rootNode->count())
-        return QModelIndex();
+        return {};
 
     const QString trackedBranch = fullName(startPoint);
     const QString fullTrackedBranch = fullName(startPoint, true);
@@ -700,17 +695,17 @@ QModelIndex BranchModel::addBranch(const QString &name, bool track, const QModel
         branchDateTime = dateTime(startPoint);
     } else {
         const QStringList arguments({"-n1", "--format=%H %ct"});
-        if (d->client->synchronousLog(d->workingDirectory, arguments, &output, &errorMessage,
-                                      RunFlags::SuppressCommandLogging)) {
+        if (gitClient().synchronousLog(d->workingDirectory, arguments, &output, &errorMessage,
+                                       RunFlags::SuppressCommandLogging)) {
             const QStringList values = output.split(' ');
             startSha = values[0];
             branchDateTime = QDateTime::fromSecsSinceEpoch(values[1].toLongLong());
         }
     }
 
-    if (!d->client->synchronousBranchCmd(d->workingDirectory, args, &output, &errorMessage)) {
+    if (!gitClient().synchronousBranchCmd(d->workingDirectory, args, &output, &errorMessage)) {
         VcsOutputWindow::appendError(errorMessage);
-        return QModelIndex();
+        return {};
     }
 
     BranchNode *local = d->rootNode->children.at(LocalBranches);
@@ -748,7 +743,7 @@ void BranchModel::setRemoteTracking(const QModelIndex &trackingIndex)
     const QString currentName = fullName(current);
     const QString shortTracking = fullName(trackingIndex);
     const QString tracking = fullName(trackingIndex, true);
-    d->client->synchronousSetTrackingBranch(d->workingDirectory, currentName, tracking);
+    gitClient().synchronousSetTrackingBranch(d->workingDirectory, currentName, tracking);
     d->currentBranch->tracking = shortTracking;
     updateUpstreamStatus(d->currentBranch);
     emit dataChanged(current, current);
@@ -766,7 +761,7 @@ std::optional<QString> BranchModel::remoteName(const QModelIndex &idx) const
     if (!node)
         return std::nullopt;
     if (node == remotesNode)
-        return QString();
+        return {};
     if (node->parent == remotesNode)
         return node->name;
     return std::nullopt;
@@ -805,7 +800,7 @@ void BranchModel::Private::parseOutputLine(const QString &line, bool force)
         const qint64 age = dateTime.daysTo(QDateTime::currentDateTime());
         isOld = age > Constants::OBSOLETE_COMMIT_AGE_IN_DAYS;
     }
-    const bool showTags = client->settings().showTags.value();
+    const bool showTags = settings().showTags();
 
     // insert node into tree:
     QStringList nameParts = fullName.split('/');
@@ -893,7 +888,7 @@ BranchNode *BranchModel::indexToNode(const QModelIndex &index) const
 QModelIndex BranchModel::nodeToIndex(BranchNode *node, int column) const
 {
     if (node == d->rootNode)
-        return QModelIndex();
+        return {};
     return createIndex(node->parent->rowOf(node), column, static_cast<void *>(node));
 }
 
@@ -916,15 +911,19 @@ void BranchModel::removeNode(const QModelIndex &idx)
 
 void BranchModel::updateUpstreamStatus(BranchNode *node)
 {
-    if (node->tracking.isEmpty())
+    if (!node->isLocal())
         return;
 
-    QtcProcess *process = new QtcProcess(node);
-    process->setEnvironment(d->client->processEnvironment());
-    process->setCommand({d->client->vcsBinary(), {"rev-list", "--no-color", "--left-right",
-                         "--count", node->fullRef() + "..." + node->tracking}});
+    Process *process = new Process(node);
+    process->setEnvironment(gitClient().processEnvironment());
+    QStringList parameters = {"rev-list", "--no-color", "--count"};
+    if (node->tracking.isEmpty())
+        parameters += {"HEAD", "--not", "--remotes"};
+    else
+        parameters += {"--left-right", node->fullRef() + "..." + node->tracking};
+    process->setCommand({gitClient().vcsBinary(), parameters});
     process->setWorkingDirectory(d->workingDirectory);
-    connect(process, &QtcProcess::done, this, [this, process, node] {
+    connect(process, &Process::done, this, [this, process, node] {
         process->deleteLater();
         if (process->result() != ProcessResult::FinishedWithSuccess)
             return;
@@ -932,9 +931,13 @@ void BranchModel::updateUpstreamStatus(BranchNode *node)
         if (text.isEmpty())
             return;
         const QStringList split = text.trimmed().split('\t');
-        QTC_ASSERT(split.size() == 2, return);
+        if (node->tracking.isEmpty()) {
+            node->setUpstreamStatus(UpstreamStatus(split.at(0).toInt(), 0));
+        } else {
+            QTC_ASSERT(split.size() == 2, return);
 
-        node->setUpstreamStatus(UpstreamStatus(split.at(0).toInt(), split.at(1).toInt()));
+            node->setUpstreamStatus(UpstreamStatus(split.at(0).toInt(), split.at(1).toInt()));
+        }
         const QModelIndex idx = nodeToIndex(node, ColumnBranch);
         emit dataChanged(idx, idx);
     });
@@ -958,8 +961,8 @@ QString BranchModel::toolTip(const QString &sha) const
     // Show the sha description excluding diff as toolTip
     QString output;
     QString errorMessage;
-    if (!d->client->synchronousLog(d->workingDirectory, {"-n1", sha}, &output, &errorMessage,
-                                   RunFlags::SuppressCommandLogging)) {
+    if (!gitClient().synchronousLog(d->workingDirectory, {"-n1", sha}, &output, &errorMessage,
+                                    RunFlags::SuppressCommandLogging)) {
         return errorMessage;
     }
     return output;

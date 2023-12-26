@@ -17,18 +17,16 @@ class DiffAndLogHighlighterPrivate;
 
 class VCSBASE_EXPORT DiffAndLogHighlighter : public TextEditor::SyntaxHighlighter
 {
-    Q_OBJECT
-
 public:
     explicit DiffAndLogHighlighter(const QRegularExpression &filePattern,
                                    const QRegularExpression &changePattern);
     ~DiffAndLogHighlighter() override;
 
     void highlightBlock(const QString &text) override;
+    void setEnabled(bool enabled) override;
 
+protected:
     void setFontSettings(const TextEditor::FontSettings &fontSettings) override;
-
-    void setEnabled(bool e);
 
 private:
     friend class DiffAndLogHighlighterPrivate;

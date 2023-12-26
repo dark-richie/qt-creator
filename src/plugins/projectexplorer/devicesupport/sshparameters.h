@@ -7,7 +7,7 @@
 
 #include <utils/filepath.h>
 
-namespace Utils { class QtcProcess; }
+namespace Utils { class Process; }
 
 namespace ProjectExplorer {
 
@@ -32,6 +32,7 @@ public:
     QString userName() const { return m_userName; }
 
     QString userAtHost() const;
+    QString userAtHostAndPort() const;
 
     void setHost(const QString &host) { m_host = host; }
     void setPort(int port) { m_port = port; }
@@ -45,7 +46,7 @@ public:
     AuthenticationType authenticationType = AuthenticationTypeAll;
     SshHostKeyCheckingMode hostKeyCheckingMode = SshHostKeyCheckingAllowNoMatch;
 
-    static bool setupSshEnvironment(Utils::QtcProcess *process);
+    static bool setupSshEnvironment(Utils::Process *process);
 
     friend PROJECTEXPLORER_EXPORT bool operator==(const SshParameters &p1, const SshParameters &p2);
     friend bool operator!=(const SshParameters &p1, const SshParameters &p2) { return !(p1 == p2); }
@@ -63,6 +64,7 @@ quint16 PROJECTEXPLORER_EXPORT getPortFromEnvironment();
 const QString PROJECTEXPLORER_EXPORT getUserFromEnvironment();
 const QString PROJECTEXPLORER_EXPORT getKeyFileFromEnvironment();
 const PROJECTEXPLORER_EXPORT QString userAtHost();
+const PROJECTEXPLORER_EXPORT QString userAtHostAndPort();
 SshParameters PROJECTEXPLORER_EXPORT getParameters();
 bool PROJECTEXPLORER_EXPORT checkParameters(const SshParameters &params);
 void PROJECTEXPLORER_EXPORT printSetupHelp();

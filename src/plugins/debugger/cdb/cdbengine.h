@@ -10,7 +10,7 @@
 
 #include <projectexplorer/devicesupport/idevice.h>
 
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QElapsedTimer>
 
@@ -110,9 +110,9 @@ private:
     };
     enum CommandFlags {
         NoFlags = 0,
-        BuiltinCommand,
-        ExtensionCommand,
-        ScriptCommand
+        BuiltinCommand = DebuggerCommand::Silent << 1,
+        ExtensionCommand = DebuggerCommand::Silent << 2,
+        ScriptCommand = DebuggerCommand::Silent << 3
     };
 
     void init();
@@ -174,12 +174,11 @@ private:
     const QString m_tokenPrefix;
     void handleSetupFailure(const QString &errorMessage);
 
-    Utils::QtcProcess m_process;
+    Utils::Process m_process;
     DebuggerStartMode m_effectiveStartMode = NoStartMode;
     //! Debugger accessible (expecting commands)
     bool m_accessible = false;
     StopMode m_stopMode = NoStopRequested;
-    ProjectExplorer::DeviceProcessSignalOperation::Ptr m_signalOperation;
     int m_nextCommandToken = 0;
     QHash<int, DebuggerCommand> m_commandForToken;
     QString m_currentBuiltinResponse;

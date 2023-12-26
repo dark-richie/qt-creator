@@ -85,7 +85,7 @@
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Add Bookmark</source>
         <translation>Agregar marcador</translation>
@@ -129,10 +129,6 @@
     <message>
         <source>You are going to delete a Folder which will also&lt;br&gt;remove its content. Are you sure you would like to continue?</source>
         <translation>Se dispone a eliminar un directorio y todo su contenido. ¿Está seguro?</translation>
-    </message>
-    <message>
-        <source>New Folder</source>
-        <translation>Nuevo directorio</translation>
     </message>
     <message>
         <source>Show Bookmark</source>
@@ -7179,8 +7175,8 @@ al control de versiones (%2)?</translation>
         <translation>Error guardando sesión</translation>
     </message>
     <message>
-        <source>Could not save session to file %1</source>
-        <translation>No se pudo guardar la sesion al archivo %1</translation>
+        <source>Could not save session to file &quot;%1&quot;</source>
+        <translation>No se pudo guardar la sesion al archivo &quot;%1&quot;</translation>
     </message>
     <message>
         <source>Qt Creator</source>
@@ -9375,10 +9371,6 @@ The following encodings are likely to fit:</source>
     <message>
         <source>Copy...</source>
         <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Delete</source>
-        <translation type="unfinished">Suprimir</translation>
     </message>
     <message>
         <source>Line in current document</source>

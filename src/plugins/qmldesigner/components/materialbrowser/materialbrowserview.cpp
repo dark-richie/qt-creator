@@ -6,6 +6,7 @@
 #include "bindingproperty.h"
 #include "createtexture.h"
 #include "designmodecontext.h"
+#include "externaldependenciesinterface.h"
 #include "materialbrowsermodel.h"
 #include "materialbrowsertexturesmodel.h"
 #include "materialbrowserwidget.h"
@@ -230,10 +231,11 @@ void MaterialBrowserView::modelAttached(Model *model)
     m_widget->clearSearchFilter();
     m_widget->materialBrowserModel()->setHasMaterialLibrary(false);
     m_hasQuick3DImport = model->hasImport("QtQuick3D");
+    m_widget->materialBrowserModel()->setIsQt6Project(externalDependencies().isQt6Project());
 
     // Project load is already very busy and may even trigger puppet reset, so let's wait a moment
     // before refreshing the model
-    QTimer::singleShot(1000, model, [this]() {
+    QTimer::singleShot(1000, model, [this] {
         refreshModel(true);
         loadPropertyGroups(); // Needs the delay because it uses metaInfo
     });
@@ -264,12 +266,17 @@ void MaterialBrowserView::refreshModel(bool updateImages)
     m_widget->materialBrowserTexturesModel()->setTextures(textures);
     m_widget->materialBrowserModel()->setHasMaterialLibrary(matLib.isValid());
 
-    if (updateImages) {
-        for (const ModelNode &node : std::as_const(materials))
-            m_previewRequests.insert(node);
-        if (!m_previewRequests.isEmpty())
-            m_previewTimer.start(0);
-    }
+    if (updateImages)
+        updateMaterialsPreview();
+}
+
+void MaterialBrowserView::updateMaterialsPreview()
+{
+    const QList<ModelNode> materials = m_widget->materialBrowserModel()->materials();
+    for (const ModelNode &node : materials)
+        m_previewRequests.insert(node);
+    if (!m_previewRequests.isEmpty())
+        m_previewTimer.start(0);
 }
 
 bool MaterialBrowserView::isMaterial(const ModelNode &node) const
@@ -469,8 +476,8 @@ ModelNode MaterialBrowserView::getMaterialOfModel(const ModelNode &model, int id
     return mat;
 }
 
-void MaterialBrowserView::importsChanged([[maybe_unused]] const QList<Import> &addedImports,
-                                         [[maybe_unused]] const QList<Import> &removedImports)
+void MaterialBrowserView::importsChanged([[maybe_unused]] const Imports &addedImports,
+                                         [[maybe_unused]] const Imports &removedImports)
 {
     bool hasQuick3DImport = model()->hasImport("QtQuick3D");
 
@@ -516,7 +523,7 @@ void MaterialBrowserView::customNotification(const AbstractView *view,
                 m_widget->focusMaterialSection(false);
         }
     } else if (identifier == "refresh_material_browser") {
-        QTimer::singleShot(0, model(), [this]() {
+        QTimer::singleShot(0, model(), [this] {
             refreshModel(true);
         });
     } else if (identifier == "delete_selected_material") {
@@ -541,6 +548,7 @@ void MaterialBrowserView::active3DSceneChanged(qint32 sceneId)
 void MaterialBrowserView::currentStateChanged([[maybe_unused]] const ModelNode &node)
 {
     m_widget->materialBrowserTexturesModel()->updateAllTexturesSources();
+    updateMaterialsPreview();
 }
 
 void MaterialBrowserView::instancesCompleted(const QVector<ModelNode> &completedNodeList)
@@ -549,7 +557,7 @@ void MaterialBrowserView::instancesCompleted(const QVector<ModelNode> &completed
         // We use root node completion as indication of puppet reset
         if (node.isRootNode()) {
             m_puppetResetPending  = false;
-            QTimer::singleShot(1000, this, [this]() {
+            QTimer::singleShot(1000, this, [this] {
                 if (!model() || !model()->nodeInstanceView())
                     return;
                 const QList<ModelNode> materials = m_widget->materialBrowserModel()->materials();

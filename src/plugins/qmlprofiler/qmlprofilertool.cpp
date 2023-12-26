@@ -1,23 +1,22 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
+#include "qmlprofilertool.h"
+
 #include "qmlprofilerattachdialog.h"
 #include "qmlprofilerclientmanager.h"
 #include "qmlprofilerconstants.h"
 #include "qmlprofilermodelmanager.h"
-#include "qmlprofilerplugin.h"
 #include "qmlprofilerrunconfigurationaspect.h"
 #include "qmlprofilerruncontrol.h"
 #include "qmlprofilersettings.h"
 #include "qmlprofilerstatemanager.h"
 #include "qmlprofilertextmark.h"
-#include "qmlprofilertool.h"
 #include "qmlprofilertr.h"
 #include "qmlprofilerviewmanager.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/actionmanager/command.h>
+#include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/editormanager.h>
@@ -29,26 +28,28 @@
 #include <coreplugin/modemanager.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
+#include <debugger/analyzer/analyzerconstants.h>
 #include <debugger/analyzer/analyzermanager.h>
 #include <debugger/debuggericons.h>
 #include <debugger/debuggermainwindow.h>
 
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/environmentaspect.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <texteditor/texteditor.h>
 
 #include <utils/fancymainwindow.h>
 #include <utils/fileinprojectfinder.h>
 #include <utils/qtcassert.h>
+#include <utils/stylehelper.h>
 #include <utils/url.h>
 #include <utils/utilsicons.h>
 
@@ -73,8 +74,7 @@ using namespace QmlProfiler::Constants;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace QmlProfiler {
-namespace Internal {
+namespace QmlProfiler::Internal {
 
 static QmlProfilerTool *m_instance = nullptr;
 
@@ -106,6 +106,12 @@ public:
     QElapsedTimer m_recordingElapsedTime;
 
     bool m_toolBusy = false;
+
+    std::unique_ptr<Core::ActionContainer> m_options;
+    std::unique_ptr<QAction> m_loadQmlTrace;
+    std::unique_ptr<QAction> m_saveQmlTrace;
+    std::unique_ptr<QAction> m_runAction;
+    std::unique_ptr<QAction> m_attachAction;
 };
 
 QmlProfilerTool::QmlProfilerTool()
@@ -182,7 +188,7 @@ QmlProfilerTool::QmlProfilerTool()
     d->m_searchButton->setEnabled(false);
 
     connect(d->m_searchButton, &QToolButton::clicked, this, &QmlProfilerTool::showTimeLineSearch);
-    connect(d->m_viewContainer, &QmlProfilerViewManager::viewsCreated, this, [this]() {
+    connect(d->m_viewContainer, &QmlProfilerViewManager::viewsCreated, this, [this] {
         d->m_searchButton->setEnabled(d->m_viewContainer->traceView()->isUsable());
     });
 
@@ -190,14 +196,14 @@ QmlProfilerTool::QmlProfilerTool()
     d->m_displayFeaturesButton->setIcon(Utils::Icons::FILTER.icon());
     d->m_displayFeaturesButton->setToolTip(Tr::tr("Hide or show event categories."));
     d->m_displayFeaturesButton->setPopupMode(QToolButton::InstantPopup);
-    d->m_displayFeaturesButton->setProperty("noArrow", true);
+    d->m_displayFeaturesButton->setProperty(StyleHelper::C_NO_ARROW, true);
     d->m_displayFeaturesMenu = new QMenu(d->m_displayFeaturesButton);
     d->m_displayFeaturesButton->setMenu(d->m_displayFeaturesMenu);
     connect(d->m_displayFeaturesMenu, &QMenu::triggered,
             this, &QmlProfilerTool::toggleVisibleFeature);
 
     d->m_timeLabel = new QLabel();
-    d->m_timeLabel->setProperty("panelwidget", true);
+    StyleHelper::setPanelWidget(d->m_timeLabel);
     d->m_timeLabel->setIndent(10);
     updateTimeDisplay();
     connect(d->m_timeLabel, &QObject::destroyed, &d->m_recordingTimer, &QTimer::stop);
@@ -229,13 +235,13 @@ QmlProfilerTool::QmlProfilerTool()
     QmlProfilerTextMarkModel *model = d->m_profilerModelManager->textMarkModel();
     if (EditorManager *editorManager = EditorManager::instance()) {
         connect(editorManager, &EditorManager::editorCreated,
-                model, [this, model](Core::IEditor *editor, const QString &fileName) {
+                model, [this, model](Core::IEditor *editor, const FilePath &filePath) {
             Q_UNUSED(editor)
-            model->createMarks(d->m_viewContainer, fileName);
+            model->createMarks(d->m_viewContainer, filePath.toString());
         });
     }
 
-    auto updateRecordButton = [this]() {
+    auto updateRecordButton = [this] {
         const bool recording =
                 d->m_profilerState->currentState() != QmlProfilerStateManager::AppRunning
                 ? d->m_profilerState->clientRecording() : d->m_profilerState->serverRecording();
@@ -256,6 +262,63 @@ QmlProfilerTool::QmlProfilerTool()
     connect(d->m_profilerState, &QmlProfilerStateManager::clientRecordingChanged,
             d->m_recordButton, updateRecordButton);
     updateRecordButton();
+
+
+    const QString description = Tr::tr("The QML Profiler can be used to find performance "
+                                       "bottlenecks in applications using QML.");
+
+    d->m_runAction = std::make_unique<QAction>(Tr::tr("QML Profiler"));
+    d->m_runAction->setToolTip(description);
+    QObject::connect(d->m_runAction.get(), &QAction::triggered,
+                     this, &QmlProfilerTool::profileStartupProject);
+
+    QAction *toolStartAction = startAction();
+    QObject::connect(toolStartAction, &QAction::changed, this, [this, toolStartAction] {
+        d->m_runAction->setEnabled(toolStartAction->isEnabled());
+    });
+
+    d->m_attachAction = std::make_unique<QAction>(Tr::tr("QML Profiler (Attach to Waiting Application)"));
+    d->m_attachAction->setToolTip(description);
+    QObject::connect(d->m_attachAction.get(), &QAction::triggered,
+                     this, &QmlProfilerTool::attachToWaitingApplication);
+
+    d->m_loadQmlTrace = std::make_unique<QAction>(Tr::tr("Load QML Trace"));
+    connect(d->m_loadQmlTrace.get(), &QAction::triggered,
+            this, &QmlProfilerTool::showLoadDialog, Qt::QueuedConnection);
+
+    d->m_saveQmlTrace = std::make_unique<QAction>(Tr::tr("Save QML Trace"));
+    connect(d->m_saveQmlTrace.get(), &QAction::triggered,
+            this, &QmlProfilerTool::showSaveDialog, Qt::QueuedConnection);
+
+    connect(d->m_profilerState, &QmlProfilerStateManager::serverRecordingChanged,
+            this, [this](bool recording) {
+        d->m_loadQmlTrace->setEnabled(!recording);
+    });
+    d->m_loadQmlTrace->setEnabled(!d->m_profilerState->serverRecording());
+
+    connect(d->m_profilerModelManager, &QmlProfilerModelManager::traceChanged,
+            this, [this] {
+        d->m_saveQmlTrace->setEnabled(!d->m_profilerModelManager->isEmpty());
+    });
+    d->m_saveQmlTrace->setEnabled(!d->m_profilerModelManager->isEmpty());
+
+    d->m_options.reset(ActionManager::createMenu("Analyzer.Menu.QMLOptions"));
+    d->m_options->menu()->setTitle(Tr::tr("QML Profiler Options"));
+    d->m_options->menu()->setEnabled(true);
+    ActionContainer *menu = ActionManager::actionContainer(M_DEBUG_ANALYZER);
+
+    menu->addAction(ActionManager::registerAction(d->m_runAction.get(),
+                                                  "QmlProfiler.Internal"),
+                    Debugger::Constants::G_ANALYZER_TOOLS);
+    menu->addAction(ActionManager::registerAction(d->m_attachAction.get(),
+                                                  "QmlProfiler.AttachToWaitingApplication"),
+                    Debugger::Constants::G_ANALYZER_REMOTE_TOOLS);
+
+    menu->addMenu(d->m_options.get(), G_ANALYZER_OPTIONS);
+    d->m_options->addAction(ActionManager::registerAction(d->m_loadQmlTrace.get(),
+                                                       Constants::QmlProfilerLoadActionId));
+    d->m_options->addAction(ActionManager::registerAction(d->m_saveQmlTrace.get(),
+                                                       Constants::QmlProfilerSaveActionId));
 }
 
 QmlProfilerTool::~QmlProfilerTool()
@@ -277,11 +340,11 @@ void QmlProfilerTool::updateRunActions()
         d->m_startAction->setToolTip(Tr::tr("A QML Profiler analysis is still in progress."));
         d->m_stopAction->setEnabled(true);
     } else {
-        QString tooltip = Tr::tr("Start QML Profiler analysis.");
-        bool canRun = ProjectExplorerPlugin::canRunStartupProject
-                (ProjectExplorer::Constants::QML_PROFILER_RUN_MODE, &tooltip);
-        d->m_startAction->setToolTip(tooltip);
-        d->m_startAction->setEnabled(canRun);
+        const auto canRun = ProjectExplorerPlugin::canRunStartupProject(
+            ProjectExplorer::Constants::QML_PROFILER_RUN_MODE);
+        d->m_startAction->setToolTip(canRun ? Tr::tr("Start QML Profiler analysis.")
+                                            : canRun.error());
+        d->m_startAction->setEnabled(bool(canRun));
         d->m_stopAction->setEnabled(false);
     }
 }
@@ -292,13 +355,16 @@ void QmlProfilerTool::finalizeRunControl(QmlProfilerRunner *runWorker)
     auto runControl = runWorker->runControl();
     if (auto aspect = runControl->aspect<QmlProfilerRunConfigurationAspect>()) {
         if (auto settings = static_cast<const QmlProfilerSettings *>(aspect->currentSettings)) {
-            d->m_profilerConnections->setFlushInterval(settings->flushEnabled.value() ?
-                                                           settings->flushInterval.value() : 0);
-            d->m_profilerModelManager->setAggregateTraces(settings->aggregateTraces.value());
+            d->m_profilerConnections->setFlushInterval(settings->flushEnabled() ?
+                                                           settings->flushInterval() : 0);
+            d->m_profilerModelManager->setAggregateTraces(settings->aggregateTraces());
         }
     }
 
-    auto handleStop = [this, runControl]() {
+    auto handleStop = [this, runControl] {
+        if (!d->m_toolBusy)
+            return;
+
         d->m_toolBusy = false;
         updateRunActions();
         disconnect(d->m_stopAction, &QAction::triggered, runControl, &RunControl::initiateStop);
@@ -312,11 +378,6 @@ void QmlProfilerTool::finalizeRunControl(QmlProfilerRunner *runWorker)
     };
 
     connect(runControl, &RunControl::stopped, this, handleStop);
-    connect(runControl, &RunControl::finished, this, [this, handleStop] {
-        if (d->m_toolBusy)
-            handleStop();
-    });
-
     connect(d->m_stopAction, &QAction::triggered, runControl, &RunControl::initiateStop);
 
     updateRunActions();
@@ -332,7 +393,7 @@ void QmlProfilerTool::finalizeRunControl(QmlProfilerRunner *runWorker)
             runWorker, [this, runWorker]() {
         auto infoBox = new QMessageBox(ICore::dialogParent());
         infoBox->setIcon(QMessageBox::Critical);
-        infoBox->setWindowTitle(Core::Constants::IDE_DISPLAY_NAME);
+        infoBox->setWindowTitle(QGuiApplication::applicationDisplayName());
 
         const int interval = d->m_profilerConnections->retryInterval();
         const int retries = d->m_profilerConnections->maximumRetries();
@@ -506,10 +567,10 @@ ProjectExplorer::RunControl *QmlProfilerTool::attachToWaitingApplication()
     Kit *kit = nullptr;
 
     {
-        QSettings *settings = ICore::settings();
+        QtcSettings *settings = ICore::settings();
 
-        kitId = Id::fromSetting(settings->value(QLatin1String("AnalyzerQmlAttachDialog/kitId")));
-        port = settings->value(QLatin1String("AnalyzerQmlAttachDialog/port"), 3768).toInt();
+        kitId = Id::fromSetting(settings->value("AnalyzerQmlAttachDialog/kitId"));
+        port = settings->value("AnalyzerQmlAttachDialog/port", 3768).toInt();
 
         QmlProfilerAttachDialog dialog;
 
@@ -524,8 +585,8 @@ ProjectExplorer::RunControl *QmlProfilerTool::attachToWaitingApplication()
         QTC_ASSERT(port >= 0, return nullptr);
         QTC_ASSERT(port <= std::numeric_limits<quint16>::max(), return nullptr);
 
-        settings->setValue(QLatin1String("AnalyzerQmlAttachDialog/kitId"), kit->id().toSetting());
-        settings->setValue(QLatin1String("AnalyzerQmlAttachDialog/port"), port);
+        settings->setValue("AnalyzerQmlAttachDialog/kitId", kit->id().toSetting());
+        settings->setValue("AnalyzerQmlAttachDialog/port", port);
     }
 
     QUrl serverUrl;
@@ -569,10 +630,10 @@ void QmlProfilerTool::showErrorDialog(const QString &error)
 
 static void saveLastTraceFile(const FilePath &filePath)
 {
-    QmlProfilerSettings *settings = QmlProfilerPlugin::globalSettings();
-    if (filePath != settings->lastTraceFile.filePath()) {
-        settings->lastTraceFile.setFilePath(filePath);
-        settings->writeGlobalSettings();
+    QmlProfilerSettings &s = globalSettings();
+    if (filePath != s.lastTraceFile()) {
+        s.lastTraceFile.setValue(filePath);
+        s.writeSettings();
     }
 }
 
@@ -582,7 +643,7 @@ void QmlProfilerTool::showSaveDialog()
     QLatin1String zFile(QztFileExtension);
     FilePath filePath = FileUtils::getSaveFilePath(
                 nullptr, Tr::tr("Save QML Trace"),
-                QmlProfilerPlugin::globalSettings()->lastTraceFile.filePath(),
+                globalSettings().lastTraceFile(),
                 Tr::tr("QML traces (*%1 *%2)").arg(zFile).arg(tFile));
     if (!filePath.isEmpty()) {
         if (!filePath.endsWith(zFile) && !filePath.endsWith(tFile))
@@ -606,7 +667,7 @@ void QmlProfilerTool::showLoadDialog()
     QLatin1String zFile(QztFileExtension);
     FilePath filePath = FileUtils::getOpenFilePath(
                 nullptr, Tr::tr("Load QML Trace"),
-                QmlProfilerPlugin::globalSettings()->lastTraceFile.filePath(),
+                globalSettings().lastTraceFile(),
                 Tr::tr("QML traces (*%1 *%2)").arg(zFile).arg(tFile));
 
     if (!filePath.isEmpty()) {
@@ -677,7 +738,7 @@ void QmlProfilerTool::clientsDisconnected()
 
     // ... and return to the "base" state
     if (d->m_profilerState->currentState() == QmlProfilerStateManager::AppDying) {
-        QTimer::singleShot(0, d->m_profilerState, [this]() {
+        QTimer::singleShot(0, d->m_profilerState, [this] {
             d->m_profilerState->setCurrentState(QmlProfilerStateManager::Idle);
         });
     }
@@ -794,7 +855,7 @@ void QmlProfilerTool::profilerStateChanged()
             d->m_profilerConnections->stopRecording();
         } else {
             // Directly transition to idle
-            QTimer::singleShot(0, d->m_profilerState, [this]() {
+            QTimer::singleShot(0, d->m_profilerState, [this] {
                 d->m_profilerState->setCurrentState(QmlProfilerStateManager::Idle);
             });
         }
@@ -856,8 +917,17 @@ void QmlProfilerTool::toggleVisibleFeature(QAction *action)
                     d->m_profilerModelManager->visibleFeatures() | (1ULL << feature));
     else
         d->m_profilerModelManager->setVisibleFeatures(
-                    d->m_profilerModelManager->visibleFeatures() & (~(1ULL << feature)));
+            d->m_profilerModelManager->visibleFeatures() & (~(1ULL << feature)));
 }
 
-} // namespace Internal
-} // namespace QmlProfiler
+void setupQmlProfilerTool()
+{
+    (void) new QmlProfilerTool;
+}
+
+void destroyQmlProfilerTool()
+{
+    delete m_instance;
+}
+
+} // QmlProfiler::Internal

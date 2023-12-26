@@ -10,6 +10,8 @@
 
 namespace QmlDesigner {
 
+using namespace NanotraceHR::Literals;
+
 AsynchronousImageFactory::AsynchronousImageFactory(ImageCacheStorageInterface &storage,
                                                    TimeStampProviderInterface &timeStampProvider,
                                                    ImageCacheCollectorInterface &collector)
@@ -17,78 +19,33 @@ AsynchronousImageFactory::AsynchronousImageFactory(ImageCacheStorageInterface &s
     , m_timeStampProvider(timeStampProvider)
     , m_collector(collector)
 {
-    m_backgroundThread = std::thread{[this] {
-        while (isRunning()) {
-            if (auto entry = getEntry(); entry) {
-                request(entry->name,
-                        entry->extraId,
-                        std::move(entry->auxiliaryData),
-                        m_storage,
-                        m_timeStampProvider,
-                        m_collector);
-            }
 
-            waitForEntries();
-        }
-    }};
 }
 
-AsynchronousImageFactory::~AsynchronousImageFactory()
-{
-    clean();
-    wait();
-}
-
-void AsynchronousImageFactory::generate(Utils::PathString name,
-                                        Utils::SmallString extraId,
+void AsynchronousImageFactory::generate(Utils::SmallStringView name,
+                                        Utils::SmallStringView extraId,
                                         ImageCache::AuxiliaryData auxiliaryData)
 {
-    addEntry(std::move(name), std::move(extraId), std::move(auxiliaryData));
-    m_condition.notify_all();
+    auto [trace, flowToken] = ImageCache::category().beginDurationWithFlow(
+        "request image in asynchronous image factory"_t);
+    m_taskQueue.addTask(trace.createToken(),
+                        name,
+                        extraId,
+                        std::move(auxiliaryData),
+                        std::move(flowToken));
 }
 
-void AsynchronousImageFactory::addEntry(Utils::PathString &&name,
-                                        Utils::SmallString &&extraId,
-                                        ImageCache::AuxiliaryData &&auxiliaryData)
-{
-    std::unique_lock lock{m_mutex};
-
-    m_entries.emplace_back(std::move(name), std::move(extraId), std::move(auxiliaryData));
-}
-
-bool AsynchronousImageFactory::isRunning()
-{
-    std::unique_lock lock{m_mutex};
-    return !m_finishing || m_entries.size();
-}
-
-void AsynchronousImageFactory::waitForEntries()
-{
-    std::unique_lock lock{m_mutex};
-    if (m_entries.empty())
-        m_condition.wait(lock, [&] { return m_entries.size() || m_finishing; });
-}
-
-std::optional<AsynchronousImageFactory::Entry> AsynchronousImageFactory::getEntry()
-{
-    std::unique_lock lock{m_mutex};
-
-    if (m_entries.empty())
-        return {};
-
-    Entry entry = m_entries.front();
-    m_entries.pop_front();
-
-    return {entry};
-}
+AsynchronousImageFactory::~AsynchronousImageFactory() {}
 
 void AsynchronousImageFactory::request(Utils::SmallStringView name,
                                        Utils::SmallStringView extraId,
                                        ImageCache::AuxiliaryData auxiliaryData,
                                        ImageCacheStorageInterface &storage,
                                        TimeStampProviderInterface &timeStampProvider,
-                                       ImageCacheCollectorInterface &collector)
+                                       ImageCacheCollectorInterface &collector,
+                                       ImageCache::TraceToken traceToken)
 {
+    auto [storageTracer, flowToken] = traceToken.beginDurationWithFlow("starte image generator"_t);
     const auto id = extraId.empty() ? Utils::PathString{name}
                                     : Utils::PathString::join({name, "+", extraId});
 
@@ -99,40 +56,34 @@ void AsynchronousImageFactory::request(Utils::SmallStringView name,
     if (currentModifiedTime < (storageModifiedTime + pause))
         return;
 
-    auto capture = [=](const QImage &image, const QImage &midSizeImage, const QImage &smallImage) {
-        m_storage.storeImage(id, currentModifiedTime, image, midSizeImage, smallImage);
+    auto capture = [&](const QImage &image,
+                       const QImage &midSizeImage,
+                       const QImage &smallImage,
+                       ImageCache::TraceToken) {
+        storage.storeImage(id, currentModifiedTime, image, midSizeImage, smallImage);
     };
 
     collector.start(name,
                     extraId,
                     std::move(auxiliaryData),
                     std::move(capture),
-                    ImageCache::AbortCallback{});
+                    ImageCache::InternalAbortCallback{},
+                    std::move(flowToken));
 }
 
 void AsynchronousImageFactory::clean()
 {
-    clearEntries();
+    m_taskQueue.clean();
 }
 
-void AsynchronousImageFactory::wait()
+void AsynchronousImageFactory::Dispatch::operator()(Entry &entry)
 {
-    stopThread();
-    m_condition.notify_all();
-    if (m_backgroundThread.joinable())
-        m_backgroundThread.join();
+    request(entry.name,
+            entry.extraId,
+            std::move(entry.auxiliaryData),
+            storage,
+            timeStampProvider,
+            collector,
+            std::move(entry.traceToken));
 }
-
-void AsynchronousImageFactory::clearEntries()
-{
-    std::unique_lock lock{m_mutex};
-    m_entries.clear();
-}
-
-void AsynchronousImageFactory::stopThread()
-{
-    std::unique_lock lock{m_mutex};
-    m_finishing = true;
-}
-
 } // namespace QmlDesigner

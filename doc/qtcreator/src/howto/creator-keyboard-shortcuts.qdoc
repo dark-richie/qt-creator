@@ -1,4 +1,4 @@
-// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 // **********************************************************************
@@ -13,25 +13,18 @@
     \previouspage creator-project-managing-sessions.html
     \nextpage studio-projects.html
     \else
-    \previouspage creator-cli.html
-    \nextpage creator-editor-external.html
+    \previouspage creator-reference.html
     \endif
+
+    \ingroup creator-reference
 
     \title Keyboard Shortcuts
 
-    \QC has various keyboard shortcuts that speed up your development
-    process. You can add more shortcuts if your favorite combination is
-    missing. In addition, you can specify your own keyboard shortcuts for some
-    functions that can be easily performed with a mouse, and therefore do not
-    appear in menus or have default keyboard shortcuts. For example, selecting
-    and deleting words or lines in an editor.
+    \brief Default keyboard shortcuts.
 
-    To view all functions available in \QC and the keyboard shortcuts defined
-    for them, select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol Environment >
-    \uicontrol Keyboard. The shortcuts are listed by category. To find a keyboard
-    shortcut in the list, enter a function name or shortcut in the \uicontrol Filter
-    field.
+    \QC has various keyboard shortcuts that speed up your development process.
+    To view all \QC functions in and their keyboard shortcuts, select
+    \preferences > \uicontrol Environment > \uicontrol Keyboard.
 
     \image qtcreator-keyboard-shortcuts.png
 
@@ -53,65 +46,17 @@
 
     To override the platform default value that determines whether
     keyboard shortcuts are shown in the labels of context menu items,
-    select \uicontrol Edit > \uicontrol Preferences > \uicontrol Environment >
+    select \preferences > \uicontrol Environment >
     \uicontrol Interface. The label of the \uicontrol {Show keyboard shortcuts
     in context menus} check box indicates whether the platform default value
     is \c on or \c off.
 
-    \image qtcreator-options-environment-interface.png "Interface tab in the Environment preferences"
-
-    \section1 Configuring Keyboard Shortcuts
-
-    To customize a keyboard shortcut:
-
-    \list 1
-
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Environment
-            > \uicontrol Keyboard.
-
-        \li Select a command from the list.
-
-        \li In the \uicontrol{Key Sequence} field, you have the following
-            options:
-
-            \list
-
-                \li Enter the shortcut key you want to associate with the
-                    selected command.
-
-                \li Select \uicontrol Record, press the keys to use as the
-                    keyboard shortcut, and select \uicontrol {Stop Recording}
-                    when you are done.
-
-            \endlist
-
-        \li To assign multiple keyboard shortcuts to a function, select
-            \uicontrol Add, and enter or record an additional key combination.
-
-        \li To revert to the default shortcut, select \uicontrol Reset.
-
-    \endlist
-
-    \QC allows you to use different keyboard shortcut mapping schemes:
-
-    \list
-
-        \li To import a keyboard shortcut mapping scheme, click \uicontrol Import
-            and select the .kms file that has the keyboard shortcut mapping scheme
-            you want to import.
-
-        \li To export the current keyboard shortcut mapping scheme, click
-            \uicontrol Export and select the location where you want to save the
-            exported .kms file.
-
-    \endlist
-
-    \section1 Default Keyboard Shortcuts
+    \image qtcreator-preferences-environment-interface.webp {Interface tab in Environment preferences}
 
     The following tables list the default keyboard shortcuts. They are
     categorized by actions.
 
-    \section2 General Keyboard Shortcuts
+    \section1 General Keyboard Shortcuts
 
     \table
         \header
@@ -183,9 +128,11 @@
         \row
             \li  Previous open document in history
             \li  Ctrl+Tab
+    \if defined(qtcreator)
         \row
             \li  Activate \uicontrol Locator
             \li  Ctrl+K
+    \endif
         \row
             \li  Switch to \uicontrol Welcome mode
             \li  Ctrl+1
@@ -234,7 +181,7 @@
             \li  Alt+O
         \row
             \li  Maximize output views
-            \li  Alt+9
+            \li  Alt+Shift+9
         \row
             \li  Move to next item in output
             \li  F6
@@ -253,6 +200,7 @@
         \row
             \li  Undo
             \li  Ctrl+Z
+        \if defined(qtcreator)
         \row
             \li  Move to \uicontrol Edit mode
 
@@ -262,18 +210,19 @@
                 \li  The second press closes secondary windows
                \endlist
             \li  Esc
+        \endif
         \row
             \li  Exit \QC
 
                  By default, \QC exits without asking for confirmation, unless
                  there are unsaved changes in open files. To always be asked,
                  select the \uicontrol {Ask for confirmation before exiting}
-                 check box in \uicontrol Edit > \uicontrol Preferences >
-                 \uicontrol Environment > \uicontrol System.
+                 check box in \preferences > \uicontrol Environment >
+                 \uicontrol System.
             \li  Ctrl+Q
     \endtable
 
-    \section2 Editing Keyboard Shortcuts
+    \section1 Editing Keyboard Shortcuts
 
     \table
         \header
@@ -366,9 +315,8 @@
             \li  Select the current block
 
                  The second press extends the selection to the parent block. To
-                 enable this behavior, select \uicontrol Edit >
-                 \uicontrol Preferences > \uicontrol {Text Editor} >
-                 \uicontrol Behavior >
+                 enable this behavior, select \preferences >
+                 \uicontrol {Text Editor} > \uicontrol Behavior >
                  \uicontrol {Enable smart selection changing}.
             \li  Ctrl+U
         \row
@@ -395,25 +343,7 @@
         \row
             \li  Visualize whitespace
             \li  Ctrl+E, Ctrl+V
-        \row
-            \li  Adjust size
-            \li  Ctrl+J
-        \row
-            \li  Lay out in a grid
-            \li  Ctrl+G
-        \row
-            \li  Lay out horizontally
-            \li  Ctrl+H
-        \row
-            \li  Lay out vertically
-            \li  Ctrl+L
-        \row
-            \li  Preview
-            \li  Alt+Shift+R
         \if defined(qtcreator)
-        \row
-            \li  Edit signals and slots
-            \li  F4
         \row
             \li  Toggle bookmark
             \li  Ctrl+M
@@ -433,13 +363,20 @@
         \row
             \li  Find references to symbol under cursor
             \li  Ctrl+Shift+U
+                 \if defined(qtcreator)
+                 \note If this keyboard shortcut does not work on Linux, see
+                 \l {Editing Issues}.
+                 \endif
         \row
             \li  Follow symbol under cursor
 
                Works with namespaces, classes, functions, variables, include
-               statements, and macros. Also, opens URLs in the default browser
-               and Qt resource files (.qrc) in the \l{Creating Resource Files}
+               statements, and macros, as well as CMake functions, macros,
+               targets, and packages. Also, opens URLs in the default browser
+               \if defined(qtcreator)
+               and Qt resource files (.qrc) in the \l{Resource Files}
                {resource editor}
+               \endif
             \li  F2
         \row
             \li  Rename symbol under cursor
@@ -512,12 +449,16 @@
     \endtable
 
     \if defined(qtcreator)
-    \section3 Emacs Shortcuts
+    \section1 Emacs Shortcuts
 
     You can specify shortcuts for executing actions in a way that is familiar to
     \l{https://www.gnu.org/software/emacs/manual/html_node/emacs/index.html}
     {Emacs} editor users. The actions are not bound to any key combinations by
-    default. The following actions are available:
+    default.
+
+    \note Enable the EmacsKeys plugin to use the shortcuts.
+
+    The following actions are available:
 
     \list
         \li Copy
@@ -543,7 +484,33 @@
         \li Yank
     \endlist
 
-    \section2 Image Viewer Shortcuts
+    \section1 \QD Shortcuts
+
+    \table
+        \header
+            \li Action
+            \li Keyboard shortcut
+        \row
+            \li Adjust size
+            \li Ctrl+J
+        \row
+            \li Lay out in a grid
+            \li Ctrl+G
+        \row
+            \li Lay out horizontally
+            \li Ctrl+H
+        \row
+            \li Lay out vertically
+            \li Ctrl+L
+        \row
+            \li Preview
+            \li Alt+Shift+R
+        \row
+            \li Edit signals and slots
+            \li F4
+    \endtable
+
+    \section1 Image Viewer Shortcuts
 
     \table
         \header
@@ -571,7 +538,7 @@
     \endif
 
     \if defined(qtdesignstudio)
-    \section2 Design Mode Keyboard Shortcuts
+    \section1 Design Mode Keyboard Shortcuts
 
     You can use the following keyboard shortcuts when editing QML files in the
     \uicontrol Design mode.
@@ -596,7 +563,8 @@
     \endtable
     \endif
 
-    \section2 Debugging Keyboard Shortcuts
+    \if defined(qtcreator)
+    \section1 Debugging Keyboard Shortcuts
 
     \table
         \header
@@ -633,8 +601,9 @@
             \li  Reverse direction
             \li  F12
     \endtable
+    \endif
 
-    \section2 Project Keyboard Shortcuts
+    \section1 Project Keyboard Shortcuts
 
     \table
         \header
@@ -664,7 +633,7 @@
             \li  Ctrl+R
     \endtable
 
-    \section2 Help Keyboard Shortcuts
+    \section1 Help Keyboard Shortcuts
 
     \table
         \header
@@ -690,7 +659,7 @@
             \li  Ctrl+S
     \endtable
 
-    \section2 Version Control Keyboard Shortcuts
+    \section1 Version Control Keyboard Shortcuts
 
     \if defined(qtcreator)
     \table
@@ -729,7 +698,7 @@
             \li
             \li  Alt+S, Alt+D
         \row
-            \li  Diff project
+            \li  Diff project or repository
             \li
             \li
             \li  Alt+G, Alt+Shift+D
@@ -753,7 +722,7 @@
             \li  Alt+P, Alt+F
             \li
         \row
-            \li  Log project
+            \li  Log repository
             \li
             \li
             \li  Alt+G, Alt+K
@@ -824,4 +793,140 @@
             \li Alt+G, Alt+U
     \endtable
     \endif
+
+    \sa {Assign keyboard shortcuts}, {Find keyboard shortcuts},
+    {Import and export keyboard shortcuts}
+
+    \if defined(qtcreator)
+    \sa {Enable and disable plugins}
+    \endif
+*/
+
+/*!
+    \page creator-how-to-assign-keyboard-shortcuts.html
+    \if defined(qtdesignstudio)
+    \previouspage creator-keyboard-shortcuts.html
+    \nextpage studio-projects.html
+    \else
+    \previouspage creator-how-tos.html
+
+    \endif
+
+    \ingroup creator-how-to-ui
+
+    \title Assign keyboard shortcuts
+
+    If your favorite keyboard shortcut is missing, you can add it. Also, you can
+    assign your own keyboard shortcuts for functions that you can easily perform
+    with a mouse, and that therefore do not appear in menus or have default
+    keyboard shortcuts. For example, selecting and deleting words or lines in an
+    editor.
+
+    To change an existing keyboard shortcut or assign a new one:
+
+    \list 1
+
+        \li Select \preferences > \uicontrol Environment > \uicontrol Keyboard.
+            \image qtcreator-keyboard-shortcuts.png {Keyboard preferences}
+
+        \li Select a command from the list.
+
+        \li In the \uicontrol{Key Sequence} field, you have the following
+            options:
+
+            \list
+
+                \li Enter the shortcut key you want to associate with the
+                    selected command.
+
+                \li Record a key sequence.
+
+            \endlist
+
+        \li To assign multiple keyboard shortcuts to a function, select
+            \uicontrol Add, and enter or record an additional key combination.
+
+        \li To revert to the default shortcut, select \uicontrol Reset.
+
+    \endlist
+
+    \section1 Record key sequences
+
+    \list 1
+        \li Select \uicontrol Record.
+        \li Press the keys to use as the keyboard shortcut.
+        \li Select \uicontrol {Stop Recording} when you are done.
+    \endlist
+
+    \sa {Keyboard Shortcuts}, {Find keyboard shortcuts},
+        {Import and export keyboard shortcuts}
+*/
+
+/*!
+    \page creator-how-to-find-keyboard-shortcuts.html
+    \if defined(qtdesignstudio)
+    \previouspage creator-keyboard-shortcuts.html
+    \nextpage studio-projects.html
+    \else
+    \previouspage creator-how-tos.html
+
+    \endif
+
+    \ingroup creator-how-to-ui
+
+    \title Find keyboard shortcuts
+
+    \QC has many useful keyboard shortcuts. You can see the keyboard shortcut for
+    a menu command in the menu or the tooltip for a button or in the keyboard
+    preferences.
+
+    To look up keyboard shortcuts:
+
+    \list 1
+        \li Select \preferences > \uicontrol Environment > \uicontrol Keyboard.
+            \image qtcreator-keyboard-shortcuts.png {Keyboard preferences}
+        \li Start typing the name of a function or shortcut in the
+            \uicontrol Filter field.
+    \endlist
+
+    You can change the existing keyboard shortcuts or import and export them.
+
+    \sa {Keyboard Shortcuts}, {Assign keyboard shortcuts},
+        {Import and export keyboard shortcuts}
+*/
+
+/*!
+    \page creator-how-to-change-keyboard-shortcuts.html
+    \if defined(qtdesignstudio)
+    \previouspage creator-keyboard-shortcuts.html
+    \nextpage studio-projects.html
+    \else
+    \previouspage creator-how-tos.html
+
+    \endif
+
+    \title Import and export keyboard shortcuts
+
+    You can use different keyboard shortcut mapping schemes that are stored as
+    .kms files.
+
+    To import and export keyboard shortcut mapping schemes:
+
+    \list 1
+
+        \li Select \preferences > \uicontrol Environment > \uicontrol Keyboard.
+            \image qtcreator-keyboard-shortcuts.png {Keyboard preferences}
+
+        \li To import a keyboard shortcut mapping scheme, click \uicontrol Import
+            and select the .kms file that has the keyboard shortcut mapping scheme
+            you want to import.
+
+        \li To export the current keyboard shortcut mapping scheme, click
+            \uicontrol Export and select the location where you want to save the
+            exported .kms file.
+
+    \endlist
+
+    \sa {Keyboard Shortcuts}, {Assign keyboard shortcuts},
+        {Find keyboard shortcuts}
 */

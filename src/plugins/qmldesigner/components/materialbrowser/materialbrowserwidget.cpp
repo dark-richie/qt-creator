@@ -95,7 +95,7 @@ bool MaterialBrowserWidget::eventFilter(QObject *obj, QEvent *event)
 
         if (m_materialToDrag.isValid() || m_textureToDrag.isValid()) {
             QMouseEvent *me = static_cast<QMouseEvent *>(event);
-            if ((me->globalPos() - m_dragStartPoint).manhattanLength() > 20) {
+            if ((me->globalPosition().toPoint() - m_dragStartPoint).manhattanLength() > 20) {
                 bool isMaterial = m_materialToDrag.isValid();
                 QMimeData *mimeData = new QMimeData;
                 QByteArray internalId;
@@ -141,8 +141,8 @@ bool MaterialBrowserWidget::eventFilter(QObject *obj, QEvent *event)
 MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
                                              MaterialBrowserView *view)
     : m_materialBrowserView(view)
-    , m_materialBrowserModel(new MaterialBrowserModel(this))
-    , m_materialBrowserTexturesModel(new MaterialBrowserTexturesModel(this))
+    , m_materialBrowserModel(new MaterialBrowserModel(view, this))
+    , m_materialBrowserTexturesModel(new MaterialBrowserTexturesModel(view, this))
     , m_quickWidget(new StudioQuickWidget(this))
     , m_previewImageProvider(new PreviewImageProvider())
 {
@@ -204,7 +204,7 @@ MaterialBrowserWidget::MaterialBrowserWidget(AsynchronousImageCache &imageCache,
 
     reloadQmlSource();
 
-    setFocusProxy(m_quickWidget.data());
+    setFocusProxy(m_quickWidget->quickWidget());
 }
 
 void MaterialBrowserWidget::updateMaterialPreview(const ModelNode &node, const QPixmap &pixmap)
@@ -403,6 +403,11 @@ StudioQuickWidget *MaterialBrowserWidget::quickWidget() const
 void MaterialBrowserWidget::clearPreviewCache()
 {
     m_previewImageProvider->clearPixmapCache();
+}
+
+QSize MaterialBrowserWidget::sizeHint() const
+{
+    return {420, 420};
 }
 
 QPointer<MaterialBrowserModel> MaterialBrowserWidget::materialBrowserModel() const

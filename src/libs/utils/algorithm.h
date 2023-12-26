@@ -82,6 +82,10 @@ template<typename T, typename R, typename S>
 Q_REQUIRED_RESULT typename T::value_type findOr(const T &container,
                                                 typename T::value_type other,
                                                 R S::*member);
+template<typename T, typename F>
+Q_REQUIRED_RESULT std::optional<typename T::value_type> findOr(const T &container,
+                                                               std::nullopt_t,
+                                                               F function);
 
 /////////////////////////
 // findOrDefault
@@ -219,14 +223,6 @@ template<class OutputContainer, class InputContainer1, class InputContainer2, cl
 OutputContainer setUnionMerge(InputContainer1 &&input1, InputContainer2 &&input2, Merge merge);
 
 /////////////////////////
-// usize / ssize
-/////////////////////////
-template<typename Container>
-std::make_unsigned_t<typename Container::size_type> usize(Container container);
-template<typename Container>
-std::make_signed_t<typename Container::size_type> ssize(Container container);
-
-/////////////////////////
 // setUnion
 /////////////////////////
 template<typename InputIterator1, typename InputIterator2, typename OutputIterator, typename Compare>
@@ -257,7 +253,7 @@ template<template<typename> class C, // result container type
          typename SC,                // input container type
          typename F,                 // function type
          typename Value = typename std::decay_t<SC>::value_type,
-         typename Result = std::decay_t<std::result_of_t<F(Value &)>>,
+         typename Result = std::decay_t<std::invoke_result_t<F, Value&>>,
          typename ResultContainer = C<Result>>
 Q_REQUIRED_RESULT decltype(auto) transform(SC &&container, F function);
 #ifdef Q_CC_CLANG
@@ -274,7 +270,7 @@ template<template<typename, typename> class C, // result container type
          typename SC,                          // input container type
          typename F,                           // function type
          typename Value = typename std::decay_t<SC>::value_type,
-         typename Result = std::decay_t<std::result_of_t<F(Value &)>>,
+         typename Result = std::decay_t<std::invoke_result_t<F, Value&>>,
          typename ResultContainer = C<Result, std::allocator<Result>>>
 Q_REQUIRED_RESULT decltype(auto) transform(SC &&container, F function);
 #endif
@@ -399,6 +395,12 @@ bool allOf(const T &container, F predicate)
     return std::all_of(std::begin(container), std::end(container), predicate);
 }
 
+template<typename T, typename F>
+bool allOf(const std::initializer_list<T> &initializerList, F predicate)
+{
+    return std::all_of(std::begin(initializerList), std::end(initializerList), predicate);
+}
+
 // allOf taking a member function pointer
 template<typename T, typename R, typename S>
 bool allOf(const T &container, R (S::*predicate)() const)
@@ -479,6 +481,21 @@ Q_REQUIRED_RESULT
 typename T::value_type findOr(const T &container, typename T::value_type other, R S::*member)
 {
     return findOr(container, other, std::mem_fn(member));
+}
+
+template<typename C, typename F>
+Q_REQUIRED_RESULT typename std::optional<typename C::value_type> findOr(const C &container,
+                                                                        std::nullopt_t,
+                                                                        F function)
+{
+    typename C::const_iterator begin = std::begin(container);
+    typename C::const_iterator end = std::end(container);
+
+    typename C::const_iterator it = std::find_if(begin, end, function);
+    if (it == end)
+        return std::nullopt;
+
+    return *it;
 }
 
 //////////////////
@@ -605,13 +622,91 @@ public:
     MapInsertIterator<Container> operator++(int) { return *this; }
 };
 
-// inserter helper function, returns a std::back_inserter for most containers
-// and is overloaded for QSet<> and other containers without push_back, returning custom inserters
-template<typename C>
-inline std::back_insert_iterator<C>
-inserter(C &container)
+// because Qt container are not implementing the standard interface we need
+// this helper functions for generic code
+template<typename Type>
+void append(QList<Type> *container, QList<Type> &&input)
 {
-    return std::back_inserter(container);
+    container->append(std::move(input));
+}
+
+template<typename Type>
+void append(QList<Type> *container, const QList<Type> &input)
+{
+    container->append(input);
+}
+
+template<typename Container>
+void append(Container *container, Container &&input)
+{
+    container->insert(container->end(),
+                      std::make_move_iterator(input.begin()),
+                      std::make_move_iterator(input.end()));
+}
+
+template<typename Container>
+void append(Container *container, const Container &input)
+{
+    container->insert(container->end(), input.begin(), input.end());
+}
+
+// BackInsertIterator behaves like std::back_insert_iterator except is adds the back insertion for
+// container of the same type
+template<typename Container>
+class BackInsertIterator
+{
+public:
+    using iterator_category = std::output_iterator_tag;
+    using value_type = void;
+    using difference_type = ptrdiff_t;
+    using pointer = void;
+    using reference = void;
+    using container_type = Container;
+
+    explicit constexpr BackInsertIterator(Container &container)
+        : m_container(std::addressof(container))
+    {}
+
+    constexpr BackInsertIterator &operator=(const typename Container::value_type &value)
+    {
+        m_container->push_back(value);
+        return *this;
+    }
+
+    constexpr BackInsertIterator &operator=(typename Container::value_type &&value)
+    {
+        m_container->push_back(std::move(value));
+        return *this;
+    }
+
+    constexpr BackInsertIterator &operator=(const Container &container)
+    {
+        append(m_container, container);
+        return *this;
+    }
+
+    constexpr BackInsertIterator &operator=(Container &&container)
+    {
+        append(m_container, container);
+        return *this;
+    }
+
+    [[nodiscard]] constexpr BackInsertIterator &operator*() { return *this; }
+
+    constexpr BackInsertIterator &operator++() { return *this; }
+
+    constexpr BackInsertIterator operator++(int) { return *this; }
+
+private:
+    Container *m_container;
+};
+
+// inserter helper function, returns a BackInsertIterator for most containers
+// and is overloaded for QSet<> and other containers without push_back, returning custom inserters
+template<typename Container>
+inline BackInsertIterator<Container> inserter(Container &container)
+{
+    return BackInsertIterator(container);
 }
 
 template<typename X>
@@ -810,7 +905,7 @@ template<template<typename...> class C, // container type
          typename F, // function type
          typename... CArgs> // Arguments to SC
 Q_REQUIRED_RESULT
-decltype(auto) transform(C<CArgs...> &container, F function)
+auto transform(C<CArgs...> &container, F function) -> decltype(auto)
 {
     return transform<C, C<CArgs...> &>(container, function);
 }
@@ -842,7 +937,7 @@ decltype(auto) transform(C<CArgs...> &container, R S::*p)
 template<template<typename...> class C = QList, // result container
          typename F> // Arguments to C
 Q_REQUIRED_RESULT
-decltype(auto) transform(const QStringList &container, F function)
+auto transform(const QStringList &container, F function)
 {
     return transform<C, const QList<QString> &>(static_cast<QList<QString>>(container), function);
 }
@@ -1340,15 +1435,15 @@ OutputContainer setUnionMerge(InputContainer1 &&input1,
 }
 
 template<typename Container>
-std::make_unsigned_t<typename Container::size_type> usize(Container container)
+constexpr auto usize(const Container &container)
 {
-    return static_cast<std::make_unsigned_t<typename Container::size_type>>(container.size());
+    return static_cast<std::make_unsigned_t<decltype(std::size(container))>>(std::size(container));
 }
 
 template<typename Container>
-std::make_signed_t<typename Container::size_type> ssize(Container container)
+constexpr auto ssize(const Container &container)
 {
-    return static_cast<std::make_signed_t<typename Container::size_type>>(container.size());
+    return static_cast<std::make_signed_t<decltype(std::size(container))>>(std::size(container));
 }
 
 template<typename Compare>
@@ -1435,6 +1530,15 @@ template <class Key, class T>
 void addToHash(QHash<Key, T> *result, const QHash<Key, T> &additionalContents)
 {
     result->insert(additionalContents);
+}
+
+// Workaround for missing information from QSet::insert()
+// Return type could be a pair like for std::set, but we never use the iterator anyway.
+template<typename T, typename U> [[nodiscard]] bool insert(QSet<T> &s, const U &v)
+{
+    const int oldSize = s.size();
+    s.insert(v);
+    return s.size() > oldSize;
 }
 
 } // namespace Utils

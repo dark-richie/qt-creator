@@ -9,6 +9,8 @@ import AssetsLibraryBackend
 TreeViewDelegate {
     id: root
 
+    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+
     required property Item assetsView
     required property Item assetsRoot
 
@@ -30,12 +32,7 @@ TreeViewDelegate {
     readonly property int __dirItemHeight: 21
 
     implicitHeight: root.__isDirectory ? root.__dirItemHeight : root.__fileItemHeight
-    implicitWidth: {
-        if (root.assetsView.verticalScrollBar.scrollBarVisible)
-            return root.assetsView.width - root.indentation - root.assetsView.verticalScrollBar.width
-        else
-            return root.assetsView.width - root.indentation
-    }
+    implicitWidth: root.assetsView.width
 
     leftMargin: root.__isDirectory ? 0 : thumbnailImage.width
 
@@ -68,10 +65,25 @@ TreeViewDelegate {
             root.depth = root.initialDepth
     }
 
+    indicator: Item {
+        implicitWidth: 20
+        implicitHeight: root.implicitHeight
+        anchors.left: bg.left
+
+        Image {
+            id: arrow
+            width: 8
+            height: 4
+            source: "image://icons/down-arrow"
+            anchors.centerIn: parent
+            rotation: root.expanded ? 0 : -90
+        }
+    }
+
     background: Rectangle {
         id: bg
 
-        x: root.indentation * root.depth
+        x: root.indentation * (root.depth - 1)
         width: root.implicitWidth - bg.x
 
         color: {
@@ -109,7 +121,7 @@ TreeViewDelegate {
         id: assetLabel
         text: assetLabel.__computeText()
         color: StudioTheme.Values.themeTextColor
-        font.pixelSize: StudioTheme.Values.mediumFont
+        font.pixelSize: StudioTheme.Values.baseFontSize
         anchors.verticalCenter: parent.verticalCenter
         verticalAlignment: Qt.AlignVCenter
 
@@ -139,7 +151,7 @@ TreeViewDelegate {
             mouseArea.allowTooltip = true
         }
 
-        onPositionChanged: tooltipBackend.reposition()
+        onPositionChanged: AssetsLibraryBackend.tooltipBackend.reposition()
 
         onPressed: (mouse) => {
             mouseArea.forceActiveFocus()
@@ -310,7 +322,7 @@ TreeViewDelegate {
         sourceSize.width: 48
         sourceSize.height: 48
         asynchronous: true
-        fillMode: Image.PreserveAspectFit
+        fillMode: Image.Pad
         source: thumbnailImage.__computeSource()
 
         function __computeSource() {

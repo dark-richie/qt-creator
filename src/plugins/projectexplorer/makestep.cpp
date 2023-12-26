@@ -4,8 +4,9 @@
 #include "makestep.h"
 
 #include "buildconfiguration.h"
+#include "devicesupport/idevice.h"
 #include "gnumakeparser.h"
-#include "kitinformation.h"
+#include "kitaspects.h"
 #include "processparameters.h"
 #include "projectexplorer.h"
 #include "projectexplorerconstants.h"
@@ -18,13 +19,10 @@
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/utilsicons.h>
 #include <utils/variablechooser.h>
 
-#include <QCheckBox>
-#include <QLabel>
-#include <QLineEdit>
 #include <QThread>
 
 #include <optional>
@@ -49,66 +47,54 @@ MakeStep::MakeStep(BuildStepList *parent, Id id)
 
     setCommandLineProvider([this] { return effectiveMakeCommand(Execution); });
 
-    m_makeCommandAspect = addAspect<StringAspect>();
-    m_makeCommandAspect->setSettingsKey(id.withSuffix(MAKE_COMMAND_SUFFIX).toString());
-    m_makeCommandAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
-    m_makeCommandAspect->setExpectedKind(PathChooser::ExistingCommand);
-    m_makeCommandAspect->setBaseFileName(PathChooser::homePath());
-    m_makeCommandAspect->setHistoryCompleter("PE.MakeCommand.History");
+    // FIXME: Replace with  id.name() + MAKE_COMMAND_SUFFIX  after the Key/Store transition
+    m_makeCommandAspect.setSettingsKey(id.toKey() + MAKE_COMMAND_SUFFIX);
+    m_makeCommandAspect.setExpectedKind(PathChooser::ExistingCommand);
+    m_makeCommandAspect.setBaseFileName(PathChooser::homePath());
+    m_makeCommandAspect.setHistoryCompleter("PE.MakeCommand.History");
 
-    m_userArgumentsAspect = addAspect<StringAspect>();
-    m_userArgumentsAspect->setSettingsKey(id.withSuffix(MAKE_ARGUMENTS_SUFFIX).toString());
-    m_userArgumentsAspect->setLabelText(Tr::tr("Make arguments:"));
-    m_userArgumentsAspect->setDisplayStyle(StringAspect::LineEditDisplay);
+    m_userArgumentsAspect.setSettingsKey(id.toKey() + MAKE_ARGUMENTS_SUFFIX);
+    m_userArgumentsAspect.setLabelText(Tr::tr("Make arguments:"));
+    m_userArgumentsAspect.setDisplayStyle(StringAspect::LineEditDisplay);
 
-    m_userJobCountAspect = addAspect<IntegerAspect>();
-    m_userJobCountAspect->setSettingsKey(id.withSuffix(JOBCOUNT_SUFFIX).toString());
-    m_userJobCountAspect->setLabel(Tr::tr("Parallel jobs:"));
-    m_userJobCountAspect->setRange(1, 999);
-    m_userJobCountAspect->setValue(defaultJobCount());
-    m_userJobCountAspect->setDefaultValue(defaultJobCount());
+    m_jobCountAspect.setSettingsKey(id.toKey() + JOBCOUNT_SUFFIX);
+    m_jobCountAspect.setLabel(Tr::tr("Parallel jobs:"));
+    m_jobCountAspect.setRange(1, 999);
+    m_jobCountAspect.setValue(defaultJobCount());
+    m_jobCountAspect.setDefaultValue(defaultJobCount());
 
     const QString text = Tr::tr("Override MAKEFLAGS");
-    m_overrideMakeflagsAspect = addAspect<BoolAspect>();
-    m_overrideMakeflagsAspect->setSettingsKey(id.withSuffix(OVERRIDE_MAKEFLAGS_SUFFIX).toString());
-    m_overrideMakeflagsAspect->setLabel(text, BoolAspect::LabelPlacement::AtCheckBox);
+    m_overrideMakeflagsAspect.setSettingsKey(id.toKey() + OVERRIDE_MAKEFLAGS_SUFFIX);
+    m_overrideMakeflagsAspect.setLabel(text, BoolAspect::LabelPlacement::AtCheckBox);
 
-    m_nonOverrideWarning = addAspect<TextDisplay>();
-    m_nonOverrideWarning->setText("<html><body><p>" +
-         Tr::tr("<code>MAKEFLAGS</code> specifies parallel jobs. Check \"%1\" to override.")
-         .arg(text) + "</p></body></html>");
-    m_nonOverrideWarning->setIconType(InfoLabel::Warning);
+    m_disabledForSubdirsAspect.setSettingsKey(id.toKey() + ".disabledForSubdirs");
+    m_disabledForSubdirsAspect.setLabel(Tr::tr("Disable in subdirectories:"));
+    m_disabledForSubdirsAspect.setToolTip(Tr::tr("Runs this step only for a top-level build."));
 
-    m_disabledForSubdirsAspect = addAspect<BoolAspect>();
-    m_disabledForSubdirsAspect->setSettingsKey(id.withSuffix(".disabledForSubdirs").toString());
-    m_disabledForSubdirsAspect->setLabel(Tr::tr("Disable in subdirectories:"));
-    m_disabledForSubdirsAspect->setToolTip(Tr::tr("Runs this step only for a top-level build."));
-
-    m_buildTargetsAspect = addAspect<MultiSelectionAspect>();
-    m_buildTargetsAspect->setSettingsKey(id.withSuffix(BUILD_TARGETS_SUFFIX).toString());
-    m_buildTargetsAspect->setLabelText(Tr::tr("Targets:"));
+    m_buildTargetsAspect.setSettingsKey(id.toKey() + BUILD_TARGETS_SUFFIX);
+    m_buildTargetsAspect.setLabelText(Tr::tr("Targets:"));
 
     const auto updateMakeLabel = [this] {
         const FilePath defaultMake = defaultMakeCommand();
         const QString labelText = defaultMake.isEmpty()
                 ? Tr::tr("Make:")
                 : Tr::tr("Override %1:").arg(defaultMake.toUserOutput());
-        m_makeCommandAspect->setLabelText(labelText);
+        m_makeCommandAspect.setLabelText(labelText);
     };
 
     updateMakeLabel();
 
-    connect(m_makeCommandAspect, &StringAspect::changed, this, updateMakeLabel);
+    connect(&m_makeCommandAspect, &StringAspect::changed, this, updateMakeLabel);
 }
 
 void MakeStep::setSelectedBuildTarget(const QString &buildTarget)
 {
-    m_buildTargetsAspect->setValue({buildTarget});
+    m_buildTargetsAspect.setValue({buildTarget});
 }
 
 void MakeStep::setAvailableBuildTargets(const QStringList &buildTargets)
 {
-    m_buildTargetsAspect->setAllValues(buildTargets);
+    m_buildTargetsAspect.setAllValues(buildTargets);
 }
 
 bool MakeStep::init()
@@ -141,10 +127,10 @@ QString MakeStep::defaultDisplayName()
     return Tr::tr("Make");
 }
 
-static const QList<ToolChain *> preferredToolChains(const Kit *kit)
+static const QList<Toolchain *> preferredToolChains(const Kit *kit)
 {
     // prefer CXX, then C, then others
-    return Utils::sorted(ToolChainKitAspect::toolChains(kit), [](ToolChain *tcA, ToolChain *tcB) {
+    return Utils::sorted(ToolchainKitAspect::toolChains(kit), [](Toolchain *tcA, Toolchain *tcB) {
         if (tcA->language() == tcB->language())
             return false;
         if (tcA->language() == Constants::CXX_LANGUAGE_ID)
@@ -160,10 +146,13 @@ static const QList<ToolChain *> preferredToolChains(const Kit *kit)
 FilePath MakeStep::defaultMakeCommand() const
 {
     const Environment env = makeEnvironment();
-    for (const ToolChain *tc : preferredToolChains(kit())) {
+    for (const Toolchain *tc : preferredToolChains(kit())) {
         FilePath make = tc->makeCommand(env);
-        if (!make.isEmpty())
-            return mapFromBuildDeviceToGlobalPath(make);
+        if (!make.isEmpty()) {
+            IDevice::ConstPtr dev = BuildDeviceKitAspect::device(kit());
+            QTC_ASSERT(dev, return {});
+            return dev->filePath(make.path());
+         }
     }
     return {};
 }
@@ -180,14 +169,14 @@ Task MakeStep::makeCommandMissingTask()
 
 bool MakeStep::isJobCountSupported() const
 {
-    const QList<ToolChain *> tcs = preferredToolChains(kit());
-    const ToolChain *tc = tcs.isEmpty() ? nullptr : tcs.constFirst();
+    const QList<Toolchain *> tcs = preferredToolChains(kit());
+    const Toolchain *tc = tcs.isEmpty() ? nullptr : tcs.constFirst();
     return tc && tc->isJobCountSupported();
 }
 
 bool MakeStep::jobCountOverridesMakeflags() const
 {
-    return m_overrideMakeflagsAspect->value();
+    return m_overrideMakeflagsAspect();
 }
 
 static std::optional<int> argsJobCount(const QString &str)
@@ -220,12 +209,12 @@ bool MakeStep::makeflagsJobCountMismatch() const
     if (!env.hasKey(MAKEFLAGS))
         return false;
     std::optional<int> makeFlagsJobCount = argsJobCount(env.expandedValueForKey(MAKEFLAGS));
-    return makeFlagsJobCount.has_value() && *makeFlagsJobCount != m_userJobCountAspect->value();
+    return makeFlagsJobCount.has_value() && *makeFlagsJobCount != m_jobCountAspect();
 }
 
 bool MakeStep::enabledForSubDirs() const
 {
-    return !m_disabledForSubdirsAspect->value();
+    return !m_disabledForSubdirsAspect();
 }
 
 bool MakeStep::makeflagsContainsJobCount() const
@@ -247,8 +236,8 @@ Environment MakeStep::makeEnvironment() const
     env.setupEnglishOutput();
     if (makeCommand().isEmpty()) {
         // We also prepend "L" to the MAKEFLAGS, so that nmake / jom are less verbose
-        const QList<ToolChain *> tcs = preferredToolChains(target()->kit());
-        const ToolChain *tc = tcs.isEmpty() ? nullptr : tcs.constFirst();
+        const QList<Toolchain *> tcs = preferredToolChains(target()->kit());
+        const Toolchain *tc = tcs.isEmpty() ? nullptr : tcs.constFirst();
         if (tc && tc->targetAbi().os() == Abi::WindowsOS
                 && tc->targetAbi().osFlavor() != Abi::WindowsMSysFlavor) {
             env.set(MAKEFLAGS, 'L' + env.expandedValueForKey(MAKEFLAGS));
@@ -259,7 +248,7 @@ Environment MakeStep::makeEnvironment() const
 
 void MakeStep::setMakeCommand(const FilePath &command)
 {
-    m_makeCommandAspect->setFilePath(command);
+    m_makeCommandAspect.setValue(command);
 }
 
 int MakeStep::defaultJobCount()
@@ -273,17 +262,17 @@ QStringList MakeStep::jobArguments() const
             || (makeflagsContainsJobCount() && !jobCountOverridesMakeflags())) {
         return {};
     }
-    return {"-j" + QString::number(m_userJobCountAspect->value())};
+    return {"-j" + QString::number(m_jobCountAspect())};
 }
 
 QString MakeStep::userArguments() const
 {
-    return m_userArgumentsAspect->value();
+    return m_userArgumentsAspect();
 }
 
 void MakeStep::setUserArguments(const QString &args)
 {
-    m_userArgumentsAspect->setValue(args);
+    m_userArgumentsAspect.setValue(args);
 }
 
 QStringList MakeStep::displayArguments() const
@@ -293,7 +282,7 @@ QStringList MakeStep::displayArguments() const
 
 FilePath MakeStep::makeCommand() const
 {
-    return m_makeCommandAspect->filePath();
+    return m_makeCommandAspect();
 }
 
 FilePath MakeStep::makeExecutable() const
@@ -310,7 +299,7 @@ CommandLine MakeStep::effectiveMakeCommand(MakeCommandType type) const
         cmd.addArgs(displayArguments());
     cmd.addArgs(userArguments(), CommandLine::Raw);
     cmd.addArgs(jobArguments());
-    cmd.addArgs(m_buildTargetsAspect->value());
+    cmd.addArgs(m_buildTargetsAspect());
 
     return cmd;
 }
@@ -318,14 +307,15 @@ CommandLine MakeStep::effectiveMakeCommand(MakeCommandType type) const
 QWidget *MakeStep::createConfigWidget()
 {
     Layouting::Form builder;
-    builder.addRow(m_makeCommandAspect);
-    builder.addRow(m_userArgumentsAspect);
-    builder.addRow({m_userJobCountAspect, m_overrideMakeflagsAspect, m_nonOverrideWarning});
+    builder.addRow({m_makeCommandAspect});
+    builder.addRow({m_userArgumentsAspect});
+    builder.addRow({m_jobCountAspect, m_overrideMakeflagsAspect, m_nonOverrideWarning});
     if (m_disablingForSubDirsSupported)
-        builder.addRow(m_disabledForSubdirsAspect);
-    builder.addRow(m_buildTargetsAspect);
+        builder.addRow({m_disabledForSubdirsAspect});
+    builder.addRow({m_buildTargetsAspect});
+    builder.addItem(Layouting::noMargin);
 
-    auto widget = builder.emerge(Layouting::WithoutMargins);
+    auto widget = builder.emerge();
 
     VariableChooser::addSupportForChildWidgets(widget, macroExpander());
 
@@ -353,23 +343,37 @@ QWidget *MakeStep::createConfigWidget()
 
     auto updateDetails = [this] {
         const bool jobCountVisible = isJobCountSupported();
-        m_userJobCountAspect->setVisible(jobCountVisible);
-        m_overrideMakeflagsAspect->setVisible(jobCountVisible);
+        m_jobCountAspect.setVisible(jobCountVisible);
+        m_overrideMakeflagsAspect.setVisible(jobCountVisible);
 
         const bool jobCountEnabled = !userArgsContainsJobCount();
-        m_userJobCountAspect->setEnabled(jobCountEnabled);
-        m_overrideMakeflagsAspect->setEnabled(jobCountEnabled);
-        m_nonOverrideWarning->setVisible(makeflagsJobCountMismatch()
-                                         && !jobCountOverridesMakeflags());
+        m_jobCountAspect.setEnabled(jobCountEnabled);
+        m_overrideMakeflagsAspect.setEnabled(jobCountEnabled);
+
+        QString warningText;
+        InfoLabel::InfoType iconType = InfoLabel::Information;
+        if (makeflagsJobCountMismatch()) {
+            if (m_overrideMakeflagsAspect.value()) {
+                warningText = Tr::tr("Overriding <code>MAKEFLAGS</code> environment variable.");
+            } else {
+                warningText = Tr::tr("<code>MAKEFLAGS</code> specifies a conflicting job count.");
+                iconType = InfoLabel::Warning;
+            }
+        } else {
+            warningText = Tr::tr("No conflict with <code>MAKEFLAGS</code> environment variable.");
+        }
+        m_nonOverrideWarning.setText(QString::fromLatin1("<html><body><p>%1</p></body></html>")
+                                         .arg(warningText));
+        m_nonOverrideWarning.setIconType(iconType);
     };
 
     updateDetails();
 
-    connect(m_makeCommandAspect, &StringAspect::changed, widget, updateDetails);
-    connect(m_userArgumentsAspect, &StringAspect::changed, widget, updateDetails);
-    connect(m_userJobCountAspect, &IntegerAspect::changed, widget, updateDetails);
-    connect(m_overrideMakeflagsAspect, &BoolAspect::changed, widget, updateDetails);
-    connect(m_buildTargetsAspect, &BaseAspect::changed, widget, updateDetails);
+    connect(&m_makeCommandAspect, &StringAspect::changed, widget, updateDetails);
+    connect(&m_userArgumentsAspect, &StringAspect::changed, widget, updateDetails);
+    connect(&m_jobCountAspect, &IntegerAspect::changed, widget, updateDetails);
+    connect(&m_overrideMakeflagsAspect, &BoolAspect::changed, widget, updateDetails);
+    connect(&m_buildTargetsAspect, &BaseAspect::changed, widget, updateDetails);
 
     connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::settingsChanged,
             widget, updateDetails);
@@ -385,7 +389,7 @@ QWidget *MakeStep::createConfigWidget()
 
 QStringList MakeStep::availableTargets() const
 {
-    return m_buildTargetsAspect->allValues();
+    return m_buildTargetsAspect.allValues();
 }
 
 } // namespace ProjectExplorer

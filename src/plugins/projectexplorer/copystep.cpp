@@ -7,7 +7,9 @@
 #include "projectexplorertr.h"
 
 #include <utils/aspects.h>
+#include <utils/filestreamer.h>
 
+using namespace Tasking;
 using namespace Utils;
 
 namespace ProjectExplorer::Internal {
@@ -21,15 +23,11 @@ public:
     CopyStepBase(BuildStepList *bsl, Id id)
         : BuildStep(bsl, id)
     {
-        m_sourceAspect = addAspect<StringAspect>();
-        m_sourceAspect->setSettingsKey(SOURCE_KEY);
-        m_sourceAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
-        m_sourceAspect->setLabelText(Tr::tr("Source:"));
+        m_sourceAspect.setSettingsKey(SOURCE_KEY);
+        m_sourceAspect.setLabelText(Tr::tr("Source:"));
 
-        m_targetAspect = addAspect<StringAspect>();
-        m_targetAspect->setSettingsKey(TARGET_KEY);
-        m_targetAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
-        m_targetAspect->setLabelText(Tr::tr("Target:"));
+        m_targetAspect.setSettingsKey(TARGET_KEY);
+        m_targetAspect.setLabelText(Tr::tr("Target:"));
 
         addMacroExpander();
     }
@@ -37,31 +35,32 @@ public:
 protected:
     bool init() final
     {
-        m_source = m_sourceAspect->filePath();
-        m_target = m_targetAspect->filePath();
+        m_source = m_sourceAspect();
+        m_target = m_targetAspect();
         return m_source.exists();
     }
 
-    void doRun() final
-    {
-        // FIXME: asyncCopy does not handle directories yet.
-        QTC_ASSERT(m_source.isFile(), emit finished(false));
-        m_source.asyncCopy(m_target, this, [this](const expected_str<void> &cont) {
-            if (!cont) {
-                addOutput(cont.error(), OutputFormat::ErrorMessage);
-                addOutput(Tr::tr("Copying failed"), OutputFormat::ErrorMessage);
-                emit finished(false);
-            } else {
-                addOutput(Tr::tr("Copying finished"), OutputFormat::NormalMessage);
-                emit finished(true);
-            }
-        });
-    }
-
-    StringAspect *m_sourceAspect;
-    StringAspect *m_targetAspect;
+    FilePathAspect m_sourceAspect{this};
+    FilePathAspect m_targetAspect{this};
 
 private:
+    GroupItem runRecipe() final
+    {
+        const auto onSetup = [this](FileStreamer &streamer) {
+            QTC_ASSERT(m_source.isFile(), return SetupResult::StopWithError);
+            streamer.setSource(m_source);
+            streamer.setDestination(m_target);
+            return SetupResult::Continue;
+        };
+        const auto onDone = [this](DoneWith result) {
+            if (result == DoneWith::Success)
+                addOutput(Tr::tr("Copying finished."), OutputFormat::NormalMessage);
+            else
+                addOutput(Tr::tr("Copying failed."), OutputFormat::ErrorMessage);
+        };
+        return FileStreamerTask(onSetup, onDone);
+    }
+
     FilePath m_source;
     FilePath m_target;
 };
@@ -75,8 +74,8 @@ public:
         // Expected kind could be stricter in theory, but since this here is
         // a last stand fallback, better not impose extra "nice to have"
         // work on the system.
-        m_sourceAspect->setExpectedKind(PathChooser::Any); // "File"
-        m_targetAspect->setExpectedKind(PathChooser::Any); // "SaveFile"
+        m_sourceAspect.setExpectedKind(PathChooser::Any); // "File"
+        m_targetAspect.setExpectedKind(PathChooser::Any); // "SaveFile"
 
         setSummaryUpdater([] {
             return QString("<b>" + Tr::tr("Copy file") + "</b>");
@@ -90,8 +89,8 @@ public:
     CopyDirectoryStep(BuildStepList *bsl, Id id)
         : CopyStepBase(bsl, id)
      {
-        m_sourceAspect->setExpectedKind(PathChooser::Directory);
-        m_targetAspect->setExpectedKind(PathChooser::Directory);
+        m_sourceAspect.setExpectedKind(PathChooser::Directory);
+        m_targetAspect.setExpectedKind(PathChooser::Directory);
 
         setSummaryUpdater([] {
             return QString("<b>" + Tr::tr("Copy directory recursively") + "</b>");

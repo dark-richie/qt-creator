@@ -3,7 +3,9 @@
 
 #include "designersettings.h"
 
-#include <QSettings>
+#include <utils/qtcsettings.h>
+
+using namespace Utils;
 
 namespace QmlDesigner {
 
@@ -12,7 +14,7 @@ namespace DesignerSettingsGroupKey {
     const char QML_DESIGNER_SETTINGS_GROUP[] = "Designer";
 }
 
-DesignerSettings::DesignerSettings(QSettings *settings) :
+DesignerSettings::DesignerSettings(QtcSettings *settings) :
     m_settings(settings)
 {
     fromSettings(settings);
@@ -38,15 +40,15 @@ QVariant DesignerSettings::value(const QByteArray &key, const QVariant &defaultV
     return m_cache.value(key, defaultValue);
 }
 
-void DesignerSettings::restoreValue(QSettings *settings, const QByteArray &key, const QVariant &defaultValue)
+void DesignerSettings::restoreValue(QtcSettings *settings, const QByteArray &key, const QVariant &defaultValue)
 {
-    m_cache.insert(key, settings->value(QString::fromLatin1(key), defaultValue));
+    m_cache.insert(key, settings->value(key, defaultValue));
 }
 
-void DesignerSettings::fromSettings(QSettings *settings)
+void DesignerSettings::fromSettings(QtcSettings *settings)
 {
-    settings->beginGroup(QLatin1String(DesignerSettingsGroupKey::QML_SETTINGS_GROUP));
-    settings->beginGroup(QLatin1String(DesignerSettingsGroupKey::QML_DESIGNER_SETTINGS_GROUP));
+    settings->beginGroup(DesignerSettingsGroupKey::QML_SETTINGS_GROUP);
+    settings->beginGroup(DesignerSettingsGroupKey::QML_DESIGNER_SETTINGS_GROUP);
 
     restoreValue(settings, DesignerSettingsKey::ITEMSPACING, 6);
     restoreValue(settings, DesignerSettingsKey::CONTAINERPADDING, 8);
@@ -75,6 +77,7 @@ void DesignerSettings::fromSettings(QSettings *settings)
     restoreValue(settings, DesignerSettingsKey::NAVIGATOR_SHOW_ONLY_VISIBLE_ITEMS, true);
     restoreValue(settings, DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER, false);
     restoreValue(settings, DesignerSettingsKey::ENABLE_TIMELINEVIEW, true);
+    restoreValue(settings, DesignerSettingsKey::ENABLE_DOCKWIDGET_CONTENT_MIN_SIZE, true);
     restoreValue(settings, DesignerSettingsKey::COLOR_PALETTE_RECENT, QStringList());
     restoreValue(settings, DesignerSettingsKey::COLOR_PALETTE_FAVORITE, QStringList());
     restoreValue(settings, DesignerSettingsKey::ALWAYS_DESIGN_MODE, true);
@@ -82,30 +85,38 @@ void DesignerSettings::fromSettings(QSettings *settings)
     restoreValue(settings, DesignerSettingsKey::ASK_BEFORE_DELETING_ASSET, true);
     restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_BACKGROUND_COLOR,
                  QStringList{"#222222", "#999999"});
-    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_GRID_COLOR, "#aaaaaa");
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_GRID_COLOR, "#cccccc");
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_ABSOLUTE, true);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_ENABLED, false);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_POSITION, true);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_POSITION_INTERVAL, 50.);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_ROTATION, true);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_ROTATION_INTERVAL, 5.);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_SCALE, true);
+    restoreValue(settings, DesignerSettingsKey::EDIT3DVIEW_SNAP_SCALE_INTERVAL, 10.);
     restoreValue(settings, DesignerSettingsKey::SMOOTH_RENDERING, false);
     restoreValue(settings, DesignerSettingsKey::SHOW_DEBUG_SETTINGS, false);
-    restoreValue(settings, DesignerSettingsKey::OLD_STATES_EDITOR, false);
     restoreValue(settings, DesignerSettingsKey::EDITOR_ZOOM_FACTOR, 1.0);
     restoreValue(settings, DesignerSettingsKey::ACTIONS_MERGE_TEMPLATE_ENABLED, false);
     restoreValue(settings, DesignerSettingsKey::DOWNLOADABLE_BUNDLES_URL,
                  "https://cdn.qt.io/designstudio/bundles");
+    restoreValue(settings, DesignerSettingsKey::CONTENT_LIBRARY_NEW_FLAG_EXPIRATION_DAYS, 3);
 
     settings->endGroup();
     settings->endGroup();
 }
 
-void DesignerSettings::storeValue(QSettings *settings, const QByteArray &key, const QVariant &value) const
+void DesignerSettings::storeValue(QtcSettings *settings, const QByteArray &key, const QVariant &value) const
 {
     if (key.isEmpty())
         return;
-    settings->setValue(QString::fromLatin1(key), value);
+    settings->setValue(key, value);
 }
 
-void DesignerSettings::toSettings(QSettings *settings) const
+void DesignerSettings::toSettings(QtcSettings *settings) const
 {
-    settings->beginGroup(QLatin1String(DesignerSettingsGroupKey::QML_SETTINGS_GROUP));
-    settings->beginGroup(QLatin1String(DesignerSettingsGroupKey::QML_DESIGNER_SETTINGS_GROUP));
+    settings->beginGroup(DesignerSettingsGroupKey::QML_SETTINGS_GROUP);
+    settings->beginGroup(DesignerSettingsGroupKey::QML_DESIGNER_SETTINGS_GROUP);
 
     QHash<QByteArray, QVariant>::const_iterator i = m_cache.constBegin();
     while (i != m_cache.constEnd()) {

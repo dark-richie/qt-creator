@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0+ OR GPL-3.0 WITH Qt-GPL-exception-1.0
 #include "fileextractor.h"
 
-#include <QQmlEngine>
+#include <QRandomGenerator>
 #include <QStorageInfo>
 
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
 
-#include <utils/algorithm.h>
-#include <utils/archive.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/unarchiver.h>
+
+using namespace Utils;
 
 namespace QmlDesigner {
 
@@ -21,7 +22,7 @@ FileExtractor::FileExtractor(QObject *parent)
     m_timer.setInterval(100);
     m_timer.setSingleShot(false);
 
-    QObject::connect(this, &FileExtractor::targetFolderExistsChanged, this, [this]() {
+    QObject::connect(this, &FileExtractor::targetFolderExistsChanged, this, [this] {
         if (targetFolderExists())
             m_birthTime = QFileInfo(m_targetPath.toString() + "/" + m_archiveName).birthTime();
         else
@@ -31,7 +32,7 @@ FileExtractor::FileExtractor(QObject *parent)
     });
 
     QObject::connect(
-        &m_timer, &QTimer::timeout, this, [this]() {
+        &m_timer, &QTimer::timeout, this, [this] {
             static QHash<QString, int> hash;
             QDirIterator it(m_targetFolder, {"*.*"}, QDir::Files, QDirIterator::Subdirectories);
 
@@ -51,7 +52,11 @@ FileExtractor::FileExtractor(QObject *parent)
 
             // We can not get the uncompressed size of the archive yet, that is why we use an
             // approximation. We assume a 50% compression rate.
-            int progress = std::min(100ll, currentSize * 100 / m_compressedSize * 2);
+
+            int progress = 0;
+            if (m_compressedSize > 0)
+                progress = std::min(100ll, currentSize * 100 / m_compressedSize * 2);
+
             if (progress >= 0) {
                 m_progress = progress;
                 emit progressChanged();
@@ -65,11 +70,15 @@ FileExtractor::FileExtractor(QObject *parent)
         });
 }
 
-FileExtractor::~FileExtractor() {}
+FileExtractor::~FileExtractor()
+{
+    removeTempTargetPath();
+}
 
 void FileExtractor::changeTargetPath(const QString &path)
 {
-    m_targetPath = Utils::FilePath::fromString(path);
+    removeTempTargetPath();
+    m_targetPath = FilePath::fromString(path);
     emit targetPathChanged();
     emit targetFolderExistsChanged();
 }
@@ -81,7 +90,8 @@ QString FileExtractor::targetPath() const
 
 void FileExtractor::setTargetPath(const QString &path)
 {
-    m_targetPath = Utils::FilePath::fromString(path);
+    removeTempTargetPath();
+    m_targetPath = FilePath::fromString(path);
 
     QDir dir(m_targetPath.toString());
 
@@ -94,11 +104,12 @@ void FileExtractor::setTargetPath(const QString &path)
 
 void FileExtractor::browse()
 {
-    const Utils::FilePath path =
-        Utils::FileUtils::getExistingDirectory(nullptr, tr("Choose Directory"), m_targetPath);
-
-    if (!path.isEmpty())
+    const FilePath path = FileUtils::getExistingDirectory(nullptr, tr("Choose Directory"),
+                                                          m_targetPath);
+    if (!path.isEmpty()) {
+        removeTempTargetPath();
         m_targetPath = path;
+    }
 
     emit targetPathChanged();
     emit targetFolderExistsChanged();
@@ -106,7 +117,7 @@ void FileExtractor::browse()
 
 void FileExtractor::setSourceFile(const QString &sourceFilePath)
 {
-    m_sourceFile = Utils::FilePath::fromString(sourceFilePath);
+    m_sourceFile = FilePath::fromString(sourceFilePath);
     emit targetFolderExistsChanged();
 }
 
@@ -194,33 +205,49 @@ QString FileExtractor::sourceFile() const
 
 void FileExtractor::extract()
 {
+    if (m_targetPath.isEmpty()) {
+        auto uniqueText = QByteArray::number(QRandomGenerator::global()->generate(), 16);
+        QString tempFileName = QDir::tempPath() + "/.qds_" + uniqueText + "_extract_" + m_archiveName + "_dir";
+
+        m_targetPath = FilePath::fromString(tempFileName);
+        m_isTempTargetPath = true;
+    }
+
     m_targetFolder = m_targetPath.toString() + "/" + m_archiveName;
 
     // If the target directory already exists, remove it and its content
-    QDir targetDir(m_targetFolder);
-    if (targetDir.exists() && m_clearTargetPathContents)
-        targetDir.removeRecursively();
 
-    if (m_alwaysCreateDir) {
-        // Create a new directory to generate a proper creation date
-        targetDir.mkdir(m_targetFolder);
-    }
+    QTC_ASSERT(!m_targetPath.isEmpty(), return );
 
-    Utils::Archive *archive = new Utils::Archive(m_sourceFile, m_targetPath);
-    QTC_ASSERT(archive->isValid(), delete archive; return);
+    FilePath targetFilePath = FilePath::fromUserInput(m_targetFolder);
+    if (targetFilePath.exists() && m_clearTargetPathContents)
+        targetFilePath.removeRecursively();
+
+    // Create a new directory to generate a proper creation date
+    if (m_alwaysCreateDir)
+        targetFilePath.createDir();
+
+    const auto sourceAndCommand = Unarchiver::sourceAndCommand(m_sourceFile);
+    QTC_ASSERT(sourceAndCommand, return);
+
+    m_unarchiver.reset(new Unarchiver);
+    m_unarchiver->setSourceAndCommand(*sourceAndCommand);
+    m_unarchiver->setDestDir(m_targetPath);
 
     m_timer.start();
     m_bytesBefore = QStorageInfo(m_targetPath.toFileInfo().dir()).bytesAvailable();
     m_compressedSize = QFileInfo(m_sourceFile.toString()).size();
+    if (m_compressedSize <= 0)
+        qWarning() << "Compressed size for file '" << m_sourceFile << "' is zero or invalid: " << m_compressedSize;
 
-    QObject::connect(archive, &Utils::Archive::outputReceived, this, [this](const QString &output) {
+    connect(m_unarchiver.get(), &Unarchiver::outputReceived, this, [this](const QString &output) {
         m_detailedText += output;
         emit detailedTextChanged();
     });
 
-    QObject::connect(archive, &Utils::Archive::finished, this, [this, archive](bool ret) {
-        archive->deleteLater();
-        m_finished = ret;
+    QObject::connect(m_unarchiver.get(), &Unarchiver::done, this, [this](Tasking::DoneResult result) {
+        m_unarchiver.release()->deleteLater();
+        m_finished = result == Tasking::DoneResult::Success;
         m_timer.stop();
 
         m_progress = 100;
@@ -228,9 +255,19 @@ void FileExtractor::extract()
 
         emit targetFolderExistsChanged();
         emit finishedChanged();
-        QTC_CHECK(ret);
+        QTC_CHECK(m_finished);
     });
-    archive->unarchive();
+    m_unarchiver->start();
+}
+
+void QmlDesigner::FileExtractor::removeTempTargetPath()
+{
+    if (m_isTempTargetPath && m_targetPath.exists()) {
+        QTC_ASSERT(m_targetPath.toString().startsWith(QDir::tempPath()), qDebug() << m_targetPath;
+                   return );
+        m_targetPath.removeRecursively();
+        m_isTempTargetPath = false;
+    }
 }
 
 } // namespace QmlDesigner

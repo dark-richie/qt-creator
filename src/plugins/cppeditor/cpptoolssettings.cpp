@@ -9,47 +9,45 @@
 #include "cppcodestylepreferencesfactory.h"
 
 #include <coreplugin/icore.h>
-#include <texteditor/commentssettings.h>
+
+#include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/completionsettingspage.h>
 #include <texteditor/codestylepool.h>
 #include <texteditor/tabsettings.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <extensionsystem/pluginmanager.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
-#include <utils/settingsutils.h>
-
-#include <QSettings>
 
 static const char idKey[] = "CppGlobal";
 const bool kSortEditorDocumentOutlineDefault = true;
 
 using namespace Core;
 using namespace TextEditor;
+using namespace Utils;
 
 namespace CppEditor {
 namespace Internal {
+
 class CppToolsSettingsPrivate
 {
 public:
-    CommentsSettings m_commentsSettings;
     CppCodeStylePreferences *m_globalCodeStyle = nullptr;
 };
-} // namespace Internal
 
-CppToolsSettings *CppToolsSettings::m_instance = nullptr;
+} // Internal
+
+CppToolsSettings *m_instance = nullptr;
+Internal::CppToolsSettingsPrivate *d = nullptr;
 
 CppToolsSettings::CppToolsSettings()
-    : d(new Internal::CppToolsSettingsPrivate)
 {
     QTC_ASSERT(!m_instance, return);
     m_instance = this;
+    d = new Internal::CppToolsSettingsPrivate;
 
     qRegisterMetaType<CppCodeStyleSettings>("CppEditor::CppCodeStyleSettings");
-
-    d->m_commentsSettings = TextEditorSettings::commentsSettings();
-    connect(TextEditorSettings::instance(), &TextEditorSettings::commentsSettingsChanged,
-            this, &CppToolsSettings::setCommentsSettings);
 
     // code style factory
     ICodeStylePreferencesFactory *factory = new CppCodeStylePreferencesFactory();
@@ -130,63 +128,15 @@ CppToolsSettings::CppToolsSettings()
 
     pool->loadCustomCodeStyles();
 
-    QSettings *s = ICore::settings();
     // load global settings (after built-in settings are added to the pool)
-    d->m_globalCodeStyle->fromSettings(QLatin1String(Constants::CPP_SETTINGS_ID), s);
-
-    // legacy handling start (Qt Creator Version < 2.4)
-    const bool legacyTransformed =
-                s->value(QLatin1String("CppCodeStyleSettings/LegacyTransformed"), false).toBool();
-
-    if (!legacyTransformed) {
-        // creator 2.4 didn't mark yet the transformation (first run of creator 2.4)
-
-        // we need to transform the settings only if at least one from
-        // below settings was already written - otherwise we use
-        // defaults like it would be the first run of creator 2.4 without stored settings
-        const QStringList groups = s->childGroups();
-        const bool needTransform = groups.contains(QLatin1String("textTabPreferences")) ||
-                                   groups.contains(QLatin1String("CppTabPreferences")) ||
-                                   groups.contains(QLatin1String("CppCodeStyleSettings"));
-        if (needTransform) {
-            CppCodeStyleSettings legacyCodeStyleSettings;
-            if (groups.contains(QLatin1String("CppCodeStyleSettings"))) {
-                Utils::fromSettings(QLatin1String("CppCodeStyleSettings"),
-                                    QString(), s, &legacyCodeStyleSettings);
-            }
-
-            const QString currentFallback = s->value(QLatin1String("CppTabPreferences/CurrentFallback")).toString();
-            TabSettings legacyTabSettings;
-            if (currentFallback == QLatin1String("CppGlobal")) {
-                // no delegate, global overwritten
-                Utils::fromSettings(QLatin1String("CppTabPreferences"),
-                                    QString(), s, &legacyTabSettings);
-            } else {
-                // delegating to global
-                legacyTabSettings = TextEditorSettings::codeStyle()->currentTabSettings();
-            }
-
-            // create custom code style out of old settings
-            QVariant v;
-            v.setValue(legacyCodeStyleSettings);
-            ICodeStylePreferences *oldCreator = pool->createCodeStyle(
-                     "legacy", legacyTabSettings, v, Tr::tr("Old Creator"));
-
-            // change the current delegate and save
-            d->m_globalCodeStyle->setCurrentDelegate(oldCreator);
-            d->m_globalCodeStyle->toSettings(QLatin1String(Constants::CPP_SETTINGS_ID), s);
-        }
-        // mark old settings as transformed
-        s->setValue(QLatin1String("CppCodeStyleSettings/LegacyTransformed"), true);
-        // legacy handling stop
-    }
-
+    d->m_globalCodeStyle->fromSettings(Constants::CPP_SETTINGS_ID);
 
     // mimetypes to be handled
-    TextEditorSettings::registerMimeTypeForLanguageId(Constants::C_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(Constants::C_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(Constants::CPP_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(Constants::CPP_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    using namespace Utils::Constants;
+    TextEditorSettings::registerMimeTypeForLanguageId(C_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(C_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(CPP_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(CPP_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
 }
 
 CppToolsSettings::~CppToolsSettings()
@@ -205,29 +155,18 @@ CppToolsSettings *CppToolsSettings::instance()
     return m_instance;
 }
 
-CppCodeStylePreferences *CppToolsSettings::cppCodeStyle() const
+CppCodeStylePreferences *CppToolsSettings::cppCodeStyle()
 {
     return d->m_globalCodeStyle;
 }
 
-const CommentsSettings &CppToolsSettings::commentsSettings() const
+static Key sortEditorDocumentOutlineKey()
 {
-    return d->m_commentsSettings;
+    return Key(Constants::CPPEDITOR_SETTINGSGROUP)
+         + '/' + Constants::CPPEDITOR_SORT_EDITOR_DOCUMENT_OUTLINE;
 }
 
-void CppToolsSettings::setCommentsSettings(const CommentsSettings &commentsSettings)
-{
-    d->m_commentsSettings = commentsSettings;
-}
-
-static QString sortEditorDocumentOutlineKey()
-{
-    return QLatin1String(Constants::CPPEDITOR_SETTINGSGROUP)
-         + QLatin1Char('/')
-         + QLatin1String(Constants::CPPEDITOR_SORT_EDITOR_DOCUMENT_OUTLINE);
-}
-
-bool CppToolsSettings::sortedEditorDocumentOutline() const
+bool CppToolsSettings::sortedEditorDocumentOutline()
 {
     return ICore::settings()
         ->value(sortEditorDocumentOutlineKey(), kSortEditorDocumentOutlineDefault)
@@ -239,7 +178,6 @@ void CppToolsSettings::setSortedEditorDocumentOutline(bool sorted)
     ICore::settings()->setValueWithDefault(sortEditorDocumentOutlineKey(),
                                            sorted,
                                            kSortEditorDocumentOutlineDefault);
-    emit editorDocumentOutlineSortingChanged(sorted);
 }
 
 } // namespace CppEditor

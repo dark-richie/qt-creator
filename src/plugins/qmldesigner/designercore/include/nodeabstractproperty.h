@@ -9,7 +9,7 @@ namespace QmlDesigner {
 
 namespace Internal {
     class InternalNodeAbstractProperty;
-    using InternalNodeAbstractPropertyPointer = QSharedPointer<InternalNodeAbstractProperty>;
+    using InternalNodeAbstractPropertyPointer = std::shared_ptr<InternalNodeAbstractProperty>;
 }
 
 class QMLDESIGNERCORE_EXPORT NodeAbstractProperty : public AbstractProperty
@@ -35,8 +35,12 @@ public:
 
     friend auto qHash(const NodeAbstractProperty &property) { qHash(AbstractProperty(property)); }
 
+    NodeAbstractProperty(const PropertyName &propertyName,
+                         const Internal::InternalNodePointer &internalNode,
+                         Model *model,
+                         AbstractView *view);
+
 protected:
-    NodeAbstractProperty(const PropertyName &propertyName, const Internal::InternalNodePointer &internalNode, Model *model, AbstractView *view);
     NodeAbstractProperty(const Internal::InternalNodeAbstractPropertyPointer &property, Model *model, AbstractView *view);
     void reparentHere(const ModelNode &modelNode, bool isNodeList, const TypeName &typeName = TypeName());
 };

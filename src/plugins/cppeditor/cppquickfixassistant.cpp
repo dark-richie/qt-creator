@@ -3,10 +3,9 @@
 
 #include "cppquickfixassistant.h"
 
-#include "cppeditorconstants.h"
 #include "cppeditorwidget.h"
 #include "cppmodelmanager.h"
-#include "cppquickfixes.h"
+#include "cppquickfix.h"
 #include "cpprefactoringchanges.h"
 
 #include <texteditor/codeassist/genericproposal.h>
@@ -21,37 +20,40 @@
 using namespace CPlusPlus;
 using namespace TextEditor;
 
-namespace CppEditor {
-namespace Internal {
+namespace CppEditor::Internal {
 
-// -------------------------
-// CppQuickFixAssistProcessor
-// -------------------------
-class CppQuickFixAssistProcessor : public IAssistProcessor
+// CppQuickFixAssistProvider
+
+class CppQuickFixAssistProvider final : public IAssistProvider
 {
-    IAssistProposal *perform() override
+public:
+    class CppQuickFixAssistProcessor final : public IAssistProcessor
     {
-        return GenericProposal::createProposal(interface(), quickFixOperations(interface()));
+        IAssistProposal *perform() final
+        {
+            return GenericProposal::createProposal(interface(), quickFixOperations(interface()));
+        }
+    };
+
+    TextEditor::IAssistProcessor *createProcessor(const TextEditor::AssistInterface *) const final
+    {
+        return new CppQuickFixAssistProcessor;
     }
 };
 
-// -------------------------
-// CppQuickFixAssistProvider
-// -------------------------
-
-IAssistProcessor *CppQuickFixAssistProvider::createProcessor(const AssistInterface *) const
+IAssistProvider &cppQuickFixAssistProvider()
 {
-    return new CppQuickFixAssistProcessor;
+    static CppQuickFixAssistProvider theCppQuickFixAssistProvider;
+    return theCppQuickFixAssistProvider;
 }
 
-// --------------------------
 // CppQuickFixAssistInterface
-// --------------------------
+
 CppQuickFixInterface::CppQuickFixInterface(CppEditorWidget *editor, AssistReason reason)
     : AssistInterface(editor->textCursor(), editor->textDocument()->filePath(), reason)
     , m_editor(editor)
     , m_semanticInfo(editor->semanticInfo())
-    , m_snapshot(CppModelManager::instance()->snapshot())
+    , m_snapshot(CppModelManager::snapshot())
     , m_currentFile(CppRefactoringChanges::file(editor, m_semanticInfo.doc))
     , m_context(m_semanticInfo.doc, m_snapshot)
 {
@@ -149,12 +151,12 @@ QTextCursor CppQuickFixInterface::adjustedCursor()
 QuickFixOperations quickFixOperations(const TextEditor::AssistInterface *interface)
 {
     const auto cppInterface = dynamic_cast<const CppQuickFixInterface *>(interface);
-    QTC_ASSERT(cppInterface, return {});
+    if (!cppInterface)
+        return {};
     QuickFixOperations quickFixes;
     for (CppQuickFixFactory *factory : CppQuickFixFactory::cppQuickFixFactories())
         factory->match(*cppInterface, quickFixes);
     return quickFixes;
 }
 
-} // namespace Internal
-} // namespace CppEditor
+} // namespace CppEditor::Internal

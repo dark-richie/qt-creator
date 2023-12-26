@@ -11,10 +11,10 @@ namespace Utils {
 
 class QTCREATOR_UTILS_EXPORT NavigationTreeView : public TreeView
 {
-    Q_OBJECT
 public:
     explicit NavigationTreeView(QWidget *parent = nullptr);
     void scrollTo(const QModelIndex &index, ScrollHint hint = EnsureVisible) override;
+    QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers) override;
 
 protected:
     void focusInEvent(QFocusEvent *event) override;

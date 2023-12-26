@@ -7,15 +7,13 @@
 
 #include <model.h>
 
-#include <app/app_version.h>
-
 #include <projectexplorer/kit.h>
 #include <projectexplorer/target.h>
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
 #include <qmlprojectmanager/qmlmultilanguageaspect.h>
 #include <qmlprojectmanager/qmlproject.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtversions.h>
 
 #include <QLibraryInfo>
@@ -51,6 +49,8 @@ QProcessEnvironment PuppetEnvironmentBuilder::processEnvironment() const
     addMultiLanguageDatatbase();
     addImportPaths();
     addCustomFileSelectors();
+    addDisableDeferredProperties();
+    addResolveUrlsOnAssignment();
 
     qCInfo(puppetEnvirmentBuild) << "Puppet environment:" << m_environment.toStringList();
 
@@ -82,10 +82,26 @@ bool PuppetEnvironmentBuilder::usesVirtualKeyboard() const
 QString PuppetEnvironmentBuilder::getStyleConfigFileName() const
 {
     if (m_target) {
-        for (const Utils::FilePath &fileName :
-             m_target->project()->files(ProjectExplorer::Project::SourceFiles)) {
-            if (fileName.fileName() == "qtquickcontrols2.conf")
-                return fileName.toString();
+        const auto *qmlBuild = qobject_cast<QmlProjectManager::QmlBuildSystem *>(
+            m_target->buildSystem());
+        if (qmlBuild) {
+            const auto &environment = qmlBuild->environment();
+            const auto &envVar = std::find_if(
+                std::begin(environment), std::end(environment), [](const auto &envVar) {
+                    return (envVar.name == u"QT_QUICK_CONTROLS_CONF"
+                            && envVar.operation != Utils::EnvironmentItem::SetDisabled);
+                });
+            if (envVar != std::end(environment)) {
+                const auto &sourceFiles = m_target->project()->files(
+                    ProjectExplorer::Project::SourceFiles);
+                const auto &foundFile = std::find_if(std::begin(sourceFiles),
+                                                     std::end(sourceFiles),
+                                                     [&](const auto &fileName) {
+                                                         return fileName.fileName() == envVar->value;
+                                                     });
+                if (foundFile != std::end(sourceFiles))
+                    return foundFile->toString();
+            }
         }
     }
 
@@ -204,7 +220,7 @@ void PuppetEnvironmentBuilder::addImportPaths() const
     }
 
     if (m_availablePuppetType == PuppetType::Fallback)
-        importPaths.prepend(QLibraryInfo::location(QLibraryInfo::Qml2ImportsPath));
+        importPaths.prepend(QLibraryInfo::path(QLibraryInfo::Qml2ImportsPath));
 
     constexpr auto pathSep = Utils::HostOsInfo::pathListSeparator();
     m_environment.appendOrSet("QML2_IMPORT_PATH", importPaths.join(pathSep), pathSep);
@@ -226,6 +242,16 @@ void PuppetEnvironmentBuilder::addCustomFileSelectors() const
         m_environment.appendOrSet("QML_FILE_SELECTORS", customFileSelectors.join(","), pathSep);
 
     qCInfo(puppetEnvirmentBuild) << "Puppet selectors:" << customFileSelectors;
+}
+
+void PuppetEnvironmentBuilder::addDisableDeferredProperties() const
+{
+    m_environment.set("QML_DISABLE_INTERNAL_DEFERRED_PROPERTIES", "true");
+}
+
+void PuppetEnvironmentBuilder::addResolveUrlsOnAssignment() const
+{
+    m_environment.set("QML_COMPAT_RESOLVE_URLS_ON_ASSIGNMENT", "true");
 }
 
 PuppetType PuppetEnvironmentBuilder::determinePuppetType() const

@@ -11,8 +11,8 @@
 
 #include <utils/basetreeview.h>
 #include <utils/hostosinfo.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/treemodel.h>
 
 #include <QCoreApplication>
@@ -174,7 +174,7 @@ bool ModulesModel::contextMenuEvent(const ItemViewEvent &ev)
               moduleNameValid && !modulePath.needsDevice() && modulePath.exists()
                   && dependsCanBeFound(),
               [modulePath] {
-                  QtcProcess::startDetached({{"depends"}, {modulePath.toString()}});
+                  Process::startDetached({{"depends"}, {modulePath.toString()}});
               });
 
     addAction(this, menu, Tr::tr("Load Symbols for All Modules"),
@@ -205,7 +205,7 @@ bool ModulesModel::contextMenuEvent(const ItemViewEvent &ev)
               canShowSymbols && moduleNameValid,
               [this, modulePath] { engine->requestModuleSections(modulePath); });
 
-    menu->addAction(debuggerSettings()->settingsDialog.action());
+    menu->addAction(settings().settingsDialog.action());
 
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popup(ev.globalPos());
@@ -273,9 +273,16 @@ void ModulesHandler::removeModule(const FilePath &modulePath)
         m_model->destroyItem(item);
 }
 
+static FilePath pickPath(const FilePath &hostPath, const FilePath &modulePath)
+{
+    if (!hostPath.isEmpty() && hostPath.exists())
+        return hostPath;
+    return modulePath; // Checking if this exists can be slow, delay it for as long as possible
+}
+
 void ModulesHandler::updateModule(const Module &module)
 {
-    const FilePath path = module.modulePath;
+    const FilePath path = pickPath(module.hostPath, module.modulePath);
     if (path.isEmpty())
         return;
 

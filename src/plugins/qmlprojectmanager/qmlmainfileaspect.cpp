@@ -18,6 +18,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/layoutbuilder.h>
+#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 
@@ -37,8 +38,8 @@ static bool caseInsensitiveLessThan(const FilePath &s1, const FilePath &s2)
     return s1.toString().toCaseFolded() < s2.toString().toCaseFolded();
 }
 
-QmlMainFileAspect::QmlMainFileAspect(Target *target)
-    : m_target(target)
+QmlMainFileAspect::QmlMainFileAspect(AspectContainer *container)
+    : BaseAspect(container)
     , m_scriptFile(M_CURRENT_FILE)
 {
     addDataExtractor(this, &QmlMainFileAspect::mainScript, &Data::mainScript);
@@ -55,7 +56,7 @@ QmlMainFileAspect::~QmlMainFileAspect()
     delete m_fileListCombo;
 }
 
-void QmlMainFileAspect::addToLayout(Layouting::LayoutBuilder &builder)
+void QmlMainFileAspect::addToLayout(Layouting::LayoutItem &parent)
 {
     QTC_ASSERT(!m_fileListCombo, delete m_fileListCombo);
     m_fileListCombo = new QComboBox;
@@ -67,15 +68,15 @@ void QmlMainFileAspect::addToLayout(Layouting::LayoutBuilder &builder)
             this, &QmlMainFileAspect::updateFileComboBox);
     connect(m_fileListCombo, &QComboBox::activated, this, &QmlMainFileAspect::setMainScript);
 
-    builder.addItems({Tr::tr("Main QML file:"), m_fileListCombo.data()});
+    parent.addItems({Tr::tr("Main QML file:"), m_fileListCombo.data()});
 }
 
-void QmlMainFileAspect::toMap(QVariantMap &map) const
+void QmlMainFileAspect::toMap(Store &map) const
 {
     map.insert(Constants::QML_MAINSCRIPT_KEY, m_scriptFile);
 }
 
-void QmlMainFileAspect::fromMap(const QVariantMap &map)
+void QmlMainFileAspect::fromMap(const Store &map)
 {
     m_scriptFile = map.value(Constants::QML_MAINSCRIPT_KEY, M_CURRENT_FILE).toString();
 
@@ -158,6 +159,11 @@ void QmlMainFileAspect::setMainScript(int index)
     }
 }
 
+void QmlMainFileAspect::setTarget(ProjectExplorer::Target *target)
+{
+    m_target = target;
+}
+
 void QmlMainFileAspect::setScriptSource(MainScriptSource source, const QString &settingsPath)
 {
     if (source == FileInEditor) {
@@ -181,7 +187,7 @@ void QmlMainFileAspect::setScriptSource(MainScriptSource source, const QString &
 FilePath QmlMainFileAspect::mainScript() const
 {
     if (!qmlBuildSystem()->mainFile().isEmpty()) {
-        const FilePath pathInProject = qmlBuildSystem()->mainFile();
+        const FilePath pathInProject = qmlBuildSystem()->mainFilePath();
         return qmlBuildSystem()->canonicalProjectDir().resolvePath(pathInProject);
     }
 
@@ -210,26 +216,26 @@ void QmlMainFileAspect::changeCurrentFile(Core::IEditor *editor)
 bool QmlMainFileAspect::isQmlFilePresent()
 {
     bool qmlFileFound = false;
-    if (mainScriptSource() == FileInEditor) {
+    if (mainScriptSource() == FileInEditor && !mainScript().isEmpty()) {
+        using namespace Utils::Constants;
         IDocument *document = EditorManager::currentDocument();
         const MimeType mainScriptMimeType = mimeTypeForFile(mainScript());
         if (document) {
             m_currentFileFilename = document->filePath();
-            if (mainScriptMimeType.matchesName(ProjectExplorer::Constants::QML_MIMETYPE)
-                    || mainScriptMimeType.matchesName(ProjectExplorer::Constants::QMLUI_MIMETYPE)) {
+            if (mainScriptMimeType.matchesName(QML_MIMETYPE)
+                    || mainScriptMimeType.matchesName(QMLUI_MIMETYPE)) {
                 qmlFileFound = true;
             }
         }
         if (!document
-                || mainScriptMimeType.matchesName(QmlJSTools::Constants::QMLPROJECT_MIMETYPE)) {
+                || mainScriptMimeType.matchesName(QMLPROJECT_MIMETYPE)) {
             // find a qml file with lowercase filename. This is slow, but only done
             // in initialization/other border cases.
             const FilePaths files = m_target->project()->files(Project::SourceFiles);
             for (const FilePath &filename : files) {
                 if (!filename.isEmpty() && filename.baseName().at(0).isLower()) {
                     const MimeType type = mimeTypeForFile(filename);
-                    if (type.matchesName(ProjectExplorer::Constants::QML_MIMETYPE)
-                            || type.matchesName(ProjectExplorer::Constants::QMLUI_MIMETYPE)) {
+                    if (type.matchesName(QML_MIMETYPE) || type.matchesName(QMLUI_MIMETYPE)) {
                         m_currentFileFilename = filename;
                         qmlFileFound = true;
                         break;

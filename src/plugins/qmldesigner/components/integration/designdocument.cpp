@@ -8,7 +8,10 @@
 #include "qmlvisualnode.h"
 
 #include <auxiliarydataproperties.h>
-#include <metainfo.h>
+#ifndef QDS_USE_PROJECTSTORAGE
+#  include <metainfo.h>
+#endif
+#include <model/modelresourcemanagement.h>
 #include <nodeinstanceview.h>
 #include <nodelistproperty.h>
 #include <rewritingexception.h>
@@ -22,7 +25,7 @@
 #include <projectexplorer/target.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/kit.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtsupportconstants.h>
 #include <qtsupport/qtversionmanager.h>
 #include <coreplugin/icore.h>
@@ -60,24 +63,33 @@ namespace QmlDesigner {
   DesignDocument acts as a facade to a model representing a qml document,
   and the different views/widgets accessing it.
   */
-DesignDocument::DesignDocument(ProjectStorage<Sqlite::Database> &projectStorage,
+DesignDocument::DesignDocument(ProjectStorageDependencies projectStorageDependencies,
                                ExternalDependenciesInterface &externalDependencies)
-    : m_documentModel(Model::create("QtQuick.Item", 1, 0))
+#ifdef QDS_USE_PROJECTSTORAGE
+    : m_documentModel(Model::create(projectStorageDependencies,
+                                    "Item",
+                                    {Import::createLibraryImport("QtQuick")},
+                                    {},
+                                    std::make_unique<ModelResourceManagement>()))
+#else
+    : m_documentModel(
+        Model::create("QtQuick.Item", 1, 0, nullptr, std::make_unique<ModelResourceManagement>()))
     , m_subComponentManager(new SubComponentManager(m_documentModel.get(), externalDependencies))
+#endif
     , m_rewriterView(new RewriterView(externalDependencies, RewriterView::Amend))
     , m_documentLoaded(false)
     , m_currentTarget(nullptr)
-    , m_projectStorage(projectStorage)
+    , m_projectStorageDependencies(projectStorageDependencies)
     , m_externalDependencies{externalDependencies}
-{
-}
+{}
 
 DesignDocument::~DesignDocument() = default;
 
 Model *DesignDocument::currentModel() const
 {
-    if (m_inFileComponentModel)
+    if (m_inFileComponentModel) {
         return m_inFileComponentModel.get();
+    }
 
     return m_documentModel.get();
 }
@@ -149,9 +161,15 @@ const AbstractView *DesignDocument::view() const
 
 ModelPointer DesignDocument::createInFileComponentModel()
 {
-    auto model = Model::create("QtQuick.Item", 1, 0);
+    auto model = Model::create("QtQuick.Item",
+                               1,
+                               0,
+                               nullptr,
+                               std::make_unique<ModelResourceManagement>());
     model->setFileUrl(m_documentModel->fileUrl());
+#ifndef QDS_USE_PROJECTSTORAGE
     model->setMetaInfo(m_documentModel->metaInfo());
+#endif
 
     return model;
 }
@@ -205,8 +223,7 @@ void DesignDocument::moveNodesToPosition(const QList<ModelNode> &nodes, const st
         targetNode = view.firstSelectedModelNode();
 
     // in case we copy and paste a selection we paste in the parent item
-    if ((view.selectedModelNodes().count() == movingNodes.count())
-            && targetNode.hasParentProperty()) {
+    if ((view.selectedModelNodes().size() == movingNodes.size()) && targetNode.hasParentProperty()) {
         targetNode = targetNode.parentProperty().parentModelNode();
     } else if (view.selectedModelNodes().isEmpty()) {
         // if selection is empty and copied nodes are all 3D nodes, paste them under the active scene
@@ -329,10 +346,7 @@ void DesignDocument::updateFileName(const Utils::FilePath & /*oldFileName*/, con
 
 Utils::FilePath DesignDocument::fileName() const
 {
-    if (editor())
-        return editor()->document()->filePath();
-
-    return Utils::FilePath();
+    return editor() ? editor()->document()->filePath() : Utils::FilePath();
 }
 
 ProjectExplorer::Target *DesignDocument::currentTarget() const
@@ -366,7 +380,7 @@ void DesignDocument::loadDocument(QPlainTextEdit *edit)
 
     connect(m_documentTextModifier.data(), &TextModifier::textChanged, this, &DesignDocument::updateQrcFiles);
 
-    m_documentModel->setTextModifier(m_documentTextModifier.data());
+    m_rewriterView->setTextModifier(m_documentTextModifier.data());
 
     m_inFileComponentTextModifier.reset();
 
@@ -385,6 +399,8 @@ void DesignDocument::changeToDocumentModel()
     const QPlainTextEdit *edit = plainTextEdit();
     if (edit)
         edit->document()->clearUndoRedoStacks();
+
+    m_rewriterView->setTextModifier(m_documentTextModifier.data());
 
     m_inFileComponentModel.reset();
     m_inFileComponentTextModifier.reset();
@@ -426,7 +442,8 @@ void DesignDocument::changeToInFileComponentModel(ComponentTextModifier *textMod
         edit->document()->clearUndoRedoStacks();
 
     m_inFileComponentModel = createInFileComponentModel();
-    m_inFileComponentModel->setTextModifier(m_inFileComponentTextModifier.data());
+
+    m_rewriterView->setTextModifier(m_inFileComponentTextModifier.data());
 
     viewManager().attachRewriterView();
     viewManager().attachViewsExceptRewriterAndComponetView();
@@ -507,6 +524,7 @@ void DesignDocument::close()
     emit designDocumentClosed();
 }
 
+#ifndef QDS_USE_PROJECTSTORAGE
 void DesignDocument::updateSubcomponentManager()
 {
     Q_ASSERT(m_subComponentManager);
@@ -518,6 +536,7 @@ void DesignDocument::addSubcomponentManagerImport(const Import &import)
 {
     m_subComponentManager->addAndParseImport(import);
 }
+#endif
 
 void DesignDocument::deleteSelected()
 {
@@ -555,7 +574,7 @@ void DesignDocument::deleteSelected()
             return;
     }
 
-    rewriterView()->executeInTransaction("DesignDocument::deleteSelected", [this]() {
+    rewriterView()->executeInTransaction("DesignDocument::deleteSelected", [this] {
         const QList<ModelNode> toDelete = view()->selectedModelNodes();
         for (ModelNode node : toDelete) {
             if (node.isValid() && !node.isRootNode() && QmlObjectNode::isValidQmlObjectNode(node))

@@ -72,6 +72,8 @@ public:
 
     QRectF defaultRasterRect() const;
 
+    void setIsMcu(bool isMcu);
+
     void setLocked(TreeItem *item);
 
     void setPinned(TreeItem *item);
@@ -135,6 +137,8 @@ private:
     QRectF rangeMinHandle(const QRectF &rect);
 
     QRectF rangeMaxHandle(const QRectF &rect);
+
+    QPoint viewportCenter() const;
 
 private:
     bool m_dragging;

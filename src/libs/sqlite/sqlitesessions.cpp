@@ -67,7 +67,7 @@ void Sessions::create()
 {
     sqlite3_session *newSession = nullptr;
     int resultCode = sqlite3session_create(database.backend().sqliteDatabaseHandle(),
-                                           std::string(databaseName.data()).c_str(),
+                                           std::string(databaseName).c_str(),
                                            &newSession);
     session.reset(newSession);
 
@@ -110,7 +110,7 @@ void Sessions::revert()
                                                                " ORDER BY id DESC"}),
                                       database};
 
-    auto changeSets = selectChangeSets.values<SessionChangeSet>(1024);
+    auto changeSets = selectChangeSets.values<SessionChangeSet, 1024>();
 
     for (auto &changeSet : changeSets) {
         int resultCode = sqlite3changeset_apply_v2(database.backend().sqliteDatabaseHandle(),
@@ -134,7 +134,7 @@ void Sessions::apply()
                                                                " ORDER BY id"}),
                                       database};
 
-    auto changeSets = selectChangeSets.values<SessionChangeSet>(1024);
+    auto changeSets = selectChangeSets.values<SessionChangeSet, 1024>();
 
     for (auto &changeSet : changeSets) {
         int resultCode = sqlite3changeset_apply_v2(database.backend().sqliteDatabaseHandle(),
@@ -170,7 +170,7 @@ SessionChangeSets Sessions::changeSets() const
                                                                " ORDER BY id DESC"}),
                                       database};
 
-    return selectChangeSets.values<SessionChangeSet>(1024);
+    return selectChangeSets.values<SessionChangeSet, 1024>();
 }
 
 void Sessions::Deleter::operator()(sqlite3_session *session)

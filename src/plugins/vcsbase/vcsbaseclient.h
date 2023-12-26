@@ -24,7 +24,7 @@ class QToolBar;
 QT_END_NAMESPACE
 
 namespace Utils {
-class QtcProcess;
+class Process;
 }
 
 namespace VcsBase {
@@ -38,13 +38,9 @@ using CommandHandler = std::function<void(const CommandResult &)>;
 
 class VCSBASE_EXPORT VcsBaseClientImpl : public QObject
 {
-    Q_OBJECT
-
 public:
     explicit VcsBaseClientImpl(VcsBaseSettings *baseSettings);
     ~VcsBaseClientImpl() override = default;
-
-    VcsBaseSettings &settings() const;
 
     virtual Utils::FilePath vcsBinary() const;
     int vcsTimeoutS() const;
@@ -60,7 +56,7 @@ public:
     VcsCommand *createCommand(const Utils::FilePath &workingDirectory,
                               VcsBaseEditorWidget *editor = nullptr) const;
 
-    void setupCommand(Utils::QtcProcess &process,
+    void setupCommand(Utils::Process &process,
                       const Utils::FilePath &workingDirectory,
                       const QStringList &args) const;
 

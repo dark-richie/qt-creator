@@ -9,6 +9,8 @@
 #include "androidsettingswidget.h"
 #include "androidtr.h"
 
+#include <coreplugin/dialogs/ioptionspage.h>
+
 #include <projectexplorer/projectexplorerconstants.h>
 
 #include <utils/detailswidget.h>
@@ -17,8 +19,8 @@
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
 #include <utils/progressindicator.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/utilsicons.h>
 
 #include <QCheckBox>
@@ -30,6 +32,7 @@
 #include <QListWidget>
 #include <QLoggingCategory>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QTimer>
@@ -145,8 +148,6 @@ public:
     ~AndroidSettingsWidget() final;
 
 private:
-    void apply() final { AndroidConfigurations::setConfig(m_androidConfig); }
-
     void showEvent(QShowEvent *event) override;
 
     void validateJdk();
@@ -282,7 +283,7 @@ AndroidSettingsWidget::AndroidSettingsWidget()
         { JavaPathExistsAndWritableRow, Tr::tr("JDK path exists and is writable.") },
         { SdkPathExistsAndWritableRow, Tr::tr("Android SDK path exists and is writable.") },
         { SdkToolsInstalledRow, Tr::tr("Android SDK Command-line Tools installed.") },
-        { SdkManagerSuccessfulRow, Tr::tr("Android SDK Command-line Tools run.") },
+        { SdkManagerSuccessfulRow, Tr::tr("Android SDK Command-line Tools runs.") },
         { PlatformToolsInstalledRow, Tr::tr("Android SDK Platform-Tools installed.") },
         { AllEssentialsInstalledRow,
             Tr::tr( "All essential packages installed for all installed Qt versions.") },
@@ -450,6 +451,8 @@ AndroidSettingsWidget::AndroidSettingsWidget()
                                       delete openSslOneShot;
         });
     });
+
+    setOnApply([this] { AndroidConfigurations::setConfig(m_androidConfig); });
 }
 
 AndroidSettingsWidget::~AndroidSettingsWidget()
@@ -659,7 +662,7 @@ void AndroidSettingsWidget::downloadOpenSslRepo(const bool silent)
     openSslProgressDialog->setFixedSize(openSslProgressDialog->sizeHint());
 
     const QString openSslRepo("https://github.com/KDAB/android_openssl.git");
-    QtcProcess *gitCloner = new QtcProcess(this);
+    Process *gitCloner = new Process(this);
     CommandLine gitCloneCommand("git", {"clone", "--depth=1", openSslRepo, openSslPath.toString()});
     gitCloner->setCommand(gitCloneCommand);
 
@@ -684,7 +687,7 @@ void AndroidSettingsWidget::downloadOpenSslRepo(const bool silent)
         openButton->deleteLater();
     };
 
-    connect(gitCloner, &QtcProcess::done, this, [=] {
+    connect(gitCloner, &Process::done, this, [=] {
         openSslProgressDialog->close();
         if (gitCloner->error() != QProcess::UnknownError) {
             if (gitCloner->error() == QProcess::FailedToStart) {
@@ -764,12 +767,21 @@ void AndroidSettingsWidget::downloadSdk()
 
 // AndroidSettingsPage
 
-AndroidSettingsPage::AndroidSettingsPage()
+class AndroidSettingsPage final : public Core::IOptionsPage
 {
-    setId(Constants::ANDROID_SETTINGS_ID);
-    setDisplayName(Tr::tr("Android"));
-    setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
-    setWidgetCreator([] { return new AndroidSettingsWidget; });
+public:
+    AndroidSettingsPage()
+    {
+        setId(Constants::ANDROID_SETTINGS_ID);
+        setDisplayName(Tr::tr("Android"));
+        setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
+        setWidgetCreator([] { return new AndroidSettingsWidget; });
+    }
+};
+
+void setupAndroidSettingsPage()
+{
+    static AndroidSettingsPage theAndroidSettingsPage;
 }
 
 } // Android::Internal

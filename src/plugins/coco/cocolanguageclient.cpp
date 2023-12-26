@@ -3,7 +3,6 @@
 
 #include "cocolanguageclient.h"
 
-#include <app/app_version.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <languageclient/diagnosticmanager.h>
 #include <languageclient/languageclienthoverhandler.h>
@@ -17,6 +16,7 @@
 #include <texteditor/textmark.h>
 #include <utils/utilsicons.h>
 
+#include <QGuiApplication>
 #include <QTextEdit>
 
 using namespace LanguageClient;
@@ -52,7 +52,7 @@ CocoLanguageClient::CocoLanguageClient(const FilePath &coco, const FilePath &csm
 
     ClientInfo info;
     info.setName("CocoQtCreator");
-    info.setVersion(Core::Constants::IDE_VERSION_DISPLAY);
+    info.setVersion(QGuiApplication::applicationDisplayName());
     setClientInfo(info);
 
     initClientCapabilities();
@@ -130,8 +130,8 @@ public:
 class CocoTextMark : public TextEditor::TextMark
 {
 public:
-    CocoTextMark(const FilePath &fileName, const CocoDiagnostic &diag, const Id &clientId)
-        : TextEditor::TextMark(fileName, diag.range().start().line() + 1, {"Coco", clientId})
+    CocoTextMark(TextEditor::TextDocument *doc, const CocoDiagnostic &diag, const Id &clientId)
+        : TextEditor::TextMark(doc, diag.range().start().line() + 1, {"Coco", clientId})
         , m_severity(diag.cocoSeverity())
     {
         setLineAnnotation(diag.message());
@@ -180,13 +180,13 @@ private:
         });
     }
 
-    TextEditor::TextMark *createTextMark(const FilePath &filePath,
+    TextEditor::TextMark *createTextMark(TextEditor::TextDocument *doc,
                                          const Diagnostic &diagnostic,
                                          bool /*isProjectFile*/) const override
     {
         const CocoDiagnostic cocoDiagnostic(diagnostic);
         if (std::optional<CocoDiagnosticSeverity> severity = cocoDiagnostic.cocoSeverity())
-            return new CocoTextMark(filePath, cocoDiagnostic, client()->id());
+            return new CocoTextMark(doc, cocoDiagnostic, client()->id());
         return nullptr;
     }
 
@@ -239,7 +239,7 @@ public:
     void enableCodecoverageSupport()
     {
         JsonObject coverageSupport(QJsonObject{{"codeCoverageSupport", true}});
-        insert(u"publishDiagnostics", coverageSupport);
+        insert(Key("publishDiagnostics"), coverageSupport);
     }
 };
 

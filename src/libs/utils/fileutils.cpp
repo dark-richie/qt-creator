@@ -6,6 +6,7 @@
 
 #include "algorithm.h"
 #include "devicefileaccess.h"
+#include "environment.h"
 #include "qtcassert.h"
 #include "utilstr.h"
 
@@ -62,6 +63,10 @@ bool FileReader::fetch(const FilePath &filePath, QIODevice::OpenMode mode)
         return false;
     }
     m_data = *contents;
+
+    if (mode & QIODevice::Text)
+        m_data = m_data.replace("\r\n", "\n");
+
     return true;
 }
 
@@ -129,7 +134,7 @@ bool FileSaverBase::write(const QByteArray &bytes)
 {
     if (m_hasError)
         return false;
-    return setResult(m_file->write(bytes) == bytes.count());
+    return setResult(m_file->write(bytes) == bytes.size());
 }
 
 bool FileSaverBase::setResult(bool ok)
@@ -255,7 +260,9 @@ TempFileSaver::~TempFileSaver()
         QFile::remove(m_filePath.toString());
 }
 
-/*! \class Utils::FileUtils
+/*!
+    \class Utils::FileUtils
+    \inmodule QtCreator
 
   \brief The FileUtils class contains file and directory related convenience
   functions.
@@ -623,12 +630,18 @@ FilePathInfo::FileFlags fileInfoFlagsfromStatMode(const QString &hexString, int 
 
     FilePathInfo::FileFlags result;
 
-    if (mode & IRUSR)
+    if (mode & IRUSR) {
         result |= FilePathInfo::ReadOwnerPerm;
-    if (mode & IWUSR)
+        result |= FilePathInfo::ReadUserPerm;
+    }
+    if (mode & IWUSR) {
         result |= FilePathInfo::WriteOwnerPerm;
-    if (mode & IXUSR)
+        result |= FilePathInfo::WriteUserPerm;
+    }
+    if (mode & IXUSR) {
         result |= FilePathInfo::ExeOwnerPerm;
+        result |= FilePathInfo::ExeUserPerm;
+    }
     if (mode & IRGRP)
         result |= FilePathInfo::ReadGroupPerm;
     if (mode & IWGRP)
@@ -709,9 +722,8 @@ bool FileUtils::copyRecursively(
 
 bool FileUtils::copyIfDifferent(const FilePath &srcFilePath, const FilePath &tgtFilePath)
 {
-    QTC_ASSERT(srcFilePath.exists(), return false);
-    QTC_ASSERT(srcFilePath.scheme() == tgtFilePath.scheme(), return false);
-    QTC_ASSERT(srcFilePath.host() == tgtFilePath.host(), return false);
+    QTC_ASSERT(srcFilePath.exists(), qDebug() << srcFilePath.toUserOutput(); return false);
+    QTC_ASSERT(srcFilePath.isSameDevice(tgtFilePath), return false);
 
     if (tgtFilePath.exists()) {
         const QDateTime srcModified = srcFilePath.lastModified();
@@ -830,6 +842,20 @@ qint64 FileUtils::bytesAvailableFromDFOutput(const QByteArray &dfOutput)
     if (ok)
         return result;
     return -1;
+}
+
+FilePaths FileUtils::usefulExtraSearchPaths()
+{
+    if (HostOsInfo::isMacHost()) {
+        return {"/opt/homebrew/bin"};
+    } else if (HostOsInfo::isWindowsHost()) {
+        const QString programData =
+            qtcEnvironmentVariable("ProgramData",
+                                   qtcEnvironmentVariable("ALLUSERSPROFILE", "C:/ProgramData"));
+        return {FilePath::fromUserInput(programData) / "chocolatey/bin"};
+    }
+
+    return {};
 }
 
 } // namespace Utils

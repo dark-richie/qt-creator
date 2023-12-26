@@ -6,7 +6,8 @@
 #include "utils_global.h"
 
 #include "filepath.h"
-#include "tasktree.h"
+
+#include <solutions/tasking/tasktree.h>
 
 #include <QObject>
 
@@ -17,8 +18,6 @@ QT_END_NAMESPACE
 namespace Utils {
 
 enum class StreamMode { Reader, Writer, Transfer };
-
-enum class StreamResult { FinishedWithSuccess, FinishedWithError };
 
 class QTCREATOR_UTILS_EXPORT FileStreamer final : public QObject
 {
@@ -37,7 +36,7 @@ public:
     // Only for Writer mode
     void setWriteData(const QByteArray &writeData);
 
-    StreamResult result() const;
+    Tasking::DoneResult result() const;
 
     void start();
     void stop();
@@ -49,14 +48,15 @@ private:
     class FileStreamerPrivate *d = nullptr;
 };
 
-class FileStreamerAdapter : public Utils::Tasking::TaskAdapter<FileStreamer>
+class FileStreamerTaskAdapter : public Tasking::TaskAdapter<FileStreamer>
 {
 public:
-    FileStreamerAdapter() { connect(task(), &FileStreamer::done, this,
-                [this] { emit done(task()->result() == StreamResult::FinishedWithSuccess); }); }
+    FileStreamerTaskAdapter() {
+        connect(task(), &FileStreamer::done, this, [this] { emit done(task()->result()); });
+    }
     void start() override { task()->start(); }
 };
 
-} // namespace Utils
+using FileStreamerTask = Tasking::CustomTask<FileStreamerTaskAdapter>;
 
-QTC_DECLARE_CUSTOM_TASK(Streamer, Utils::FileStreamerAdapter);
+} // namespace Utils

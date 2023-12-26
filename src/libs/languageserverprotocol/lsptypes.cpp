@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "lsptypes.h"
+
+#include "languageserverprotocoltr.h"
 #include "lsputils.h"
 
 #include <utils/textutils.h>
@@ -275,7 +277,7 @@ Position Position::withOffset(int offset, const QTextDocument *doc) const
     int line;
     int character;
     Utils::Text::convertPosition(doc, toPositionInDocument(doc) + offset, &line, &character);
-    return Position(line - 1, character - 1);
+    return Position(line - 1, character);
 }
 
 Range::Range(const Position &start, const Position &end)
@@ -288,13 +290,13 @@ Range::Range(const QTextCursor &cursor)
 {
     int line, character = 0;
     Utils::Text::convertPosition(cursor.document(), cursor.selectionStart(), &line, &character);
-    if (line <= 0 || character <= 0)
+    if (line <= 0 || character < 0)
         return;
-    setStart(Position(line - 1, character - 1));
+    setStart(Position(line - 1, character));
     Utils::Text::convertPosition(cursor.document(), cursor.selectionEnd(), &line, &character);
-    if (line <= 0 || character <= 0)
+    if (line <= 0 || character < 0)
         return;
-    setEnd(Position(line - 1, character - 1));
+    setEnd(Position(line - 1, character));
 }
 
 bool Range::contains(const Range &other) const
@@ -384,7 +386,7 @@ Utils::FilePath DocumentUri::toFilePath(const PathMapper &mapToHostPath) const
         QTC_ASSERT(mapToHostPath, return serverPath);
         return mapToHostPath(serverPath);
     }
-    return Utils::FilePath();
+    return {};
 }
 
 DocumentUri DocumentUri::fromProtocol(const QString &uri)
@@ -413,12 +415,76 @@ LanguageServerProtocol::MarkupKind::operator QJsonValue() const
     return {};
 }
 
-Utils::Text::Replacement TextEdit::toReplacement(QTextDocument *document) const
+DocumentChange::DocumentChange(const QJsonValue &value)
 {
-    const Range &range = this->range();
-    const int start = range.start().toPositionInDocument(document);
-    const int end = range.end().toPositionInDocument(document);
-    return Utils::Text::Replacement(start, end - start, newText());
+    const QString kind = value["kind"].toString();
+    if (kind == "create")
+        emplace<CreateFileOperation>(value);
+    else if (kind == "rename")
+        emplace<RenameFileOperation>(value);
+    else if (kind == "delete")
+        emplace<DeleteFileOperation>(value);
+    else
+        emplace<TextDocumentEdit>(value);
+}
+
+using DocumentChangeBase = std::variant<TextDocumentEdit, CreateFileOperation, RenameFileOperation, DeleteFileOperation>;
+
+bool DocumentChange::isValid() const
+{
+    return std::visit([](const auto &v) { return v.isValid(); }, DocumentChangeBase(*this));
+}
+
+DocumentChange::operator const QJsonValue () const
+{
+    return std::visit([](const auto &v) { return QJsonValue(v); }, DocumentChangeBase(*this));
+}
+
+CreateFileOperation::CreateFileOperation()
+{
+    insert(kindKey, "create");
+}
+
+QString CreateFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
+{
+    return Tr::tr("Create %1").arg(uri().toFilePath(mapToHostPath).toUserOutput());
+}
+
+bool LanguageServerProtocol::CreateFileOperation::isValid() const
+{
+    return contains(uriKey) && value(kindKey) == "create";
+}
+
+RenameFileOperation::RenameFileOperation()
+{
+    insert(kindKey, "rename");
+}
+
+QString RenameFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
+{
+    return Tr::tr("Rename %1 to %2")
+        .arg(oldUri().toFilePath(mapToHostPath).toUserOutput(),
+             newUri().toFilePath(mapToHostPath).toUserOutput());
+}
+
+bool RenameFileOperation::isValid() const
+{
+    return contains(oldUriKey) && contains(newUriKey) && value(kindKey) == "rename";
+}
+
+DeleteFileOperation::DeleteFileOperation()
+{
+    insert(kindKey, "delete");
+}
+
+QString DeleteFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
+{
+    return Tr::tr("Delete %1").arg(uri().toFilePath(mapToHostPath).toUserOutput());
+}
+
+bool DeleteFileOperation::isValid() const
+{
+    return contains(uriKey) && value(kindKey) == "delete";
 }
 
 } // namespace LanguageServerProtocol

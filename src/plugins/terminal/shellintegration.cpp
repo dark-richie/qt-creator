@@ -3,10 +3,13 @@
 
 #include "shellintegration.h"
 
+#include "terminalsettings.h"
+
 #include <utils/environment.h>
 #include <utils/filepath.h>
 #include <utils/stringutils.h>
 
+#include <QApplication>
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(integrationLog, "qtc.terminal.shellintegration", QtWarningMsg)
@@ -41,6 +44,10 @@ struct
     {
         FilePath script{":/terminal/shellintegrations/shellintegration.ps1"};
     } pwsh;
+    struct
+    {
+        FilePath script{":/terminal/shellintegrations/shellintegration-clink.lua"};
+    } clink;
 
 } filesToCopy;
 // clang-format on
@@ -50,13 +57,13 @@ bool ShellIntegration::canIntegrate(const Utils::CommandLine &cmdLine)
     if (cmdLine.executable().needsDevice())
         return false; // TODO: Allow integration for remote shells
 
-    if (!cmdLine.arguments().isEmpty())
+    if (cmdLine.executable().baseName() == "zsh")
+        return true;
+
+    if (!cmdLine.arguments().isEmpty() && cmdLine.arguments() != "-l")
         return false;
 
     if (cmdLine.executable().baseName() == "bash")
-        return true;
-
-    if (cmdLine.executable().baseName() == "zsh")
         return true;
 
     if (cmdLine.executable().baseName() == "pwsh"
@@ -64,12 +71,23 @@ bool ShellIntegration::canIntegrate(const Utils::CommandLine &cmdLine)
         return true;
     }
 
+    if (cmdLine.executable().baseName() == "cmd")
+        return true;
+
     return false;
 }
 
-void ShellIntegration::onOsc(int cmd, const VTermStringFragment &fragment)
+void ShellIntegration::onOsc(int cmd, std::string_view str, bool initial, bool final)
 {
-    QString d = QString::fromLocal8Bit(fragment.str, fragment.len);
+    if (initial)
+        m_oscBuffer.clear();
+
+    m_oscBuffer.append(str);
+
+    if (!final)
+        return;
+
+    QString d = QString::fromLocal8Bit(m_oscBuffer);
     const auto [command, data] = Utils::splitAtFirst(d, ';');
 
     if (cmd == 1337) {
@@ -78,7 +96,8 @@ void ShellIntegration::onOsc(int cmd, const VTermStringFragment &fragment)
             emit currentDirChanged(FilePath::fromUserInput(value.toString()).path());
 
     } else if (cmd == 7) {
-        emit currentDirChanged(FilePath::fromUserInput(d).path());
+        const QString decoded = QUrl::fromPercentEncoding(d.toUtf8());
+        emit currentDirChanged(FilePath::fromUserInput(decoded).path());
     } else if (cmd == 133) {
         qCDebug(integrationLog) << "OSC 133:" << data;
     } else if (cmd == 633 && command.length() == 1) {
@@ -95,7 +114,18 @@ void ShellIntegration::onOsc(int cmd, const VTermStringFragment &fragment)
     }
 }
 
-void ShellIntegration::prepareProcess(Utils::QtcProcess &process)
+void ShellIntegration::onBell()
+{
+    if (settings().audibleBell.value())
+        QApplication::beep();
+}
+
+void ShellIntegration::onTitle(const QString &title)
+{
+    emit titleChanged(title);
+}
+
+void ShellIntegration::prepareProcess(Utils::Process &process)
 {
     Environment env = process.environment().hasChanges() ? process.environment()
                                                          : Environment::systemEnvironment();
@@ -105,6 +135,7 @@ void ShellIntegration::prepareProcess(Utils::QtcProcess &process)
         return;
 
     env.set("VSCODE_INJECTION", "1");
+    env.set("TERM_PROGRAM", "vscode");
 
     if (cmd.executable().baseName() == "bash") {
         const FilePath rcPath = filesToCopy.bash.rcFile;
@@ -112,7 +143,12 @@ void ShellIntegration::prepareProcess(Utils::QtcProcess &process)
             m_tempDir.filePath(filesToCopy.bash.rcFile.fileName()));
         rcPath.copyFile(tmpRc);
 
-        cmd.addArgs({"--init-file", tmpRc.nativePath()});
+        CommandLine newCmd = {cmd.executable(), {"--init-file", tmpRc.nativePath()}};
+
+        if (cmd.arguments() == "-l")
+            env.set("VSCODE_SHELL_LOGIN", "1");
+
+        cmd = newCmd;
     } else if (cmd.executable().baseName() == "zsh") {
         for (const FileToCopy &file : filesToCopy.zsh.files) {
             const auto copyResult = file.source.copyFile(
@@ -134,10 +170,23 @@ void ShellIntegration::prepareProcess(Utils::QtcProcess &process)
 
         cmd.addArgs(QString("-noexit -command try { . \"%1\" } catch {}{1}").arg(tmpRc.nativePath()),
                     CommandLine::Raw);
+    } else if (cmd.executable().baseName() == "cmd") {
+        const FilePath rcPath = filesToCopy.clink.script;
+        const FilePath tmpRc = FilePath::fromUserInput(
+            m_tempDir.filePath(filesToCopy.clink.script.fileName()));
+        rcPath.copyFile(tmpRc);
+
+        env.set("CLINK_HISTORY_LABEL", "QtCreator");
+        env.appendOrSet("CLINK_PATH", tmpRc.parentDir().nativePath(), ";");
     }
 
     process.setCommand(cmd);
     process.setEnvironment(env);
+}
+
+void ShellIntegration::onSetClipboard(const QByteArray &text)
+{
+    setClipboardAndSelection(QString::fromLocal8Bit(text));
 }
 
 } // namespace Terminal

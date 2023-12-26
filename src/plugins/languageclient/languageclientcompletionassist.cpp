@@ -225,13 +225,6 @@ public:
     bool supportsPrefixExpansion() const override { return false; }
 
     QList<AssistProposalItemInterface *> items() const { return m_currentItems; }
-
-    bool isComplete(const QString prefix)
-    { return m_completePrefix && prefix.startsWith(*m_completePrefix); }
-    void setCompletePrefix(const QString &completePrefix) { m_completePrefix = completePrefix; }
-
-private:
-    std::optional<QString> m_completePrefix;
 };
 
 bool LanguageClientCompletionModel::isSortable(const QString &) const
@@ -278,17 +271,15 @@ public:
         }
     }
 
-    bool isComplete(const AssistInterface *interface)
-    {
-        const QString prefix = interface->textAt(basePosition(),
-                                                 interface->position() - basePosition());
-        return static_cast<LanguageClientCompletionModel *>(model().data())->isComplete(prefix);
-    }
-
     void setProposal(IAssistProposal *proposal, const QString &prefix)
     {
-        if (!proposal)
+        if (!proposal) {
+            // Close the proposal if we have no running processor otherwise ignore the empty
+            // proposal and wait for the processor to finish
+            if (!m_processor || !m_processor->running())
+                closeProposal();
             return;
+        }
         if (proposal->id() != TextEditor::Constants::GENERIC_PROPOSAL_ID) {
             // We received something else than a generic proposal so we cannot update the model
             closeProposal();
@@ -301,17 +292,18 @@ public:
     void updateProposal(std::unique_ptr<AssistInterface> &&interface) override
     {
         deleteCurrentProcessor();
-        if (!m_provider || isComplete(interface.get())) {
+        if (!m_provider) {
             GenericProposalWidget::updateProposal(std::move(interface));
             return;
         }
-        auto processor = m_provider->createProcessor(interface.get());
-        QTC_ASSERT(processor, return);
+        m_processor = m_provider->createProcessor(interface.get());
+        QTC_ASSERT(m_processor, return);
 
         const QString prefix = interface->textAt(m_basePosition,
                                                  interface->position() - m_basePosition);
 
-        processor->setAsyncCompletionAvailableHandler([this, processor, prefix](IAssistProposal *proposal) {
+        m_processor->setAsyncCompletionAvailableHandler([this, processor = m_processor, prefix](
+                                                            IAssistProposal *proposal) {
             QTC_ASSERT(processor == m_processor, return);
             if (!processor->running()) {
                 // do not delete this processor directly since this function is called from within the processor
@@ -324,11 +316,11 @@ public:
             setProposal(proposal, prefix);
         });
 
-        setProposal(processor->start(std::move(interface)), prefix);
-        if (processor->running())
-            m_processor = processor;
-        else
-            delete processor;
+        setProposal(m_processor->start(std::move(interface)), prefix);
+        if (m_processor && !m_processor->running()) {
+            delete m_processor;
+            m_processor = nullptr;
+        }
     }
 
 private:
@@ -447,7 +439,6 @@ IAssistProposal *LanguageClientCompletionAssistProcessor::perform()
     if (!Utils::Text::convertPosition(interface()->textDocument(), m_pos, &line, &column))
         return nullptr;
     --line; // line is 0 based in the protocol
-    --column; // column is 0 based in the protocol
     params.setPosition({line, column});
     params.setContext(context);
     params.setTextDocument(
@@ -508,12 +499,9 @@ void LanguageClientCompletionAssistProcessor::handleCompletionResponse(
                                                m_pos - m_basePos);
 
     QList<CompletionItem> items;
-    bool isComplete = true;
     if (std::holds_alternative<CompletionList>(*result)) {
         const auto &list = std::get<CompletionList>(*result);
         items = list.items().value_or(QList<CompletionItem>());
-        if (list.isIncomplete())
-            isComplete = false;
     } else if (std::holds_alternative<QList<CompletionItem>>(*result)) {
         items = std::get<QList<CompletionItem>>(*result);
     }
@@ -526,8 +514,6 @@ void LanguageClientCompletionAssistProcessor::handleCompletionResponse(
     }
     auto model = new LanguageClientCompletionModel();
     model->loadContent(proposalItems);
-    if (isComplete)
-        model->setCompletePrefix(prefix);
     LanguageClientCompletionProposal *proposal = new LanguageClientCompletionProposal(m_provider,
                                                                                       m_basePos,
                                                                                       model);

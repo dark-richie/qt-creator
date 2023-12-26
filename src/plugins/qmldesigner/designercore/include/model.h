@@ -6,11 +6,17 @@
 #include <qmldesignercorelib_global.h>
 
 #include <documentmessage.h>
+#include <model/modelresourcemanagementinterface.h>
+#include <module.h>
 #include <projectstorage/projectstoragefwd.h>
+#include <projectstorage/projectstorageinfotypes.h>
+#include <projectstorage/projectstorageobserver.h>
+#include <projectstorageids.h>
 
 #include <QMimeData>
 #include <QObject>
 #include <QPair>
+#include <QVarLengthArray>
 
 #include <import.h>
 
@@ -33,93 +39,177 @@ class AbstractView;
 class NodeStateChangeSet;
 class MetaInfo;
 class NodeMetaInfo;
+class NodeMetaInfoPrivate;
 class ModelState;
 class NodeAnchors;
 class AbstractProperty;
 class RewriterView;
 class NodeInstanceView;
 class TextModifier;
+class ItemLibraryEntry;
 
-using PropertyListType = QList<QPair<PropertyName, QVariant> >;
+using PropertyListType = QList<QPair<PropertyName, QVariant>>;
+
+enum class BypassModelResourceManagement { No, Yes };
 
 class QMLDESIGNERCORE_EXPORT Model : public QObject
 {
     friend ModelNode;
+    friend NodeMetaInfo;
+    friend NodeMetaInfoPrivate;
     friend AbstractProperty;
     friend AbstractView;
     friend Internal::ModelPrivate;
     friend Internal::WriteLocker;
     friend ModelDeleter;
-    friend class NodeMetaInfoPrivate;
 
     Q_OBJECT
 
 public:
     enum ViewNotification { NotifyView, DoNotNotifyView };
 
-    Model(ProjectStorage<Sqlite::Database> &projectStorage,
+    Model(ProjectStorageDependencies projectStorageDependencies,
           const TypeName &type,
           int major = 1,
           int minor = 1,
-          Model *metaInfoProxyModel = nullptr);
-    Model(const TypeName &typeName, int major = 1, int minor = 1, Model *metaInfoProxyModel = nullptr);
+          Model *metaInfoProxyModel = nullptr,
+          std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {});
+    Model(ProjectStorageDependencies projectStorageDependencies,
+          Utils::SmallStringView typeName,
+          Imports imports,
+          const QUrl &fileUrl,
+          std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {});
+    Model(const TypeName &typeName,
+          int major = 1,
+          int minor = 1,
+          Model *metaInfoProxyModel = nullptr,
+          std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {});
 
     ~Model();
 
     static ModelPointer create(const TypeName &typeName,
                                int major = 1,
                                int minor = 1,
-                               Model *metaInfoProxyModel = nullptr)
+                               Model *metaInfoProxyModel = nullptr,
+                               std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {})
     {
-        return ModelPointer(new Model(typeName, major, minor, metaInfoProxyModel));
+        return ModelPointer(
+            new Model(typeName, major, minor, metaInfoProxyModel, std::move(resourceManagement)));
+    }
+
+    static ModelPointer create(
+        ProjectStorageDependencies projectStorageDependencies,
+        Utils::SmallStringView typeName,
+        Imports imports,
+        const QUrl &fileUrl,
+        std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {})
+    {
+        return ModelPointer(new Model(projectStorageDependencies,
+                                      typeName,
+                                      imports,
+                                      fileUrl,
+                                      std::move(resourceManagement)));
+    }
+    static ModelPointer create(ProjectStorageDependencies m_projectStorageDependencies,
+                               const TypeName &typeName,
+                               int major = 1,
+                               int minor = 1,
+                               std::unique_ptr<ModelResourceManagementInterface> resourceManagement = {})
+    {
+        return ModelPointer(new Model(m_projectStorageDependencies,
+                                      typeName,
+                                      major,
+                                      minor,
+                                      nullptr,
+                                      std::move(resourceManagement)));
     }
 
     QUrl fileUrl() const;
+    SourceId fileUrlSourceId() const;
     void setFileUrl(const QUrl &url);
 
+#ifndef QDS_USE_PROJECTSTORAGE
     const MetaInfo metaInfo() const;
     MetaInfo metaInfo();
-    NodeMetaInfo metaInfo(const TypeName &typeName, int majorVersion = -1, int minorVersion = -1) const;
-    bool hasNodeMetaInfo(const TypeName &typeName, int majorVersion = -1, int minorVersion = -1) const;
     void setMetaInfo(const MetaInfo &metaInfo);
+#endif
 
+    Module module(Utils::SmallStringView moduleName);
+    NodeMetaInfo metaInfo(const TypeName &typeName, int majorVersion = -1, int minorVersion = -1) const;
+    NodeMetaInfo metaInfo(Module module,
+                          Utils::SmallStringView typeName,
+                          Storage::Version version = Storage::Version{}) const;
+    bool hasNodeMetaInfo(const TypeName &typeName, int majorVersion = -1, int minorVersion = -1) const;
+
+    NodeMetaInfo boolMetaInfo() const;
+    NodeMetaInfo doubleMetaInfo() const;
+    NodeMetaInfo flowViewFlowActionAreaMetaInfo() const;
     NodeMetaInfo flowViewFlowDecisionMetaInfo() const;
+    NodeMetaInfo flowViewFlowItemMetaInfo() const;
     NodeMetaInfo flowViewFlowTransitionMetaInfo() const;
     NodeMetaInfo flowViewFlowWildcardMetaInfo() const;
     NodeMetaInfo fontMetaInfo() const;
+    NodeMetaInfo qmlQtObjectMetaInfo() const;
+    NodeMetaInfo qtQmlModelsListModelMetaInfo() const;
+    NodeMetaInfo qtQmlModelsListElementMetaInfo() const;
+    NodeMetaInfo qtQuick3DBakedLightmapMetaInfo() const;
     NodeMetaInfo qtQuick3DDefaultMaterialMetaInfo() const;
+    NodeMetaInfo qtQuick3DDirectionalLightMetaInfo() const;
     NodeMetaInfo qtQuick3DMaterialMetaInfo() const;
     NodeMetaInfo qtQuick3DModelMetaInfo() const;
     NodeMetaInfo qtQuick3DNodeMetaInfo() const;
+    NodeMetaInfo qtQuick3DOrthographicCameraMetaInfo() const;
+    NodeMetaInfo qtQuick3DPerspectiveCameraMetaInfo() const;
+    NodeMetaInfo qtQuick3DPointLightMetaInfo() const;
     NodeMetaInfo qtQuick3DPrincipledMaterialMetaInfo() const;
+    NodeMetaInfo qtQuick3DSpotLightMetaInfo() const;
     NodeMetaInfo qtQuick3DTextureMetaInfo() const;
     NodeMetaInfo qtQuickConnectionsMetaInfo() const;
     NodeMetaInfo qtQuickControlsTextAreaMetaInfo() const;
     NodeMetaInfo qtQuickImageMetaInfo() const;
     NodeMetaInfo qtQuickItemMetaInfo() const;
     NodeMetaInfo qtQuickPropertyAnimationMetaInfo() const;
+    NodeMetaInfo qtQuickPropertyChangesMetaInfo() const;
     NodeMetaInfo qtQuickRectangleMetaInfo() const;
     NodeMetaInfo qtQuickStateGroupMetaInfo() const;
     NodeMetaInfo qtQuickTextEditMetaInfo() const;
     NodeMetaInfo qtQuickTextMetaInfo() const;
     NodeMetaInfo qtQuickTimelineKeyframeGroupMetaInfo() const;
     NodeMetaInfo qtQuickTimelineTimelineMetaInfo() const;
+    NodeMetaInfo qtQuickTransistionMetaInfo() const;
     NodeMetaInfo vector2dMetaInfo() const;
     NodeMetaInfo vector3dMetaInfo() const;
     NodeMetaInfo vector4dMetaInfo() const;
+    QVarLengthArray<NodeMetaInfo, 256> metaInfosForModule(Module module) const;
+
+    QList<ItemLibraryEntry> itemLibraryEntries() const;
 
     void attachView(AbstractView *view);
     void detachView(AbstractView *view, ViewNotification emitDetachNotify = NotifyView);
 
+    QList<ModelNode> allModelNodesUnordered();
+    ModelNode rootModelNode();
+
+    ModelNode modelNodeForId(const QString &id);
+    QHash<QStringView, ModelNode> idModelNodeDict();
+
+    ModelNode createModelNode(const TypeName &typeName);
+    void changeRootNodeType(const TypeName &type);
+
+    void removeModelNodes(ModelNodes nodes,
+                          BypassModelResourceManagement = BypassModelResourceManagement::No);
+    void removeProperties(AbstractProperties properties,
+                          BypassModelResourceManagement = BypassModelResourceManagement::No);
+
     // Editing sub-components:
 
     // Imports:
-    const QList<Import> &imports() const;
-    const QList<Import> &possibleImports() const;
-    const QList<Import> &usedImports() const;
-    void changeImports(const QList<Import> &importsToBeAdded, const QList<Import> &importsToBeRemoved);
-    void setPossibleImports(const QList<Import> &possibleImports);
-    void setUsedImports(const QList<Import> &usedImports);
+    const Imports &imports() const;
+    const Imports &possibleImports() const;
+    const Imports &usedImports() const;
+    void changeImports(Imports importsToBeAdded, Imports importsToBeRemoved);
+    void setPossibleImports(Imports possibleImports);
+    void setUsedImports(Imports usedImports);
     bool hasImport(const Import &import, bool ignoreAlias = true, bool allowHigherVersion = false) const;
     bool isImportPossible(const Import &import, bool ignoreAlias = true, bool allowHigherVersion = false) const;
     QString pathForImport(const Import &import);
@@ -134,8 +224,6 @@ public:
 
     Model *metaInfoProxyModel() const;
 
-    TextModifier *textModifier() const;
-    void setTextModifier(TextModifier *textModifier);
     void setDocumentMessages(const QList<DocumentMessage> &errors,
                              const QList<DocumentMessage> &warnings);
 
@@ -157,7 +245,9 @@ public:
     void startDrag(QMimeData *mimeData, const QPixmap &icon);
     void endDrag();
 
-    NotNullPointer<const ProjectStorage<Sqlite::Database>> projectStorage() const;
+    NotNullPointer<const ProjectStorageType> projectStorage() const;
+    const PathCacheType &pathCache() const;
+    PathCacheType &pathCache();
 
 private:
     template<const auto &moduleName, const auto &typeName>
@@ -168,4 +258,4 @@ private:
     std::unique_ptr<Internal::ModelPrivate> d;
 };
 
-}
+} // namespace QmlDesigner

@@ -3,11 +3,7 @@
 
 #include "perfdatareader.h"
 #include "perfprofilerconstants.h"
-#include "perfprofilerplugin.h"
 #include "perfprofilertr.h"
-#include "perfrunconfigurationaspect.h"
-#include "perfsettings.h"
-#include "perftimelinemodel.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
@@ -15,16 +11,16 @@
 #include <coreplugin/progressmanager/progressmanager.h>
 
 #include <projectexplorer/buildconfiguration.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/runcontrol.h>
 #include <projectexplorer/projectmanager.h>
+#include <projectexplorer/runcontrol.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
 #include <utils/environment.h>
 #include <utils/qtcassert.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <QDateTime>
 #include <QDebug>
@@ -68,7 +64,7 @@ PerfDataReader::PerfDataReader(QObject *parent) :
     });
 
     connect(&m_input, &QIODevice::bytesWritten, this, &PerfDataReader::writeChunk);
-    connect(&m_input, &QProcess::started, this, [this]() {
+    connect(&m_input, &QProcess::started, this, [this] {
         emit processStarted();
         if (m_input.isWritable()) {
             writeChunk();
@@ -113,7 +109,7 @@ PerfDataReader::PerfDataReader(QObject *parent) :
     });
 
     connect(&m_input, &QProcess::readyReadStandardOutput, this, &PerfDataReader::readFromDevice);
-    connect(&m_input, &QProcess::readyReadStandardError, this, [this]() {
+    connect(&m_input, &QProcess::readyReadStandardError, this, [this] {
         Core::MessageManager::writeSilently(QString::fromLocal8Bit(m_input.readAllStandardError()));
     });
 
@@ -292,7 +288,7 @@ void PerfDataReader::collectArguments(CommandLine *cmd, const QString &exe, cons
                      .arg(cmd->executable().osType() == OsTypeWindows ? u';' : u':'));
     }
 
-    if (auto toolChain = ToolChainKitAspect::cxxToolChain(kit)) {
+    if (auto toolChain = ToolchainKitAspect::cxxToolchain(kit)) {
         Abi::Architecture architecture = toolChain->targetAbi().architecture();
         if (architecture == Abi::ArmArchitecture && toolChain->targetAbi().wordWidth() == 64) {
             cmd->addArg("--arch");

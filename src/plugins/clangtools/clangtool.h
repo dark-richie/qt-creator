@@ -9,36 +9,20 @@
 
 #include <debugger/debuggermainwindow.h>
 
-#include <projectexplorer/runconfiguration.h>
-#include <cppeditor/projectinfo.h>
-
 #include <variant>
 
 QT_BEGIN_NAMESPACE
-class QFrame;
 class QToolButton;
 QT_END_NAMESPACE
 
-namespace CppEditor {
-class ClangDiagnosticConfig;
-}
-namespace Debugger {
-class DetailedErrorView;
-}
-namespace ProjectExplorer {
-class RunControl;
-}
-namespace Utils {
-class FilePath;
-class FancyLineEdit;
-} // namespace Utils
+namespace CppEditor { class ClangDiagnosticConfig; }
+namespace ProjectExplorer { class RunControl; }
+namespace Tasking { class Group; }
+namespace Utils { class FilePath; }
 
-namespace ClangTools {
-namespace Internal {
+namespace ClangTools::Internal {
 
 class InfoBarWidget;
-class ClangToolsDiagnosticModel;
-class ClangToolRunWorker;
 class Diagnostic;
 class DiagnosticFilterModel;
 class DiagnosticView;
@@ -61,13 +45,8 @@ public:
     using FileSelection = std::variant<FileSelectionType, Utils::FilePath>;
 
     void startTool(FileSelection fileSelection);
-    void startTool(FileSelection fileSelection,
-                   const RunSettings &runSettings,
+    void startTool(FileSelection fileSelection, const RunSettings &runSettings,
                    const CppEditor::ClangDiagnosticConfig &diagnosticConfig);
-
-    Diagnostics read(const Utils::FilePath &logFilePath,
-                     const QSet<Utils::FilePath> &projectFiles,
-                     QString *errorMessage) const;
 
     FileInfos collectFileInfos(ProjectExplorer::Project *project,
                                FileSelection fileSelection);
@@ -86,9 +65,13 @@ signals:
     void finished(const QString &errorText); // For testing.
 
 protected:
-    ClangTool(const QString &name, Utils::Id id);
+    ClangTool(const QString &name, Utils::Id id, CppEditor::ClangToolType type);
 
 private:
+    Tasking::Group runRecipe(const RunSettings &runSettings,
+                             const CppEditor::ClangDiagnosticConfig &diagnosticConfig,
+                             const FileInfos &fileInfos, bool buildBeforeAnalysis);
+
     enum class State {
         Initial,
         PreparationStarted,
@@ -111,11 +94,6 @@ private:
     void filterOutCurrentKind();
     void setFilterOptions(const OptionalFilterOptions &filterOptions);
 
-    void onBuildFailed();
-    void onStartFailed();
-    void onStarted();
-    void onRunControlStopped();
-
     void initDiagnosticView();
     void loadDiagnosticsFromFiles();
 
@@ -130,7 +108,6 @@ private:
     const QString m_name;
     ClangToolsDiagnosticModel *m_diagnosticModel = nullptr;
     ProjectExplorer::RunControl *m_runControl = nullptr;
-    ClangToolRunWorker *m_runWorker = nullptr;
 
     InfoBarWidget *m_infoBarWidget = nullptr;
     DiagnosticView *m_diagnosticView = nullptr;;
@@ -158,6 +135,7 @@ private:
     QAction *m_expandCollapse = nullptr;
 
     Utils::Perspective m_perspective;
+    const CppEditor::ClangToolType m_type;
 };
 
 class ClangTidyTool : public ClangTool
@@ -180,5 +158,4 @@ private:
     static inline ClangTool *m_instance = nullptr;
 };
 
-} // namespace Internal
-} // namespace ClangTools
+} // namespace ClangTools::Internal

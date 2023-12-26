@@ -13,7 +13,7 @@
 #include <auxiliarydataproperties.h>
 #include <bindingproperty.h>
 #include <dynamicpropertiesmodel.h>
-#include <metainfo.h>
+#include <externaldependenciesinterface.h>
 #include <nodeinstanceview.h>
 #include <nodelistproperty.h>
 #include <nodemetainfo.h>
@@ -57,7 +57,7 @@ TextureEditorView::TextureEditorView(AsynchronousImageCache &imageCache,
     , m_stackedWidget(new QStackedWidget)
     , m_dynamicPropertiesModel(new DynamicPropertiesModel(true, this))
 {
-    m_updateShortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_F12), m_stackedWidget);
+    m_updateShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F12), m_stackedWidget);
     connect(m_updateShortcut, &QShortcut::activated, this, &TextureEditorView::reloadQml);
 
     m_ensureMatLibTimer.callOnTimeout([this] {
@@ -141,7 +141,7 @@ void TextureEditorView::changeValue(const QString &name)
     if (name == "state" && castedValue.toString() == "base state")
         castedValue = "";
 
-    if (castedValue.type() == QVariant::Color) {
+    if (castedValue.typeId() == QVariant::Color) {
         QColor color = castedValue.value<QColor>();
         QColor newColor = QColor(color.name());
         newColor.setAlpha(color.alpha());
@@ -153,9 +153,9 @@ void TextureEditorView::changeValue(const QString &name)
     } else {
         // QVector*D(0, 0, 0) detects as null variant though it is valid value
         if (castedValue.isValid()
-            && (!castedValue.isNull() || castedValue.type() == QVariant::Vector2D
-                || castedValue.type() == QVariant::Vector3D
-                || castedValue.type() == QVariant::Vector4D)) {
+            && (!castedValue.isNull() || castedValue.typeId() == QVariant::Vector2D
+                || castedValue.typeId() == QVariant::Vector3D
+                || castedValue.typeId() == QVariant::Vector4D)) {
             commitVariantValueToModel(propertyName, castedValue);
         }
     }
@@ -187,13 +187,13 @@ void TextureEditorView::changeExpression(const QString &propertyName)
         }
 
         if (auto property = m_selectedTexture.metaInfo().property(name)) {
-            auto propertyTypeName = property.propertyType().typeName();
-            if (propertyTypeName == "QColor") {
+            auto propertyType = property.propertyType();
+            if (propertyType.isColor()) {
                 if (QColor(value->expression().remove('"')).isValid()) {
                     qmlObjectNode.setVariantProperty(name, QColor(value->expression().remove('"')));
                     return;
                 }
-            } else if (propertyTypeName == "bool") {
+            } else if (propertyType.isBool()) {
                 if (isTrueFalseLiteral(value->expression())) {
                     if (value->expression().compare("true", Qt::CaseInsensitive) == 0)
                         qmlObjectNode.setVariantProperty(name, true);
@@ -201,21 +201,21 @@ void TextureEditorView::changeExpression(const QString &propertyName)
                         qmlObjectNode.setVariantProperty(name, false);
                     return;
                 }
-            } else if (propertyTypeName == "int") {
+            } else if (propertyType.isInteger()) {
                 bool ok;
                 int intValue = value->expression().toInt(&ok);
                 if (ok) {
                     qmlObjectNode.setVariantProperty(name, intValue);
                     return;
                 }
-            } else if (propertyTypeName == "qreal") {
+            } else if (propertyType.isFloat()) {
                 bool ok;
                 qreal realValue = value->expression().toDouble(&ok);
                 if (ok) {
                     qmlObjectNode.setVariantProperty(name, realValue);
                     return;
                 }
-            } else if (propertyTypeName == "QVariant") {
+            } else if (propertyType.isVariant()) {
                 bool ok;
                 qreal realValue = value->expression().toDouble(&ok);
                 if (ok) {
@@ -389,8 +389,11 @@ void TextureEditorView::handleToolBarAction(int action)
     }
 
     case TextureEditorContextObject::DeleteCurrentTexture: {
-        if (m_selectedTexture.isValid())
-            m_selectedTexture.destroy();
+        if (m_selectedTexture.isValid()) {
+            executeInTransaction(__FUNCTION__, [&] {
+                m_selectedTexture.destroy();
+            });
+        }
         break;
     }
 
@@ -413,7 +416,7 @@ void TextureEditorView::setupQmlBackend()
         TypeName diffClassName;
         if (NodeMetaInfo metaInfo = m_selectedTexture.metaInfo()) {
             diffClassName = metaInfo.typeName();
-            for (const NodeMetaInfo &metaInfo : metaInfo.classHierarchy()) {
+            for (const NodeMetaInfo &metaInfo : metaInfo.selfAndPrototypes()) {
                 if (PropertyEditorQmlBackend::checkIfUrlExists(qmlSpecificsUrl))
                     break;
                 qmlSpecificsUrl = PropertyEditorQmlBackend::getQmlFileUrl(metaInfo.typeName()
@@ -458,6 +461,7 @@ void TextureEditorView::setupQmlBackend()
     currentQmlBackend->contextObject()->setSpecificQmlData(specificQmlData);
     bool hasValidSelection = QmlObjectNode(m_selectedModel).hasBindingProperty("materials");
     currentQmlBackend->contextObject()->setHasSingleModelSelection(hasValidSelection);
+    currentQmlBackend->contextObject()->setIsQt6Project(externalDependencies().isQt6Project());
 
     m_qmlBackEnd = currentQmlBackend;
 
@@ -585,7 +589,7 @@ void TextureEditorView::variantPropertiesChanged(const QList<VariantProperty> &p
         ModelNode node(property.parentModelNode());
         if (node == m_selectedTexture || QmlObjectNode(m_selectedTexture).propertyChangeForCurrentState() == node) {
             if (property.isDynamic())
-                m_dynamicPropertiesModel->variantPropertyChanged(property);
+                m_dynamicPropertiesModel->updateItem(property);
             if (m_selectedTexture.property(property.name()).isBindingProperty())
                 setValue(m_selectedTexture, property.name(), QmlObjectNode(m_selectedTexture).instanceValue(property.name()));
             else
@@ -609,7 +613,7 @@ void TextureEditorView::bindingPropertiesChanged(const QList<BindingProperty> &p
 
         if (node == m_selectedTexture || QmlObjectNode(m_selectedTexture).propertyChangeForCurrentState() == node) {
             if (property.isDynamic())
-                m_dynamicPropertiesModel->bindingPropertyChanged(property);
+                m_dynamicPropertiesModel->updateItem(property);
             if (QmlObjectNode(m_selectedTexture).modelNode().property(property.name()).isBindingProperty())
                 setValue(m_selectedTexture, property.name(), QmlObjectNode(m_selectedTexture).instanceValue(property.name()));
             else
@@ -639,12 +643,8 @@ void TextureEditorView::auxiliaryDataChanged(const ModelNode &node,
 
 void TextureEditorView::propertiesAboutToBeRemoved(const QList<AbstractProperty> &propertyList)
 {
-    for (const auto &property : propertyList) {
-        if (property.isBindingProperty())
-            m_dynamicPropertiesModel->bindingRemoved(property.toBindingProperty());
-        else if (property.isVariantProperty())
-            m_dynamicPropertiesModel->variantRemoved(property.toVariantProperty());
-    }
+    for (const auto &property : propertyList)
+        m_dynamicPropertiesModel->removeItem(property);
 }
 
 void TextureEditorView::nodeReparented(const ModelNode &node,
@@ -720,8 +720,8 @@ void TextureEditorView::instancePropertyChanged(const QList<QPair<ModelNode, Pro
     m_locked = false;
 }
 
-void TextureEditorView::importsChanged([[maybe_unused]] const QList<Import> &addedImports,
-                                       [[maybe_unused]] const QList<Import> &removedImports)
+void TextureEditorView::importsChanged([[maybe_unused]] const Imports &addedImports,
+                                       [[maybe_unused]] const Imports &removedImports)
 {
     m_hasQuick3DImport = model()->hasImport("QtQuick3D");
     m_qmlBackEnd->contextObject()->setHasQuick3DImport(m_hasQuick3DImport);

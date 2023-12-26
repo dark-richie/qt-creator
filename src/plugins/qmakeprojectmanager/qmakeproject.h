@@ -20,8 +20,11 @@ class QMakeGlobals;
 class QMakeVfs;
 QT_END_NAMESPACE
 
-namespace CppEditor { class CppProjectUpdater; }
-namespace ProjectExplorer { class DeploymentData; }
+namespace ProjectExplorer {
+class DeploymentData;
+class ProjectUpdater;
+} // ProjectExplorer
+
 namespace QtSupport { class ProFileReader; }
 
 namespace QmakeProjectManager {
@@ -45,7 +48,7 @@ public:
     ProjectExplorer::ProjectImporter *projectImporter() const final;
 
 protected:
-    RestoreResult fromMap(const QVariantMap &map, QString *errorMessage) final;
+    RestoreResult fromMap(const Utils::Store &map, QString *errorMessage) final;
 
 private:
     ProjectExplorer::DeploymentKnowledge deploymentKnowledge() const override;
@@ -112,7 +115,7 @@ public:
     void startAsyncTimer(QmakeProFile::AsyncUpdateDelay delay);
 
     void warnOnToolChainMismatch(const QmakeProFile *pro) const;
-    void testToolChain(ProjectExplorer::ToolChain *tc, const Utils::FilePath &path) const;
+    void testToolChain(ProjectExplorer::Toolchain *tc, const Utils::FilePath &path) const;
 
     QString deviceRoot() const;
 
@@ -193,7 +196,7 @@ private:
     bool m_cancelEvaluate = false;
     QList<QmakeProFile *> m_partialEvaluate;
 
-    CppEditor::CppProjectUpdater *m_cppCodeModelUpdater = nullptr;
+    ProjectExplorer::ProjectUpdater *m_cppCodeModelUpdater = nullptr;
 
     Internal::CentralizedFolderWatcher *m_centralizedFolderWatcher = nullptr;
 

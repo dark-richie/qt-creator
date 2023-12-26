@@ -1,37 +1,31 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "scxmleditorplugin.h"
+#include "scxmleditor.h"
 
-#include "scxmleditorfactory.h"
+#include <extensionsystem/iplugin.h>
 
 #include <coreplugin/designmode.h>
 
-using namespace Core;
+namespace ScxmlEditor::Internal {
 
-namespace ScxmlEditor {
-namespace Internal {
-
-class ScxmlEditorPluginPrivate
+class ScxmlEditorPlugin final : public ExtensionSystem::IPlugin
 {
-public:
-    ScxmlEditorFactory editorFactory;
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "ScxmlEditor.json")
+
+private:
+    void initialize() final
+    {
+        setupScxmlEditor(this);
+    }
+
+    void extensionsInitialized() final
+    {
+        Core::DesignMode::setDesignModeIsRequired();
+    }
 };
 
-ScxmlEditorPlugin::~ScxmlEditorPlugin()
-{
-    delete d;
-}
+} // ScxmlEditor::Internal
 
-void ScxmlEditorPlugin::initialize()
-{
-    d = new ScxmlEditorPluginPrivate;
-}
-
-void ScxmlEditorPlugin::extensionsInitialized()
-{
-    DesignMode::setDesignModeIsRequired();
-}
-
-} // Internal
-} // ScxmlEditor
+#include "scxmleditorplugin.moc"

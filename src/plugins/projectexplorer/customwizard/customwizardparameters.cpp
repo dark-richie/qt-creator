@@ -7,10 +7,10 @@
 #include "../projectexplorertr.h"
 
 #include <coreplugin/icore.h>
-#include <cppeditor/cppeditorconstants.h>
 
 #include <utils/macroexpander.h>
 #include <utils/mimeutils.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 #include <utils/templateengine.h>
@@ -199,13 +199,13 @@ static inline QIcon wizardIcon(const QString &configFileFullPath,
     if (fi.isFile() && fi.isAbsolute())
         return QIcon(fi.absoluteFilePath());
     if (!fi.isRelative())
-        return QIcon();
+        return {};
     // Expand by config path
     const QFileInfo absFi(QFileInfo(configFileFullPath).absolutePath() +
                           QLatin1Char('/') + xmlIconFileName);
     if (absFi.isFile())
         return QIcon(absFi.absoluteFilePath());
-    return QIcon();
+    return {};
 }
 
 // Forward a reader over element text
@@ -885,10 +885,10 @@ void CustomWizardContext::reset()
     const QTime currentTime = QTime::currentTime();
     baseReplacements.clear();
     baseReplacements.insert(QLatin1String("CppSourceSuffix"),
-                            Utils::mimeTypeForName(QLatin1String(CppEditor::Constants::CPP_SOURCE_MIMETYPE))
+                            Utils::mimeTypeForName(QLatin1String(Utils::Constants::CPP_SOURCE_MIMETYPE))
                             .preferredSuffix());
     baseReplacements.insert(QLatin1String("CppHeaderSuffix"),
-                            Utils::mimeTypeForName(QLatin1String(CppEditor::Constants::CPP_HEADER_MIMETYPE))
+                            Utils::mimeTypeForName(QLatin1String(Utils::Constants::CPP_HEADER_MIMETYPE))
                             .preferredSuffix());
     baseReplacements.insert(QLatin1String("CurrentDate"),
                             currentDate.toString(Qt::ISODate));
@@ -929,13 +929,13 @@ QString CustomWizardContext::processFile(const FieldReplacementMap &fm, QString 
     if (!errorMessage.isEmpty()) {
         qWarning("Error processing custom widget file: %s\nFile:\n%s",
                  qPrintable(errorMessage), qPrintable(in));
-        return QString();
+        return {};
     }
 
     if (!Utils::TemplateEngine::preprocessText(in, &out, &errorMessage)) {
         qWarning("Error preprocessing custom widget file: %s\nFile:\n%s",
                  qPrintable(errorMessage), qPrintable(in));
-        return QString();
+        return {};
     }
     return out;
 }

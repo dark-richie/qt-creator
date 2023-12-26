@@ -41,6 +41,7 @@ namespace Utils {
 
 /*!
     \class Utils::ProcessArgs
+    \inmodule QtCreator
 
     \brief The ProcessArgs class provides functionality for dealing with
     shell-quoted process arguments.
@@ -181,7 +182,7 @@ static QStringList doSplitArgsWin(const QString &args, ProcessArgs::SplitError *
                 if (inquote) {
                     if (err)
                         *err = ProcessArgs::BadQuoting;
-                    return QStringList();
+                    return {};
                 }
                 break;
             }
@@ -195,6 +196,7 @@ static QStringList doSplitArgsWin(const QString &args, ProcessArgs::SplitError *
 }
 
 /*!
+    \internal
     Splits \a _args according to system shell word splitting and quoting rules.
 
     \section1 Unix
@@ -217,7 +219,7 @@ static QStringList doSplitArgsWin(const QString &args, ProcessArgs::SplitError *
     If \a err is not NULL, stores a status code at the pointer target. For more
     information, see \l SplitError.
 
-    If \env is not NULL, performs variable substitution with the
+    If \a env is not NULL, performs variable substitution with the
     given environment.
 
     Returns a list of unquoted words or an empty list if an error occurred.
@@ -253,7 +255,6 @@ static QStringList doSplitArgsWin(const QString &args, ProcessArgs::SplitError *
     \c{foo " bar}.
  */
 
-
 static QStringList splitArgsWin(const QString &_args, bool abortOnMeta,
                                 ProcessArgs::SplitError *err,
                                 const Environment *env, const QString *pwd)
@@ -264,7 +265,7 @@ static QStringList splitArgsWin(const QString &_args, bool abortOnMeta,
             err = &perr;
         QString args = prepareArgsWin(_args, &perr, env, pwd).toWindowsArgs();
         if (*err != ProcessArgs::SplitOk)
-            return QStringList();
+            return {};
         return doSplitArgsWin(args, err);
     } else {
         QString args = _args;
@@ -469,12 +470,12 @@ static QStringList splitArgsUnix(const QString &args, bool abortOnMeta,
   quoteerr:
     if (err)
         *err = ProcessArgs::BadQuoting;
-    return QStringList();
+    return {};
 
   metaerr:
     if (err)
         *err = ProcessArgs::FoundMeta;
-    return QStringList();
+    return {};
 }
 
 inline static bool isSpecialCharUnix(ushort c)
@@ -513,6 +514,9 @@ QString ProcessArgs::quoteArgUnix(const QString &arg)
 
     QString ret(arg);
     if (hasSpecialCharsUnix(ret)) {
+        if (arg == "&&" || arg == "||" || arg == "&" || arg == ';')
+            return ret;
+
         ret.replace(QLatin1Char('\''), QLatin1String("'\\''"));
         ret.prepend(QLatin1Char('\''));
         ret.append(QLatin1Char('\''));
@@ -549,6 +553,9 @@ static QString quoteArgWin(const QString &arg)
 
     QString ret(arg);
     if (hasSpecialCharsWin(ret)) {
+        if (arg == "&&" || arg == "||" || arg == "&" || arg == ';')
+            return ret;
+
         // Quotes are escaped and their preceding backslashes are doubled.
         // It's impossible to escape anything inside a quoted string on cmd
         // level, so the outer quoting must be "suspended".
@@ -893,7 +900,7 @@ bool ProcessArgs::expandMacros(QString *cmd, AbstractMacroExpander *mx, OsType o
                                     break;
                                 case CrtClosed:
                                     // Two consecutive quotes make a literal quote - and
-                                    // still close quoting. See QtcProcess::quoteArg().
+                                    // still close quoting. See Process::quoteArg().
                                     crtState = CrtInWord;
                                     break;
                                 case CrtHadQuote:
@@ -1398,6 +1405,7 @@ QString ProcessArgs::toString() const
 
 /*!
     \class Utils::CommandLine
+    \inmodule QtCreator
 
     \brief The CommandLine class represents a command line of a QProcess or
     similar utility.
@@ -1436,16 +1444,15 @@ CommandLine CommandLine::fromUserInput(const QString &cmdline, MacroExpander *ex
 
     QString input = cmdline.trimmed();
 
-    QStringList result = ProcessArgs::splitArgs(cmdline, HostOsInfo::hostOs());
+    if (expander)
+        input = expander->expand(input);
+
+    const QStringList result = ProcessArgs::splitArgs(input, HostOsInfo::hostOs());
 
     if (result.isEmpty())
         return {};
 
-    auto cmd = CommandLine(FilePath::fromUserInput(result.value(0)), result.mid(1));
-    if (expander)
-        cmd.m_arguments = expander->expand(cmd.m_arguments);
-
-    return cmd;
+    return {FilePath::fromUserInput(result.value(0)), result.mid(1)};
 }
 
 void CommandLine::addArg(const QString &arg)

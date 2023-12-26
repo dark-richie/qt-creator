@@ -8,8 +8,6 @@
 #include "valueschangedcommand.h"
 #include "changeselectioncommand.h"
 #include "requestmodelnodepreviewimagecommand.h"
-#include "propertybindingcontainer.h"
-#include "propertyabstractcontainer.h"
 #include "animationdriver.h"
 
 #ifdef QUICK3D_PARTICLES_MODULE
@@ -61,13 +59,14 @@ public:
     void handlePickTarget(const ServerNodeInstance &instance) override;
 
     bool isInformationServer() const override;
-    void handleDynamicAddObject();
+    void handleDynamicAddObject(QObject *object);
 
 private slots:
     void handleSelectionChanged(const QVariant &objs);
     void handleObjectPropertyCommit(const QVariant &objects, const QVariant &propNames);
     void handleObjectPropertyChange(const QVariant &objects, const QVariant &propNames);
     void handleActiveSceneChange();
+    void handleActiveSplitChange(int index);
     void handleToolStateChanged(const QString &sceneId, const QString &tool,
                                 const QVariant &toolState);
     void handleView3DSizeChange();
@@ -125,6 +124,8 @@ private:
     void resolveImportSupport();
     void updateMaterialPreviewData(const QVector<PropertyValueContainer> &valueChanges);
     void updateRotationBlocks(const QVector<PropertyValueContainer> &valueChanges);
+    void updateSnapSettings(const QVector<PropertyValueContainer> &valueChanges);
+    void updateColorSettings(const QVector<PropertyValueContainer> &valueChanges);
     void removeRotationBlocks(const QVector<qint32> &instanceIds);
     void getNodeAtPos(const QPointF &pos);
 
@@ -134,7 +135,10 @@ private:
     void resetParticleSystem();
     void handleParticleSystemDeselected();
 #endif
-    void setSceneEnvironmentColor(const PropertyValueContainer &container);
+    void setSceneEnvironmentData(qint32 instanceId);
+    QVariantList alignCameraList() const;
+    void updateSceneEnvToHelper();
+    bool isSceneEnvironmentBgProperty(const PropertyName &name) const;
 
     RenderViewData m_editView3DData;
     RenderViewData m_modelNode3DImageViewData;
@@ -171,6 +175,9 @@ private:
     QObject *m_3dHelper = nullptr;
     int m_need3DEditViewRender = 0;
     QSet<QObject *> m_dynamicObjectConstructors;
+
+    // Current or previous camera selections for each scene
+    QHash<QObject *, QObjectList> m_selectedCameras; // key: scene root, value: camera node
 
     struct PreviewData {
         QString env;

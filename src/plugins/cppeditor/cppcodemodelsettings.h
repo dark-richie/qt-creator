@@ -7,16 +7,14 @@
 #include "cppeditor_global.h"
 
 #include <utils/clangutils.h>
-#include <utils/fileutils.h>
+#include <utils/filepath.h>
 #include <utils/id.h>
+#include <utils/store.h>
+#include <utils/qtcsettings.h>
 
 #include <QObject>
 #include <QStringList>
 #include <QVersionNumber>
-
-QT_BEGIN_NAMESPACE
-class QSettings;
-QT_END_NAMESPACE
 
 namespace ProjectExplorer { class Project; }
 
@@ -33,8 +31,8 @@ public:
     };
 
 public:
-    void fromSettings(QSettings *s);
-    void toSettings(QSettings *s);
+    void fromSettings(Utils::QtcSettings *s);
+    void toSettings(Utils::QtcSettings *s);
 
 public:
     bool enableLowerClazyLevels() const;
@@ -84,15 +82,20 @@ class CPPEDITOR_EXPORT ClangdSettings : public QObject
     Q_OBJECT
 public:
     enum class IndexingPriority { Off, Background, Normal, Low, };
+    enum class HeaderSourceSwitchMode { BuiltinOnly, ClangdOnly, Both };
+    enum class CompletionRankingModel { Default, DecisionForest, Heuristics };
 
     static QString priorityToString(const IndexingPriority &priority);
     static QString priorityToDisplayString(const IndexingPriority &priority);
+    static QString headerSourceSwitchModeToDisplayString(HeaderSourceSwitchMode mode);
+    static QString rankingModelToCmdLineString(CompletionRankingModel model);
+    static QString rankingModelToDisplayString(CompletionRankingModel model);
 
     class CPPEDITOR_EXPORT Data
     {
     public:
-        QVariantMap toMap() const;
-        void fromMap(const QVariantMap &map);
+        Utils::Store toMap() const;
+        void fromMap(const Utils::Store &map);
 
         friend bool operator==(const Data &s1, const Data &s2)
         {
@@ -103,6 +106,8 @@ public:
                     && s1.diagnosticConfigId == s2.diagnosticConfigId
                     && s1.workerThreadLimit == s2.workerThreadLimit
                     && s1.indexingPriority == s2.indexingPriority
+                    && s1.headerSourceSwitchMode == s2.headerSourceSwitchMode
+                    && s1.completionRankingModel == s2.completionRankingModel
                     && s1.autoIncludeHeaders == s2.autoIncludeHeaders
                     && s1.documentUpdateThreshold == s2.documentUpdateThreshold
                     && s1.sizeThresholdEnabled == s2.sizeThresholdEnabled
@@ -123,6 +128,8 @@ public:
         qint64 sizeThresholdInKb = 1024;
         bool useClangd = true;
         IndexingPriority indexingPriority = IndexingPriority::Low;
+        HeaderSourceSwitchMode headerSourceSwitchMode = HeaderSourceSwitchMode::Both;
+        CompletionRankingModel completionRankingModel = CompletionRankingModel::Default;
         bool autoIncludeHeaders = false;
         bool sizeThresholdEnabled = false;
         bool haveCheckedHardwareReqirements = false;
@@ -143,6 +150,8 @@ public:
     static void setCustomDiagnosticConfigs(const ClangDiagnosticConfigs &configs);
     Utils::FilePath clangdFilePath() const;
     IndexingPriority indexingPriority() const { return m_data.indexingPriority; }
+    HeaderSourceSwitchMode headerSourceSwitchMode() const { return m_data.headerSourceSwitchMode; }
+    CompletionRankingModel completionRankingModel() const { return m_data.completionRankingModel; }
     bool autoIncludeHeaders() const { return m_data.autoIncludeHeaders; }
     int workerThreadLimit() const { return m_data.workerThreadLimit; }
     int documentUpdateThreshold() const { return m_data.documentUpdateThreshold; }

@@ -3,15 +3,19 @@
 
 #include "gitlabparameters.h"
 
+#include <coreplugin/icore.h>
+
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
+#include <utils/qtcsettings.h>
 
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QSettings>
 #include <QStandardPaths>
+
+using namespace Utils;
 
 namespace GitLab {
 
@@ -102,6 +106,13 @@ GitLabParameters::GitLabParameters()
 {
 }
 
+void GitLabParameters::assign(const GitLabParameters &other)
+{
+    curl = other.curl;
+    defaultGitLabServer = other.defaultGitLabServer;
+    gitLabServers = other.gitLabServers;
+}
+
 bool GitLabParameters::equals(const GitLabParameters &other) const
 {
     return curl == other.curl && defaultGitLabServer == other.defaultGitLabServer
@@ -146,13 +157,13 @@ static QList<GitLabServer> readTokensFile(const Utils::FilePath &filePath)
     return result;
 }
 
-static Utils::FilePath tokensFilePath(const QSettings *s)
+static FilePath tokensFilePath(const QtcSettings *s)
 {
-    return Utils::FilePath::fromString(s->fileName()).parentDir()
+    return FilePath::fromString(s->fileName()).parentDir()
             .pathAppended("/qtcreator/gitlabtokens.json");
 }
 
-void GitLabParameters::toSettings(QSettings *s) const
+void GitLabParameters::toSettings(QtcSettings *s) const
 {
 
     writeTokensFile(tokensFilePath(s), gitLabServers);
@@ -162,11 +173,11 @@ void GitLabParameters::toSettings(QSettings *s) const
     s->endGroup();
 }
 
-void GitLabParameters::fromSettings(const QSettings *s)
+void GitLabParameters::fromSettings(const QtcSettings *s)
 {
-    const QString rootKey = QLatin1String(settingsGroupC) + '/';
-    curl = Utils::FilePath::fromSettings(s->value(rootKey + curlKeyC));
-    defaultGitLabServer = Utils::Id::fromSetting(s->value(rootKey + defaultUuidKeyC));
+    const Key rootKey = Key(settingsGroupC) + '/';
+    curl = FilePath::fromSettings(s->value(rootKey + curlKeyC));
+    defaultGitLabServer = Id::fromSetting(s->value(rootKey + defaultUuidKeyC));
 
     gitLabServers = readTokensFile(tokensFilePath(s));
 
@@ -191,6 +202,12 @@ GitLabServer GitLabParameters::serverForId(const Utils::Id &id) const
     return Utils::findOrDefault(gitLabServers, [id](const GitLabServer &s) {
         return id == s.id;
     });
+}
+
+GitLabParameters &gitLabParameters()
+{
+    static GitLabParameters theGitLabParameters;
+    return theGitLabParameters;
 }
 
 } // namespace GitLab

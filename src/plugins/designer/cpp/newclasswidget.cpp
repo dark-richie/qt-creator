@@ -36,7 +36,6 @@ struct NewClassWidgetPrivate {
     QString m_sourceExtension;
     QString m_formExtension;
     bool m_valid = false;
-    bool m_classEdited = false;
 
     ClassNameValidatingLineEdit *m_classLineEdit;
     FileNameValidatingLineEdit *m_headerFileLineEdit;
@@ -66,19 +65,18 @@ NewClassWidget::NewClassWidget(QWidget *parent) :
 
     setNamesDelimiter(QLatin1String("::"));
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
     Form {
         Tr::tr("&Class name:"), d->m_classLineEdit, br,
         Tr::tr("&Header file:"), d->m_headerFileLineEdit, br,
         Tr::tr("&Source file:"), d->m_sourceFileLineEdit, br,
         Tr::tr("&Form file:"), d->m_formFileLineEdit, br,
         Tr::tr("&Path:"), d->m_pathChooser, br,
-    }.attachTo(this, WithoutMargins);
+        noMargin
+    }.attachTo(this);
 
     connect(d->m_classLineEdit, &ClassNameValidatingLineEdit::updateFileName,
             this, &NewClassWidget::slotUpdateFileNames);
-    connect(d->m_classLineEdit, &QLineEdit::textEdited,
-            this, &NewClassWidget::classNameEdited);
     connect(d->m_classLineEdit, &FancyLineEdit::validChanged,
             this, &NewClassWidget::slotValidChanged);
     connect(d->m_headerFileLineEdit, &FancyLineEdit::validChanged,
@@ -107,13 +105,6 @@ NewClassWidget::NewClassWidget(QWidget *parent) :
 NewClassWidget::~NewClassWidget()
 {
     delete d;
-}
-
-void NewClassWidget::classNameEdited()
-{
-    if (debugNewClassWidget)
-        qDebug() << Q_FUNC_INFO << d->m_headerExtension << d->m_sourceExtension;
-    d->m_classEdited = true;
 }
 
 void NewClassWidget::setClassName(const QString &suggestedName)

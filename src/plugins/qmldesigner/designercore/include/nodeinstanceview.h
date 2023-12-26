@@ -34,7 +34,7 @@ class Target;
 }
 
 namespace Utils {
-class QtcProcess;
+class Process;
 }
 
 namespace QmlDesigner {
@@ -67,7 +67,8 @@ public:
     using Pointer = QWeakPointer<NodeInstanceView>;
 
     explicit NodeInstanceView(ConnectionManagerInterface &connectionManager,
-                              ExternalDependenciesInterface &externalDependencies);
+                              ExternalDependenciesInterface &externalDependencies,
+                              bool qsbEnabled = false);
     ~NodeInstanceView() override;
 
     void modelAttached(Model *model) override;
@@ -85,7 +86,7 @@ public:
     void fileUrlChanged(const QUrl &oldUrl, const QUrl &newUrl) override;
     void nodeIdChanged(const ModelNode& node, const QString& newId, const QString& oldId) override;
     void nodeOrderChanged(const NodeListProperty &listProperty) override;
-    void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports) override;
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
     void auxiliaryDataChanged(const ModelNode &node,
                               AuxiliaryDataKeyView key,
                               const QVariant &data) override;
@@ -122,6 +123,7 @@ public:
     QImage statePreviewImage(const ModelNode &stateNode) const;
 
     void setTarget(ProjectExplorer::Target *newTarget);
+    ProjectExplorer::Target *target() const;
 
     void sendToken(const QString &token, int number, const QVector<ModelNode> &nodeVector);
 
@@ -130,7 +132,7 @@ public:
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
 
-    void sendInputEvent(QInputEvent *e) const;
+    void sendInputEvent(QEvent *e) const;
     void view3DAction(View3DActionType type, const QVariant &value) override;
     void requestModelNodePreviewImage(const ModelNode &node, const ModelNode &renderNode) const;
     void edit3DViewResized(const QSize &size) const;
@@ -228,7 +230,7 @@ private: // functions
 
     void updateWatcher(const QString &path);
     void handleShaderChanges();
-    void handleQsbProcessExit(Utils::QtcProcess *qsbProcess, const QString &shader);
+    void handleQsbProcessExit(Utils::Process *qsbProcess, const QString &shader);
     void updateQsbPathToFilterMap();
     void updateRotationBlocks();
     void maybeResetOnPropertyChange(const PropertyName &name, const ModelNode &node,
@@ -288,6 +290,7 @@ private:
     QTimer m_rotBlockTimer;
     QSize m_captureImageMinimumSize{150, 150};
     QSize m_captureImageMaximumSize{1000, 1000};
+    bool m_qsbEnabled = false;
 };
 
 } // namespace ProxyNodeInstanceView

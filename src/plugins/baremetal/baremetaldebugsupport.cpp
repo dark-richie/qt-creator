@@ -10,12 +10,12 @@
 #include "debugserverprovidermanager.h"
 #include "idebugserverprovider.h"
 
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 #include <debugger/debuggerruncontrol.h>
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildsteplist.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfiguration.h>
@@ -24,8 +24,8 @@
 #include <projectexplorer/toolchain.h>
 
 #include <utils/portlist.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 using namespace Debugger;
 using namespace ProjectExplorer;
@@ -36,7 +36,7 @@ namespace BareMetal::Internal {
 class BareMetalDebugSupport final : public Debugger::DebuggerRunTool
 {
 public:
-    explicit BareMetalDebugSupport(ProjectExplorer::RunControl *runControl)
+    explicit BareMetalDebugSupport(RunControl *runControl)
         : Debugger::DebuggerRunTool(runControl)
     {
         const auto dev = qSharedPointerCast<const BareMetalDevice>(device());
@@ -73,13 +73,22 @@ private:
     }
 };
 
-BareMetalDebugSupportFactory::BareMetalDebugSupportFactory()
+class BareMetalDebugSupportFactory final : public RunWorkerFactory
 {
-    setProduct<BareMetalDebugSupport>();
-    addSupportedRunMode(ProjectExplorer::Constants::NORMAL_RUN_MODE);
-    addSupportedRunMode(ProjectExplorer::Constants::DEBUG_RUN_MODE);
-    addSupportedRunConfig(BareMetal::Constants::BAREMETAL_RUNCONFIG_ID);
-    addSupportedRunConfig(BareMetal::Constants::BAREMETAL_CUSTOMRUNCONFIG_ID);
+public:
+    BareMetalDebugSupportFactory()
+    {
+        setProduct<BareMetalDebugSupport>();
+        addSupportedRunMode(ProjectExplorer::Constants::NORMAL_RUN_MODE);
+        addSupportedRunMode(ProjectExplorer::Constants::DEBUG_RUN_MODE);
+        addSupportedRunConfig(BareMetal::Constants::BAREMETAL_RUNCONFIG_ID);
+        addSupportedRunConfig(BareMetal::Constants::BAREMETAL_CUSTOMRUNCONFIG_ID);
+    }
+};
+
+void setupBareMetalDebugSupport()
+{
+    static BareMetalDebugSupportFactory theBareMetalDebugSupportFactory;
 }
 
 } // BareMetal::Internal

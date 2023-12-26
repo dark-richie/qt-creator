@@ -751,12 +751,8 @@ Vil du afinstallere den eksisterende pakke?</translation>
         <translation>Handlingen kræver indgriben fra brugeren. Brug kommandolinjeværktøjet &quot;sdkmanager&quot;.</translation>
     </message>
     <message>
-        <source>License command failed.
-
-</source>
-        <translation>Licens-kommando mislykkedes.
-
-</translation>
+        <source>License command failed.</source>
+        <translation>Licens-kommando mislykkedes.</translation>
     </message>
     <message>
         <source>Android SDK Manager</source>
@@ -807,16 +803,12 @@ Vil du afinstallere den eksisterende pakke?</translation>
         <translation>Vil du acceptere Android SDK-licensen?</translation>
     </message>
     <message>
-        <source>Checking pending licenses...
-</source>
-        <translation>Tjekker afventende licenser...
-</translation>
+        <source>Checking pending licenses...</source>
+        <translation>Tjekker afventende licenser...</translation>
     </message>
     <message>
-        <source>
-SDK Manager is busy.</source>
-        <translation>
-SDK manager er optaget.</translation>
+        <source>SDK Manager is busy.</source>
+        <translation>SDK manager er optaget.</translation>
     </message>
     <message>
         <source>Android SDK Changes</source>
@@ -1295,12 +1287,8 @@ Installer en SDK af mindst API version %1.</translation>
         <translation>Mislykkedes.</translation>
     </message>
     <message>
-        <source>Done
-
-</source>
-        <translation>Færdig
-
-</translation>
+        <source>Done</source>
+        <translation>Færdig</translation>
     </message>
     <message>
         <source>Installing</source>
@@ -2709,8 +2697,8 @@ Lokale commits pushes ikke til master-grenen inden en normal commit udføres.</t
         <translation>Meta+Z,Meta+D</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+D</source>
-        <translation>ALT+Z,Alt+D</translation>
+        <source>Alt+Z,Alt+D</source>
+        <translation>Alt+Z,Alt+D</translation>
     </message>
     <message>
         <source>Log Current File</source>
@@ -2725,8 +2713,8 @@ Lokale commits pushes ikke til master-grenen inden en normal commit udføres.</t
         <translation>Meta+Z,Meta+L</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+L</source>
-        <translation>ALT+Z,Alt+L</translation>
+        <source>Alt+Z,Alt+L</source>
+        <translation>Alt+Z,Alt+L</translation>
     </message>
     <message>
         <source>Status Current File</source>
@@ -2741,8 +2729,8 @@ Lokale commits pushes ikke til master-grenen inden en normal commit udføres.</t
         <translation>Meta+Z,Meta+S</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+S</source>
-        <translation>ALT+Z,Alt+S</translation>
+        <source>Alt+Z,Alt+S</source>
+        <translation>Alt+Z,Alt+S</translation>
     </message>
     <message>
         <source>Add</source>
@@ -2805,8 +2793,8 @@ Lokale commits pushes ikke til master-grenen inden en normal commit udføres.</t
         <translation>Meta+Z,Meta+C</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+C</source>
-        <translation>ALT+Z,Alt+C</translation>
+        <source>Alt+Z,Alt+C</source>
+        <translation>Alt+Z,Alt+C</translation>
     </message>
     <message>
         <source>Uncommit...</source>
@@ -2953,8 +2941,8 @@ Lokale commits pushes ikke til master-grenen inden en normal commit udføres.</t
         <translation>Lokalt filsystem:</translation>
     </message>
     <message>
-        <source>For example: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</source>
-        <translation>F.eks.: &apos;https://[bruger[:kode]@]vært[:port]/[sti]&apos;.</translation>
+        <source>For example: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</source>
+        <translation>F.eks.: &quot;https://[bruger[:kode]@]vært[:port]/[sti]&quot;.</translation>
     </message>
     <message>
         <source>Specify URL:</source>
@@ -3454,7 +3442,7 @@ F.eks., vil &quot;Revision: 15&quot; efterlade grenen ved revision 15.</translat
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Add Bookmark</source>
         <translation>Tilføj bogmærke</translation>
@@ -7810,16 +7798,16 @@ Vil du dræbe den?</translation>
         <translation>Patch-kommandoen konfigureret i de generelle &quot;Miljø&quot;-indstillinger findes ikke.</translation>
     </message>
     <message>
-        <source>Running in %1: %2 %3</source>
-        <translation>Kører om %1: %2 %3</translation>
+        <source>Running in &quot;%1&quot;: %2 %3.</source>
+        <translation>Kører om &quot;%1&quot;: %2 %3.</translation>
     </message>
     <message>
         <source>Unable to launch &quot;%1&quot;: %2</source>
         <translation>Kunne ikke starte &quot;%1&quot;: %2</translation>
     </message>
     <message>
-        <source>A timeout occurred running &quot;%1&quot;</source>
-        <translation>Timeout under kørsel af &quot;%1&quot;</translation>
+        <source>A timeout occurred running &quot;%1&quot;.</source>
+        <translation>Timeout under kørsel af &quot;%1&quot;.</translation>
     </message>
     <message>
         <source>&quot;%1&quot; crashed.</source>
@@ -19514,8 +19502,8 @@ Fejl: %5</translation>
         <translation>Lokalt filsystem:</translation>
     </message>
     <message>
-        <source>For example: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</source>
-        <translation>F.eks.: &apos;https://[bruger[:kode]@]vært[:port]/[sti]&apos;.</translation>
+        <source>For example: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</source>
+        <translation>F.eks.: &quot;https://[bruger[:kode]@]vært[:port]/[sti]&quot;.</translation>
     </message>
     <message>
         <source>Specify URL:</source>
@@ -22699,20 +22687,20 @@ til projektet &quot;%2&quot;.</translation>
         <translation>Sessionshåndtering</translation>
     </message>
     <message>
-        <source>&amp;New</source>
-        <translation>&amp;Ny</translation>
+        <source>&amp;New...</source>
+        <translation>&amp;Ny...</translation>
     </message>
     <message>
-        <source>&amp;Rename</source>
-        <translation>&amp;Omdøb</translation>
+        <source>&amp;Rename...</source>
+        <translation>&amp;Omdøb...</translation>
     </message>
     <message>
-        <source>C&amp;lone</source>
-        <translation>&amp;Klon</translation>
+        <source>C&amp;lone...</source>
+        <translation>&amp;Klon...</translation>
     </message>
     <message>
-        <source>&amp;Delete</source>
-        <translation>&amp;Slet</translation>
+        <source>&amp;Delete...</source>
+        <translation>&amp;Slet...</translation>
     </message>
     <message>
         <source>&amp;Open</source>
@@ -22723,8 +22711,8 @@ til projektet &quot;%2&quot;.</translation>
         <translation>Genskab sidste session ved opstart</translation>
     </message>
     <message>
-        <source>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;What is a Session?&lt;/a&gt;</source>
-        <translation>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;Hvad er en session?&lt;/a&gt;</translation>
+        <source>What is a Session?</source>
+        <translation>Hvad er en session?</translation>
     </message>
     <message>
         <source>Session</source>
@@ -24940,8 +24928,8 @@ Disse filer bevares.</numerusform>
         <translation>Fejl ved gemning af session</translation>
     </message>
     <message>
-        <source>Could not save session to file %1</source>
-        <translation>Kunne ikke gemme session til filen %1</translation>
+        <source>Could not save session to file &quot;%1&quot;</source>
+        <translation>Kunne ikke gemme session til filen &quot;%1&quot;</translation>
     </message>
     <message>
         <source>Untitled</source>
@@ -33664,10 +33652,6 @@ Angiver hvordan backspace interagerer med indrykning.
         <translation>Rediger...</translation>
     </message>
     <message>
-        <source>Remove</source>
-        <translation>Fjern</translation>
-    </message>
-    <message>
         <source>Export...</source>
         <translation>Eksportér...</translation>
     </message>
@@ -38022,8 +38006,8 @@ skal være et repository krævet SSH-autentifikation (se dokumentation på SSH o
         <translation>Kører: %1 %2</translation>
     </message>
     <message>
-        <source>Running in %1: %2 %3</source>
-        <translation>Kører om %1: %2 %3</translation>
+        <source>Running in %1: %2 %3.</source>
+        <translation>Kører om %1: %2 %3.</translation>
     </message>
 </context>
 <context>
@@ -39042,8 +39026,8 @@ skal være et repository krævet SSH-autentifikation (se dokumentation på SSH o
 <context>
     <name>QtC::CppEditor</name>
     <message>
-        <source>For appropriate options, consult the GCC or Clang manual pages or the &lt;a href=&quot;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html&quot;&gt;GCC online documentation&lt;/a&gt;.</source>
-        <translation>For passende valgmuligheder, konsulter GCC- eller Clang-manualsiderne eller &lt;a href=&quot;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html&quot;&gt;GCC online dokumentationen&lt;/a&gt;.</translation>
+        <source>For appropriate options, consult the GCC or Clang manual pages or the [GCC online documentation](%1).</source>
+        <translation>For passende valgmuligheder, konsulter GCC- eller Clang-manualsiderne eller [GCC online dokumentationen](%1).</translation>
     </message>
     <message>
         <source>Each level adds checks to the previous level. For more information, see &lt;a href=&quot;https://github.com/KDE/clazy&quot;&gt;clazy&apos;s homepage&lt;/a&gt;.</source>

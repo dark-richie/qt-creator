@@ -1,44 +1,33 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "qmlprofilerconstants.h"
-#include "qmlprofilerplugin.h"
 #include "qmlprofilersettings.h"
+
+#include "qmlprofilerconstants.h"
 #include "qmlprofilertr.h"
 
-#include <coreplugin/icore.h>
+#include <coreplugin/dialogs/ioptionspage.h>
 
 #include <debugger/analyzer/analyzericons.h>
 #include <debugger/debuggertr.h>
 
 #include <utils/layoutbuilder.h>
 
-#include <QSettings>
-
 using namespace Utils;
 
-namespace QmlProfiler {
-namespace Internal {
+namespace QmlProfiler::Internal {
 
-static QWidget *createQmlConfigWidget(QmlProfilerSettings *settings)
+QmlProfilerSettings &globalSettings()
 {
-    QmlProfilerSettings &s = *settings;
-    using namespace Layouting;
-
-    return Form {
-        s.flushEnabled,
-        s.flushInterval,
-        s.aggregateTraces
-    }.emerge();
+    static QmlProfilerSettings theSettings;
+    return theSettings;
 }
 
 QmlProfilerSettings::QmlProfilerSettings()
 {
-    setConfigWidgetCreator([this] { return createQmlConfigWidget(this); });
-
+    setAutoApply(false);
     setSettingsGroup(Constants::ANALYZER);
 
-    registerAspect(&flushEnabled);
     flushEnabled.setSettingsKey("Analyzer.QmlProfiler.FlushEnabled");
     flushEnabled.setLabelPlacement(BoolAspect::LabelPlacement::InExtraLabel);
     flushEnabled.setLabelText(Tr::tr("Flush data while profiling:"));
@@ -47,17 +36,13 @@ QmlProfilerSettings::QmlProfilerSettings()
         "data and the memory usage in the application. It distorts the profile as the flushing\n"
         "itself takes time."));
 
-    registerAspect(&flushInterval);
     flushInterval.setSettingsKey("Analyzer.QmlProfiler.FlushInterval");
     flushInterval.setRange(1, 10000000);
     flushInterval.setDefaultValue(1000);
     flushInterval.setLabelText(Tr::tr("Flush interval (ms):"));
-    flushInterval.setEnabler(&flushEnabled);
 
-    registerAspect(&lastTraceFile);
     lastTraceFile.setSettingsKey("Analyzer.QmlProfiler.LastTraceFile");
 
-    registerAspect(&aggregateTraces);
     aggregateTraces.setSettingsKey("Analyzer.QmlProfiler.AggregateTraces");
     aggregateTraces.setLabelPlacement(BoolAspect::LabelPlacement::InExtraLabel);
     aggregateTraces.setLabelText(Tr::tr("Process data only when process ends:"));
@@ -67,43 +52,36 @@ QmlProfilerSettings::QmlProfilerSettings()
         "for example if multiple QML engines start and stop sequentially during a single run of\n"
         "the program."));
 
-    // Read stored values
-    readSettings(Core::ICore::settings());
+    setLayouter([this] {
+        using namespace Layouting;
+        return Form {
+            flushEnabled, br,
+            flushInterval, br,
+            aggregateTraces, br,
+        };
+    });
+
+    readSettings();
+
+    flushInterval.setEnabler(&flushEnabled);
 }
 
-void QmlProfilerSettings::writeGlobalSettings() const
+// QmlProfilerSettingsPage
+
+class QmlProfilerSettingsPage final : public Core::IOptionsPage
 {
-    writeSettings(Core::ICore::settings());
-}
+public:
+    QmlProfilerSettingsPage()
+    {
+        setId(Constants::SETTINGS);
+        setDisplayName(Tr::tr("QML Profiler"));
+        setCategory("T.Analyzer");
+        setDisplayCategory(::Debugger::Tr::tr("Analyzer"));
+        setCategoryIconPath(Analyzer::Icons::SETTINGSCATEGORY_ANALYZER);
+        setSettingsProvider([] { return &globalSettings(); });
+    }
+};
 
-// QmlProfilerOptionsPage
+const QmlProfilerSettingsPage settingsPage;
 
-QmlProfilerOptionsPage::QmlProfilerOptionsPage()
-{
-    setId(Constants::SETTINGS);
-    setDisplayName(Tr::tr("QML Profiler"));
-    setCategory("T.Analyzer");
-    setDisplayCategory(::Debugger::Tr::tr("Analyzer"));
-    setCategoryIconPath(Analyzer::Icons::SETTINGSCATEGORY_ANALYZER);
-}
-
-QWidget *QmlProfilerOptionsPage::widget()
-{
-    // We cannot parent the widget to the options page as it expects a QWidget as parent
-    if (!m_widget)
-        m_widget = createQmlConfigWidget(QmlProfilerPlugin::globalSettings());
-    return m_widget;
-}
-
-void QmlProfilerOptionsPage::apply()
-{
-    QmlProfilerPlugin::globalSettings()->writeGlobalSettings();
-}
-
-void QmlProfilerOptionsPage::finish()
-{
-    delete m_widget;
-}
-
-} // Internal
-} // QmlProfiler
+} // QmlProfiler::Internal

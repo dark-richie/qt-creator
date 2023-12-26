@@ -21,6 +21,8 @@
     You can change the web browser in the project's \l{Specifying Run Settings}
     {run settings}.
 
+    \note Enable the WebAssembly plugin to use it.
+
     To build applications for the web and run them in a web browser, you need to
     install Qt for WebAssembly and the tool chain for compiling to WebAssembly.
 
@@ -39,7 +41,7 @@
     \section1 Setting Up the Development Environment
 
     You need to install and configure Qt for WebAssembly and the tool chain for
-    compiling to WebAssembly. The Qt Installer automatically adds a build and
+    compiling to WebAssembly. \QOI automatically adds a build and
     run kit to \QC.
 
     \section2 Setting Up Qt for WebAssembly
@@ -47,7 +49,7 @@
     To set up Qt for WebAssembly:
 
         \list 1
-        \li Use the Qt maintenance tool to install Qt for WebAssembly and, on
+        \li Use \QMT to install Qt for WebAssembly and, on
             Windows, \MinGW (found in \uicontrol {Developer and Designer Tools}).
         \li Check out a known-good Emscripten version supported by the Qt for
             WebAssembly version that you installed, and install and activate
@@ -56,30 +58,19 @@
             {Install Emscripten}.
         \endlist
 
-    \section2 Enabling the WebAssembly Plugin
-
-    To enable the plugin:
-
-    \list 1
-        \li In \QC, select \uicontrol Help > \uicontrol {About Plugins} >
-            \uicontrol {Device Support} > \uicontrol {WebAssembly}.
-        \li Select \uicontrol {Restart Now} to restart \QC and load the plugin.
-    \endlist
-
     \section2 Specifying WebAssembly Settings
 
     To configure \QC for building Qt apps for the web:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Devices >
-            \uicontrol WebAssembly.
+        \li Select \preferences > \uicontrol Devices > \uicontrol WebAssembly.
         \li In the \uicontrol {Emscripten SDK path} field, enter the root
             directory where \c emsdk is installed.
         \li \QC configures the \uicontrol {Emscripten SDK environment} for you
             if the \c emsdk is supported by the Qt for WebAssembly version that
             you will use for developing the application.
             \image qtcreator-webassembly-options.png "Qt for WebAssembly device preferences"
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Kits.
+        \li Select \preferences > \uicontrol Kits.
             \image qtcreator-kit-webassembly.png "Qt for WebAssembly kit"
         \li In the \uicontrol Compiler group, \uicontrol {Emscripten Compiler}
             should have been automatically detected for both C++ and C. If not,
@@ -92,10 +83,9 @@
     to \QC. To add kits:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Kits >
-            \uicontrol Add.
+        \li Select \preferences > \uicontrol Kits > \uicontrol Add.
         \li In the \uicontrol Name field, specify a name for the kit.
-        \li In the \uicontrol {Device type} field, select
+        \li In the \uicontrol {Run device type} field, select
             \uicontrol {WebAssembly Runtime}.
             The value of the \uicontrol Device field is automatically
             set to \uicontrol {Web Browser}.
@@ -121,4 +111,6 @@
     You can now build Qt applications in WebAssembly format and run them in
     a web browser as described in \l {Building for Multiple Platforms} and
     \l{Running on Multiple Platforms}.
+
+    \sa {Enable and disable plugins}
 */

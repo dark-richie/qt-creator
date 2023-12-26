@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
 #include <utils/aspects.h>
 
 namespace Vcpkg::Internal {
@@ -13,18 +12,11 @@ class VcpkgSettings : public Utils::AspectContainer
 public:
     VcpkgSettings();
 
-    static VcpkgSettings *instance();
-    bool vcpkgRootValid() const;
+    void setVcpkgRootEnvironmentVariable();
 
-    Utils::StringAspect vcpkgRoot;
+    Utils::FilePathAspect vcpkgRoot{this};
 };
 
-class VcpkgSettingsPage final : public Core::IOptionsPage
-{
-public:
-    VcpkgSettingsPage();
+VcpkgSettings &settings();
 
-    void apply() override;
-};
-
-} // namespace Vcpkg::Internal
+} // Vcpkg::Internal

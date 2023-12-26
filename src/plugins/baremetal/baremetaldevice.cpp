@@ -11,9 +11,12 @@
 #include "debugserverprovidermanager.h"
 #include "idebugserverprovider.h"
 
+#include <projectexplorer/devicesupport/idevicefactory.h>
+
 #include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace BareMetal::Internal {
 
@@ -62,7 +65,7 @@ void BareMetalDevice::unregisterDebugServerProvider(IDebugServerProvider *provid
         m_debugServerProviderId.clear();
 }
 
-void BareMetalDevice::fromMap(const QVariantMap &map)
+void BareMetalDevice::fromMap(const Store &map)
 {
     IDevice::fromMap(map);
     QString providerId = map.value(debugServerProviderIdKeyC).toString();
@@ -78,9 +81,9 @@ void BareMetalDevice::fromMap(const QVariantMap &map)
     }
 }
 
-QVariantMap BareMetalDevice::toMap() const
+Store BareMetalDevice::toMap() const
 {
-    QVariantMap map = IDevice::toMap();
+    Store map = IDevice::toMap();
     map.insert(debugServerProviderIdKeyC, debugServerProviderId());
     return map;
 }
@@ -92,19 +95,28 @@ IDeviceWidget *BareMetalDevice::createWidget()
 
 // Factory
 
-BareMetalDeviceFactory::BareMetalDeviceFactory()
-    : IDeviceFactory(Constants::BareMetalOsType)
+class BareMetalDeviceFactory final : public ProjectExplorer::IDeviceFactory
 {
-    setDisplayName(Tr::tr("Bare Metal Device"));
-    setCombinedIcon(":/baremetal/images/baremetaldevicesmall.png",
-                    ":/baremetal/images/baremetaldevice.png");
-    setConstructionFunction(&BareMetalDevice::create);
-    setCreator([] {
-        BareMetalDeviceConfigurationWizard wizard;
-        if (wizard.exec() != QDialog::Accepted)
-            return IDevice::Ptr();
-        return wizard.device();
-    });
+public:
+    BareMetalDeviceFactory()
+        : IDeviceFactory(Constants::BareMetalOsType)
+    {
+        setDisplayName(Tr::tr("Bare Metal Device"));
+        setCombinedIcon(":/baremetal/images/baremetaldevicesmall.png",
+                        ":/baremetal/images/baremetaldevice.png");
+        setConstructionFunction(&BareMetalDevice::create);
+        setCreator([] {
+            BareMetalDeviceConfigurationWizard wizard;
+            if (wizard.exec() != QDialog::Accepted)
+                return IDevice::Ptr();
+            return wizard.device();
+        });
+    }
+};
+
+void setupBareMetalDevice()
+{
+    static BareMetalDeviceFactory theBareMetalDeviceFactory;
 }
 
 } // BareMetal::Internal

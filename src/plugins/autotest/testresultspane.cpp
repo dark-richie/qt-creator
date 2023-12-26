@@ -56,6 +56,7 @@ namespace Internal {
 ResultsTreeView::ResultsTreeView(QWidget *parent)
     : TreeView(parent)
 {
+    setUniformRowHeights(false);
     setAttribute(Qt::WA_MacShowFocusRect, false);
     setFrameStyle(NoFrame);
 }
@@ -73,6 +74,9 @@ TestResultsPane::TestResultsPane(QObject *parent) :
     IOutputPane(parent),
     m_context(new IContext(this))
 {
+    setId("TestResults");
+    setDisplayName(Tr::tr("Test Results"));
+    setPriorityInStatusBar(-30);
     m_outputWidget = new QStackedWidget;
     QWidget *visualOutputWidget = new QWidget;
     m_outputWidget->addWidget(visualOutputWidget);
@@ -142,7 +146,7 @@ TestResultsPane::TestResultsPane(QObject *parent) :
         onCopyItemTriggered(getTestResult(m_treeView->currentIndex()));
     });
     connect(m_model, &TestResultModel::requestExpansion, this, [this](const QModelIndex &idx) {
-        m_treeView->expand(m_filterModel->mapFromSource(idx));
+        m_treeView->expandRecursively(m_filterModel->mapFromSource(idx));
     });
     connect(TestRunner::instance(), &TestRunner::testRunStarted,
             this, &TestResultsPane::onTestRunStarted);
@@ -197,7 +201,7 @@ void TestResultsPane::createToolButtons()
     m_filterButton = new QToolButton(m_treeView);
     m_filterButton->setIcon(Utils::Icons::FILTER.icon());
     m_filterButton->setToolTip(Tr::tr("Filter Test Results"));
-    m_filterButton->setProperty("noArrow", true);
+    m_filterButton->setProperty(StyleHelper::C_NO_ARROW, true);
     m_filterButton->setPopupMode(QToolButton::InstantPopup);
     m_filterMenu = new QMenu(m_filterButton);
     initializeFilterMenu();
@@ -273,16 +277,6 @@ QList<QWidget *> TestResultsPane::toolBarWidgets() const
     return result;
 }
 
-QString TestResultsPane::displayName() const
-{
-    return Tr::tr("Test Results");
-}
-
-int TestResultsPane::priorityInStatusBar() const
-{
-    return -666;
-}
-
 void TestResultsPane::clearContents()
 {
     m_filterModel->clearTestResults();
@@ -291,7 +285,7 @@ void TestResultsPane::clearContents()
     setIconBadgeNumber(0);
     navigateStateChanged();
     m_summaryWidget->setVisible(false);
-    m_autoScroll = AutotestPlugin::settings()->autoScroll;
+    m_autoScroll = testSettings().autoScroll();
     connect(m_treeView->verticalScrollBar(), &QScrollBar::rangeChanged,
             this, &TestResultsPane::onScrollBarRangeChanged, Qt::UniqueConnection);
     m_textOutput->clear();
@@ -423,21 +417,9 @@ void TestResultsPane::onItemActivated(const QModelIndex &index)
         EditorManager::openEditorAt(Link{testResult.fileName(), testResult.line(), 0});
 }
 
-void TestResultsPane::onRunAllTriggered()
-{
-    TestRunner *runner = TestRunner::instance();
-    runner->runTests(TestRunMode::Run, TestTreeModel::instance()->getAllTestCases());
-}
-
-void TestResultsPane::onRunSelectedTriggered()
-{
-    TestRunner *runner = TestRunner::instance();
-    runner->runTests(TestRunMode::Run, TestTreeModel::instance()->getSelectedTests());
-}
-
 void TestResultsPane::initializeFilterMenu()
 {
-    const bool omitIntern = AutotestPlugin::settings()->omitInternalMssg;
+    const bool omitIntern = testSettings().omitInternalMsg();
     // FilterModel has all messages enabled by default
     if (omitIntern)
         m_filterModel->toggleTestResultType(ResultType::MessageInternal);
@@ -553,8 +535,7 @@ void TestResultsPane::onTestRunFinished()
     m_model->removeCurrentTestMessage();
     disconnect(m_treeView->verticalScrollBar(), &QScrollBar::rangeChanged,
                this, &TestResultsPane::onScrollBarRangeChanged);
-    if (AutotestPlugin::settings()->popupOnFinish
-            && (!AutotestPlugin::settings()->popupOnFail || hasFailedTests(m_model))) {
+    if (testSettings().popupOnFinish() && (!testSettings().popupOnFail() || hasFailedTests(m_model))) {
         popup(IOutputPane::NoModeSwitch);
     }
     createMarks();

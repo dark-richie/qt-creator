@@ -3,10 +3,12 @@
 
 #include "searchresulttreeitems.h"
 
+#include <utils/searchresultitem.h>
+
 namespace Core {
 namespace Internal {
 
-SearchResultTreeItem::SearchResultTreeItem(const SearchResultItem &item,
+SearchResultTreeItem::SearchResultTreeItem(const Utils::SearchResultItem &item,
                                            SearchResultTreeItem *parent)
   : item(item),
   m_parent(parent),
@@ -79,9 +81,27 @@ int SearchResultTreeItem::insertionIndex(const QString &text, SearchResultTreeIt
     return insertionPosition - m_children.begin();
 }
 
-int SearchResultTreeItem::insertionIndex(const SearchResultItem &item, SearchResultTreeItem **existingItem) const
+int SearchResultTreeItem::insertionIndex(const Utils::SearchResultItem &item,
+                                         SearchResultTreeItem **existingItem,
+                                         SearchResult::AddMode mode) const
 {
-    return insertionIndex(item.lineText(), existingItem);
+    switch (mode) {
+    case SearchResult::AddSortedByContent:
+        return insertionIndex(item.lineText(), existingItem);
+    case SearchResult::AddSortedByPosition:
+        break;
+    case Core::SearchResult::AddOrdered:
+        QTC_ASSERT(false, return 0);
+    }
+
+    static const auto cmp = [](const SearchResultTreeItem *a, const Utils::Text::Position b) {
+        return a->item.mainRange().begin < b;
+    };
+    const auto insertionPosition =
+        std::lower_bound(m_children.begin(), m_children.end(), item.mainRange().begin, cmp);
+    if (existingItem)
+        *existingItem = nullptr;
+    return insertionPosition - m_children.begin();
 }
 
 void SearchResultTreeItem::insertChild(int index, SearchResultTreeItem *child)
@@ -89,13 +109,13 @@ void SearchResultTreeItem::insertChild(int index, SearchResultTreeItem *child)
     m_children.insert(index, child);
 }
 
-void SearchResultTreeItem::insertChild(int index, const SearchResultItem &item)
+void SearchResultTreeItem::insertChild(int index, const Utils::SearchResultItem &item)
 {
     auto child = new SearchResultTreeItem(item, this);
     insertChild(index, child);
 }
 
-void SearchResultTreeItem::appendChild(const SearchResultItem &item)
+void SearchResultTreeItem::appendChild(const Utils::SearchResultItem &item)
 {
     insertChild(m_children.count(), item);
 }

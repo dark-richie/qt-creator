@@ -8,6 +8,7 @@
 
 /*!
   \class Utils::FileWizardPage
+  \inmodule QtCreator
 
   \brief The FileWizardPage class is a standard wizard page for a single file
   letting the user choose name
@@ -45,14 +46,14 @@ FileWizardPage::FileWizardPage(QWidget *parent) :
     d(new FileWizardPagePrivate)
 {
     setTitle(Tr::tr("Choose the Location"));
-    resize(368, 102);
 
     d->m_defaultSuffixLabel = new QLabel;
     d->m_nameLabel = new QLabel;
     d->m_nameLineEdit = new FileNameValidatingLineEdit;
-    d->m_nameLineEdit->setObjectName("nameLineEdit");
+    d->m_nameLineEdit->setObjectName("nameLineEdit"); // used by Squish
     d->m_pathLabel = new QLabel;
     d->m_pathChooser = new PathChooser;
+    d->m_pathChooser->setObjectName("fullPathChooser"); // used by Squish
     d->m_pathChooser->setExpectedKind(PathChooser::Directory);
 
     d->m_nameLabel->setText(Tr::tr("File name:"));

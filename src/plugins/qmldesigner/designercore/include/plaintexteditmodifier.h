@@ -48,9 +48,9 @@ public:
     { return false; }
 
     QStringList autoComplete(QTextDocument * /*textDocument*/, int /*position*/,  bool /*explicitComplete*/) override
-    { return QStringList(); }
+    { return {}; }
 
-    bool moveToComponent(int /* nodeOffset */) override
+    bool moveToComponent(int /* nodeOffset */, const QString & /* importData */) override
     { return false; }
 
 private:
@@ -91,8 +91,17 @@ public:
     TextEditor::TabSettings tabSettings() const override
     { return m_tabSettings; }
 
-private:
+protected:
     TextEditor::TabSettings m_tabSettings;
+};
+
+class QMLDESIGNERCORE_EXPORT IndentingTextEditModifier : public NotIndentingTextEditModifier
+{
+public:
+    IndentingTextEditModifier(QTextDocument *document, const QTextCursor &textCursor);
+
+    void indent(int offset, int length) override;
+    void indentLines(int startLine, int endLine) override;
 };
 
 }

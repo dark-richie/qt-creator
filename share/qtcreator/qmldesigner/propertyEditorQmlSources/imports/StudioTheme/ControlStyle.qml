@@ -67,13 +67,17 @@ QtObject {
     property real sectionHeadHeight: Values.sectionHeadHeight
     property real sectionHeadSpacerHeight: Values.sectionHeadSpacerHeight
 
-    property real scrollBarThickness: Values.scrollBarThickness
+    property real scrollBarThickness: 4//Values.scrollBarThickness
+    property real scrollBarThicknessHover: 6//Values.scrollBarThicknessHover
     property real scrollBarActivePadding: Values.scrollBarActivePadding
     property real scrollBarInactivePadding: Values.scrollBarInactivePadding
+
+    property real dialogScreenMargin: Values.dialogScreenMargin
 
     // Special colors
     property color interaction: Values.themeInteraction
     property color interactionHover: Values.themeInteractionHover
+    property color interactionGlobalHover: "#ffB0E1FC"
     // TODO needs to removed in the future
     property color thumbnailLabelBackground: Values.themeThumbnailLabelBackground
 
@@ -148,7 +152,8 @@ QtObject {
 
     component ScrollBarColors: QtObject {
         property color track: Values.themeScrollBarTrack
-        property color handle: Values.themeScrollBarHandle
+        property color handle: Values.themeScrollBarHandle_idle
+        property color handleHover: Values.themeScrollBarHandle
     }
 
     property ScrollBarColors scrollBar: ScrollBarColors {}

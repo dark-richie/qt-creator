@@ -67,13 +67,16 @@ public:
     void disableWidgets();
     void enableWidgets();
 
-    void pushFileOnCrumbleBar(const Utils::FilePath &fileName);
+    void pushFileOnCrumbleBar(const ::Utils::FilePath &fileName);
     void pushInFileComponentOnCrumbleBar(const ModelNode &modelNode);
     void nextFileIsCalledInternally();
 
     const AbstractView *view() const;
+    void emitCustomNotification(const QString &identifier, const QList<ModelNode> &nodeList,
+                                const QList<QVariant> &data);
 
     void exportAsImage();
+    QImage takeFormEditorScreenshot();
     void reformatFileUsingTextEditorView();
 
     QWidgetAction *componentViewAction() const;
@@ -88,6 +91,7 @@ public:
 
     void disableStandardViews();
     void enableStandardViews();
+    void jumpToCodeInTextEditor(const ModelNode &modelNode);
     QList<AbstractView *> views() const;
 
 private: // functions

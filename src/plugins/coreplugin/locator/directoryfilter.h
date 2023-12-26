@@ -3,18 +3,13 @@
 
 #pragma once
 
-#include "basefilefilter.h"
-
-#include <coreplugin/core_global.h>
-
-#include <QByteArray>
+#include "../core_global.h"
+#include "ilocatorfilter.h"
 
 namespace Core {
 
-class CORE_EXPORT DirectoryFilter : public BaseFileFilter
+class CORE_EXPORT DirectoryFilter : public ILocatorFilter
 {
-    Q_OBJECT
-
 public:
     DirectoryFilter(Utils::Id id);
     void restoreState(const QByteArray &state) override;
@@ -31,12 +26,12 @@ protected:
     void restoreState(const QJsonObject &object) override;
 
 private:
+    LocatorMatcherTasks matchers() final { return {m_cache.matcher()}; }
     void setDirectories(const Utils::FilePaths &directories);
     void handleAddDirectory();
     void handleEditDirectory();
     void handleRemoveDirectory();
     void updateOptionButtons();
-    void updateFileIterator();
 
     Utils::FilePaths m_directories;
     QStringList m_filters;
@@ -44,8 +39,8 @@ private:
     // Our config dialog, uses in addDirectory and editDirectory
     // to give their dialogs the right parent
     class DirectoryFilterOptions *m_dialog = nullptr;
-    Utils::FilePaths m_files;
     bool m_isCustomFilter = true;
+    LocatorFileCache m_cache;
 };
 
 } // namespace Core

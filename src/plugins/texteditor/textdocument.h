@@ -34,6 +34,7 @@ class FontSettings;
 class IAssistProvider;
 class StorageSettings;
 class SyntaxHighlighter;
+class BaseSyntaxHighlighterRunner;
 class TabSettings;
 class TextDocumentPrivate;
 class TextMark;
@@ -101,9 +102,9 @@ public:
     static bool marksAnnotationHidden(const Utils::Id &category);
 
     // IDocument implementation.
-    bool save(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
     QByteArray contents() const override;
     bool setContents(const QByteArray &contents) override;
+    void formatContents() override;
     bool shouldAutoSave() const override;
     bool isModified() const override;
     bool isSaveAsAllowed() const override;
@@ -124,8 +125,10 @@ public:
 
     bool setPlainText(const QString &text);
     QTextDocument *document() const;
-    void setSyntaxHighlighter(SyntaxHighlighter *highlighter);
-    SyntaxHighlighter *syntaxHighlighter() const;
+
+    using SyntaxHighLighterCreator = std::function<SyntaxHighlighter *()>;
+    void resetSyntaxHighlighter(const SyntaxHighLighterCreator &creator, bool threaded = true);
+    BaseSyntaxHighlighterRunner *syntaxHighlighterRunner() const;
 
     bool reload(QString *errorString, QTextCodec *codec);
     void cleanWhitespace(const QTextCursor &cursor);
@@ -166,6 +169,7 @@ signals:
 
 protected:
     virtual void applyFontSettings();
+    bool saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
 
 private:
     OpenResult openImpl(QString *errorString,

@@ -9,14 +9,15 @@
 
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/runcontrol.h>
+#include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
 
+#include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace RemoteLinux::Internal {
 
@@ -27,45 +28,57 @@ public:
     {
         setWidgetExpandedByDefault(false);
 
-        setInternalInitializer([this] {
+        setInternalInitializer([this]() -> expected_str<void> {
             Target * const theTarget = target();
-            QTC_ASSERT(theTarget, return CheckResult::failure());
+            QTC_ASSERT(theTarget, return make_unexpected(QString()));
             RunConfiguration * const rc = theTarget->activeRunConfiguration();
             m_remoteExecutable =  rc ? rc->runnable().command.executable() : FilePath();
-            return CheckResult::success();
+            return {};
         });
     }
 
 private:
-    bool isDeploymentNecessary() const final { return !m_remoteExecutable.isEmpty(); }
-    Group deployRecipe() final;
+    GroupItem deployRecipe() final;
 
     FilePath m_remoteExecutable;
 };
 
-Group KillAppStep::deployRecipe()
+GroupItem KillAppStep::deployRecipe()
 {
-    const auto setupHandler = [this](DeviceProcessKiller &killer) {
+    const auto onSetup = [this](DeviceProcessKiller &killer) {
+        if (m_remoteExecutable.isEmpty()) {
+            addSkipDeploymentMessage();
+            return SetupResult::StopWithSuccess;
+        }
         killer.setProcessPath(m_remoteExecutable);
         addProgressMessage(Tr::tr("Trying to kill \"%1\" on remote device...")
                                   .arg(m_remoteExecutable.path()));
+        return SetupResult::Continue;
     };
-    const auto doneHandler = [this](const DeviceProcessKiller &) {
-        addProgressMessage(Tr::tr("Remote application killed."));
+    const auto onDone = [this](DoneWith result) {
+        const QString message = result == DoneWith::Success ? Tr::tr("Remote application killed.")
+            : Tr::tr("Failed to kill remote application. Assuming it was not running.");
+        addProgressMessage(message);
+        return DoneResult::Success;
     };
-    const auto errorHandler = [this](const DeviceProcessKiller &) {
-        addProgressMessage(Tr::tr("Failed to kill remote application. "
-                                    "Assuming it was not running."));
-    };
-    return Group { Killer(setupHandler, doneHandler, errorHandler) };
+    return DeviceProcessKillerTask(onSetup, onDone);
 }
 
-KillAppStepFactory::KillAppStepFactory()
+class KillAppStepFactory final : public BuildStepFactory
 {
-    registerStep<KillAppStep>(Constants::KillAppStepId);
-    setDisplayName(Tr::tr("Kill current application instance"));
-    setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
-    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+public:
+    KillAppStepFactory()
+    {
+        registerStep<KillAppStep>(Constants::KillAppStepId);
+        setDisplayName(Tr::tr("Kill current application instance"));
+        setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+    }
+};
+
+void setupKillAppStep()
+{
+    static KillAppStepFactory theKillAppStepFactory;
 }
 
 } // RemoteLinux::Internal

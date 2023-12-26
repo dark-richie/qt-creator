@@ -4,11 +4,8 @@
 #pragma once
 
 #include "protocol.h"
-#include "fileshareprotocolsettingspage.h"
 
 namespace CodePaster {
-
-class FileShareProtocolSettingsPage;
 
 /* FileShareProtocol: Allows for pasting via a shared network
  * drive by writing XML files. */
@@ -22,7 +19,7 @@ public:
     QString name() const override;
     unsigned capabilities() const override;
     bool hasSettings() const override;
-    Core::IOptionsPage *settingsPage() const override;
+    const Core::IOptionsPage *settingsPage() const override;
 
     bool checkConfiguration(QString *errorMessage = nullptr) override;
     void fetch(const QString &id) override;
@@ -32,10 +29,6 @@ public:
                const QString &username = QString(),
                const QString &comment = QString(),
                const QString &description = QString()) override;
-
-private:
-    FileShareProtocolSettings m_settings;
-    FileShareProtocolSettingsPage *m_settingsPage;
 };
 
 } // CodePaster

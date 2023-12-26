@@ -5,7 +5,6 @@
 
 #include "extensionsystemtr.h"
 #include "pluginmanager.h"
-#include "pluginspec.h"
 #include "pluginspec_p.h"
 
 #include <utils/algorithm.h>
@@ -55,8 +54,6 @@
     The settings for the plugin list entry corresponding to \a spec changed.
 */
 
-Q_DECLARE_METATYPE(ExtensionSystem::PluginSpec*)
-
 using namespace Utils;
 
 namespace ExtensionSystem {
@@ -99,9 +96,15 @@ public:
     {
         switch (column) {
         case NameColumn:
-            if (role == Qt::DisplayRole)
+            if (role == Qt::DisplayRole) {
+                if (m_spec->isDeprecated()) {
+                    //: %1 is a plugin name
+                    return Tr::tr("%1 (deprecated)").arg(m_spec->name());
+                }
+                //: %1 is a plugin name
                 return m_spec->isExperimental() ? Tr::tr("%1 (experimental)").arg(m_spec->name())
                                                 : m_spec->name();
+            }
             if (role == SortRole)
                 return m_spec->name();
             if (role == Qt::ToolTipRole) {
@@ -237,9 +240,7 @@ public:
         if (column == LoadedColumn && role == Qt::CheckStateRole) {
             const QVector<PluginSpec *> affectedPlugins
                 = Utils::filtered(m_plugins, [](PluginSpec *spec) { return !spec->isRequired(); });
-            if (m_view->setPluginsEnabled(Utils::transform<QSet>(affectedPlugins,
-                                                                 [](PluginSpec *s) { return s; }),
-                                          data.toBool())) {
+            if (m_view->setPluginsEnabled(toSet(affectedPlugins), data.toBool())) {
                 update();
                 return true;
             }
@@ -275,12 +276,7 @@ PluginView::PluginView(QWidget *parent)
     m_categoryView = new TreeView(this);
     m_categoryView->setAlternatingRowColors(true);
     m_categoryView->setIndentation(20);
-    m_categoryView->setUniformRowHeights(true);
     m_categoryView->setSortingEnabled(true);
-    m_categoryView->setColumnWidth(LoadedColumn, 40);
-    m_categoryView->header()->setDefaultSectionSize(120);
-    m_categoryView->header()->setMinimumSectionSize(35);
-    m_categoryView->header()->setSortIndicator(0, Qt::AscendingOrder);
     m_categoryView->setActivationMode(DoubleClickActivation);
     m_categoryView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_categoryView->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -299,8 +295,8 @@ PluginView::PluginView(QWidget *parent)
     gridLayout->addWidget(m_categoryView, 1, 0, 1, 1);
 
     QHeaderView *header = m_categoryView->header();
-    header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    header->setSortIndicator(NameColumn, Qt::AscendingOrder);
+    header->setSectionResizeMode(QHeaderView::ResizeToContents);
 
     connect(PluginManager::instance(), &PluginManager::pluginsChanged,
             this, &PluginView::updatePlugins);
@@ -424,8 +420,8 @@ bool PluginView::setPluginsEnabled(const QSet<PluginSpec *> &plugins, bool enabl
         spec->d->setEnabledBySettings(enable);
         item->updateColumn(LoadedColumn);
         item->parent()->updateColumn(LoadedColumn);
-        emit pluginSettingsChanged(spec);
     }
+    emit pluginsChanged(affectedPlugins, enable);
     return true;
 }
 

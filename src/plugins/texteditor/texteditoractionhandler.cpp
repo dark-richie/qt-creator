@@ -29,6 +29,8 @@
 
 #include <functional>
 
+using namespace Core;
+
 namespace TextEditor {
 namespace Internal {
 
@@ -37,13 +39,17 @@ class TextEditorActionHandlerPrivate : public QObject
 public:
     TextEditorActionHandlerPrivate(Utils::Id editorId, Utils::Id contextId, uint optionalActions);
 
-    QAction *registerActionHelper(Utils::Id id, bool scriptable, const QString &title,
-                            const QKeySequence &keySequence, Utils::Id menueGroup,
-                            Core::ActionContainer *container,
-                            std::function<void(bool)> slot)
+    QAction *registerActionHelper(Utils::Id id,
+                                  bool scriptable,
+                                  const QString &title,
+                                  const QKeySequence &keySequence,
+                                  Utils::Id menueGroup,
+                                  ActionContainer *container,
+                                  std::function<void(bool)> slot)
     {
         auto result = new QAction(title, this);
-        Core::Command *command = Core::ActionManager::registerAction(result, id, Core::Context(m_contextId), scriptable);
+        Command *command
+            = ActionManager::registerAction(result, id, Context(m_contextId), scriptable);
         if (!keySequence.isEmpty())
             command->setDefaultKeySequence(keySequence);
 
@@ -60,31 +66,41 @@ public:
                             const QString &title = QString(),
                             const QKeySequence &keySequence = QKeySequence(),
                             Utils::Id menueGroup = Utils::Id(),
-                            Core::ActionContainer *container = nullptr)
+                            ActionContainer *container = nullptr)
     {
-        return registerActionHelper(id, scriptable, title, keySequence, menueGroup, container,
-            [this, slot](bool) { if (m_currentEditorWidget) slot(m_currentEditorWidget); });
+        return registerActionHelper(id,
+                                    scriptable,
+                                    title,
+                                    keySequence,
+                                    menueGroup,
+                                    container,
+                                    [this, slot, id](bool) {
+                                        if (m_currentEditorWidget)
+                                            slot(m_currentEditorWidget);
+                                        else if (m_unhandledCallback)
+                                            m_unhandledCallback(id, m_currentEditor);
+                                    });
     }
 
     QAction *registerBoolAction(Utils::Id id,
-                            std::function<void(TextEditorWidget *, bool)> slot,
-                            bool scriptable = false,
-                            const QString &title = QString(),
-                            const QKeySequence &keySequence = QKeySequence(),
-                            Utils::Id menueGroup = Utils::Id(),
-                            Core::ActionContainer *container = nullptr)
+                                std::function<void(TextEditorWidget *, bool)> slot,
+                                bool scriptable = false,
+                                const QString &title = QString(),
+                                const QKeySequence &keySequence = QKeySequence(),
+                                Utils::Id menueGroup = Utils::Id(),
+                                ActionContainer *container = nullptr)
     {
         return registerActionHelper(id, scriptable, title, keySequence, menueGroup, container,
             [this, slot](bool on) { if (m_currentEditorWidget) slot(m_currentEditorWidget, on); });
     }
 
     QAction *registerIntAction(Utils::Id id,
-                            std::function<void(TextEditorWidget *, int)> slot,
-                            bool scriptable = false,
-                            const QString &title = QString(),
-                            const QKeySequence &keySequence = QKeySequence(),
-                            Utils::Id menueGroup = Utils::Id(),
-                            Core::ActionContainer *container = nullptr)
+                               std::function<void(TextEditorWidget *, int)> slot,
+                               bool scriptable = false,
+                               const QString &title = QString(),
+                               const QKeySequence &keySequence = QKeySequence(),
+                               Utils::Id menueGroup = Utils::Id(),
+                               ActionContainer *container = nullptr)
     {
         return registerActionHelper(id, scriptable, title, keySequence, menueGroup, container,
             [this, slot](bool on) { if (m_currentEditorWidget) slot(m_currentEditorWidget, on); });
@@ -98,7 +114,10 @@ public:
     void updateUndoAction(bool on);
     void updateCopyAction(bool on);
 
-    void updateCurrentEditor(Core::IEditor *editor);
+    void updateCurrentEditor(IEditor *editor);
+
+    void setCanUndoCallback(const TextEditorActionHandler::Predicate &callback);
+    void setCanRedoCallback(const TextEditorActionHandler::Predicate &callback);
 
 public:
     TextEditorActionHandler::TextEditorWidgetResolver m_findTextWidget;
@@ -115,6 +134,8 @@ public:
     QAction *m_unfoldAllAction = nullptr;
     QAction *m_followSymbolAction = nullptr;
     QAction *m_followSymbolInNextSplitAction = nullptr;
+    QAction *m_followToTypeAction = nullptr;
+    QAction *m_followToTypeInNextSplitAction = nullptr;
     QAction *m_findUsageAction = nullptr;
     QAction *m_openCallHierarchyAction = nullptr;
     QAction *m_renameSymbolAction = nullptr;
@@ -124,8 +145,14 @@ public:
 
     uint m_optionalActions = TextEditorActionHandler::None;
     QPointer<TextEditorWidget> m_currentEditorWidget;
+    QPointer<IEditor> m_currentEditor;
     Utils::Id m_editorId;
     Utils::Id m_contextId;
+
+    TextEditorActionHandler::Predicate m_canUndoCallback;
+    TextEditorActionHandler::Predicate m_canRedoCallback;
+
+    TextEditorActionHandler::UnhandledCallback m_unhandledCallback;
 };
 
 TextEditorActionHandlerPrivate::TextEditorActionHandlerPrivate
@@ -135,8 +162,10 @@ TextEditorActionHandlerPrivate::TextEditorActionHandlerPrivate
   , m_contextId(contextId)
 {
     createActions();
-    connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
-        this, &TextEditorActionHandlerPrivate::updateCurrentEditor);
+    connect(EditorManager::instance(),
+            &EditorManager::currentEditorChanged,
+            this,
+            &TextEditorActionHandlerPrivate::updateCurrentEditor);
     connect(TextEditorSettings::instance(), &TextEditorSettings::fontSettingsChanged,
         this, &TextEditorActionHandlerPrivate::updateActions);
 }
@@ -158,11 +187,12 @@ void TextEditorActionHandlerPrivate::createActions()
             [] (TextEditorWidget *w) { w->paste(); }, true);
     registerAction(SELECTALL,
             [] (TextEditorWidget *w) { w->selectAll(); }, true);
-    registerAction(GOTO, [] (TextEditorWidget *) {
-            Core::LocatorManager::showFilter(TextEditorPlugin::lineNumberFilter());
-        });
-    m_modifyingActions << registerAction(PRINT,
-            [] (TextEditorWidget *widget) { widget->print(Core::ICore::printer()); });
+    registerAction(GOTO, [](TextEditorWidget *) {
+        LocatorManager::showFilter(TextEditorPlugin::lineNumberFilter());
+    });
+    m_modifyingActions << registerAction(PRINT, [](TextEditorWidget *widget) {
+        widget->print(ICore::printer());
+    });
     m_modifyingActions << registerAction(DELETE_LINE,
             [] (TextEditorWidget *w) { w->deleteLine(); }, true, Tr::tr("Delete &Line"));
     m_modifyingActions << registerAction(DELETE_END_OF_LINE,
@@ -171,9 +201,12 @@ void TextEditorActionHandlerPrivate::createActions()
             [] (TextEditorWidget *w) { w->deleteEndOfWord(); }, true, Tr::tr("Delete Word from Cursor On"));
     m_modifyingActions << registerAction(DELETE_END_OF_WORD_CAMEL_CASE,
             [] (TextEditorWidget *w) { w->deleteEndOfWordCamelCase(); }, true, Tr::tr("Delete Word Camel Case from Cursor On"));
-    m_modifyingActions << registerAction(DELETE_START_OF_LINE,
-            [] (TextEditorWidget *w) { w->deleteStartOfLine(); }, true, Tr::tr("Delete Line up to Cursor"),
-            Core::useMacShortcuts ? QKeySequence(Tr::tr("Ctrl+Backspace")) : QKeySequence());
+    m_modifyingActions << registerAction(
+        DELETE_START_OF_LINE,
+        [](TextEditorWidget *w) { w->deleteStartOfLine(); },
+        true,
+        Tr::tr("Delete Line up to Cursor"),
+        Core::useMacShortcuts ? QKeySequence(Tr::tr("Ctrl+Backspace")) : QKeySequence());
     m_modifyingActions << registerAction(DELETE_START_OF_WORD,
             [] (TextEditorWidget *w) { w->deleteStartOfWord(); }, true, Tr::tr("Delete Word up to Cursor"));
     m_modifyingActions << registerAction(DELETE_START_OF_WORD_CAMEL_CASE,
@@ -217,6 +250,12 @@ void TextEditorActionHandlerPrivate::createActions()
     m_followSymbolInNextSplitAction = registerAction(FOLLOW_SYMBOL_UNDER_CURSOR_IN_NEXT_SPLIT,
             [] (TextEditorWidget *w) { w->openLinkUnderCursorInNextSplit(); }, true, Tr::tr("Follow Symbol Under Cursor in Next Split"),
             QKeySequence(Utils::HostOsInfo::isMacHost() ? Tr::tr("Meta+E, F2") : Tr::tr("Ctrl+E, F2")));
+    m_followToTypeAction = registerAction(FOLLOW_SYMBOL_TO_TYPE,
+            [] (TextEditorWidget *w) { w->openTypeUnderCursor(); }, true, Tr::tr("Follow Type Under Cursor"),
+            QKeySequence(Tr::tr("Ctrl+Shift+F2")));
+    m_followToTypeInNextSplitAction = registerAction(FOLLOW_SYMBOL_TO_TYPE_IN_NEXT_SPLIT,
+            [] (TextEditorWidget *w) { w->openTypeUnderCursorInNextSplit(); }, true, Tr::tr("Follow Type Under Cursor in Next Split"),
+            QKeySequence(Utils::HostOsInfo::isMacHost() ? Tr::tr("Meta+E, Shift+F2") : Tr::tr("Ctrl+E, Ctrl+Shift+F2")));
     m_findUsageAction = registerAction(FIND_USAGES,
             [] (TextEditorWidget *w) { w->findUsages(); }, true, Tr::tr("Find References to Symbol Under Cursor"),
             QKeySequence(Tr::tr("Ctrl+Shift+U")));
@@ -246,7 +285,7 @@ void TextEditorActionHandlerPrivate::createActions()
             QKeySequence(Tr::tr("Ctrl+Down")));
 
     // register "Edit" Menu Actions
-    Core::ActionContainer *editMenu = Core::ActionManager::actionContainer(M_EDIT);
+    ActionContainer *editMenu = ActionManager::actionContainer(M_EDIT);
     registerAction(SELECT_ENCODING,
             [] (TextEditorWidget *w) { w->selectEncoding(); }, false, Tr::tr("Select Encoding..."),
             QKeySequence(), G_EDIT_OTHER, editMenu);
@@ -258,7 +297,7 @@ void TextEditorActionHandlerPrivate::createActions()
         QKeySequence(Core::useMacShortcuts ? Tr::tr("Ctrl+Alt+Shift+V") : QString()), G_EDIT_COPYPASTE, editMenu);
 
     // register "Edit -> Advanced" Menu Actions
-    Core::ActionContainer *advancedEditMenu = Core::ActionManager::actionContainer(M_EDIT_ADVANCED);
+    ActionContainer *advancedEditMenu = ActionManager::actionContainer(M_EDIT_ADVANCED);
     m_autoIndentAction = registerAction(AUTO_INDENT_SELECTION,
             [] (TextEditorWidget *w) { w->autoIndent(); }, true, Tr::tr("Auto-&indent Selection"),
             QKeySequence(Tr::tr("Ctrl+I")),
@@ -339,16 +378,16 @@ void TextEditorActionHandlerPrivate::createActions()
             [] (TextEditorWidget *w) { w->lowercaseSelection(); }, true, Tr::tr("Lowercase Selection"),
             QKeySequence(Core::useMacShortcuts ? Tr::tr("Meta+U") : Tr::tr("Alt+U")),
             G_EDIT_TEXT, advancedEditMenu);
-    m_modifyingActions << registerAction(SORT_SELECTED_LINES,
-            [] (TextEditorWidget *w) { w->sortSelectedLines(); }, false, Tr::tr("&Sort Selected Lines"),
+    m_modifyingActions << registerAction(SORT_LINES,
+        [] (TextEditorWidget *w) { w->sortLines(); }, false, Tr::tr("&Sort Lines"),
             QKeySequence(Core::useMacShortcuts ? Tr::tr("Meta+Shift+S") : Tr::tr("Alt+Shift+S")),
             G_EDIT_TEXT, advancedEditMenu);
     registerAction(FOLD,
-            [] (TextEditorWidget *w) { w->fold(); }, true, Tr::tr("Fold"),
+            [] (TextEditorWidget *w) { w->foldCurrentBlock(); }, true, Tr::tr("Fold"),
             QKeySequence(Tr::tr("Ctrl+<")),
             G_EDIT_COLLAPSING, advancedEditMenu);
     registerAction(UNFOLD,
-            [] (TextEditorWidget *w) { w->unfold(); }, true, Tr::tr("Unfold"),
+            [] (TextEditorWidget *w) { w->unfoldCurrentBlock(); }, true, Tr::tr("Unfold"),
             QKeySequence(Tr::tr("Ctrl+>")),
             G_EDIT_COLLAPSING, advancedEditMenu);
     m_unfoldAllAction = registerAction(UNFOLD_ALL,
@@ -463,9 +502,28 @@ void TextEditorActionHandlerPrivate::updateActions()
         m_textWrappingAction->setChecked(m_currentEditorWidget->displaySettings().m_textWrapping);
     }
 
-    updateRedoAction(m_currentEditorWidget && m_currentEditorWidget->document()->isRedoAvailable());
-    updateUndoAction(m_currentEditorWidget && m_currentEditorWidget->document()->isUndoAvailable());
-    updateCopyAction(m_currentEditorWidget && m_currentEditorWidget->textCursor().hasSelection());
+    bool canRedo = false;
+    bool canUndo = false;
+    bool canCopy = false;
+
+    if (m_currentEditor && m_currentEditor->document()
+        && m_currentEditor->document()->id() == m_editorId) {
+        canRedo = m_canRedoCallback ? m_canRedoCallback(m_currentEditor) : false;
+        canUndo = m_canUndoCallback ? m_canUndoCallback(m_currentEditor) : false;
+
+        if (m_currentEditorWidget) {
+            canRedo = m_canRedoCallback ? canRedo
+                                        : m_currentEditorWidget->document()->isRedoAvailable();
+            canUndo = m_canUndoCallback ? canUndo
+                                        : m_currentEditorWidget->document()->isUndoAvailable();
+            canCopy = m_currentEditorWidget->textCursor().hasSelection();
+        }
+    }
+
+    updateRedoAction(canRedo);
+    updateUndoAction(canUndo);
+    updateCopyAction(canCopy);
+
     updateOptionalActions();
 }
 
@@ -477,6 +535,10 @@ void TextEditorActionHandlerPrivate::updateOptionalActions()
         optionalActions & TextEditorActionHandler::FollowSymbolUnderCursor);
     m_followSymbolInNextSplitAction->setEnabled(
         optionalActions & TextEditorActionHandler::FollowSymbolUnderCursor);
+    m_followToTypeAction->setEnabled(
+        optionalActions & TextEditorActionHandler::FollowTypeUnderCursor);
+    m_followToTypeInNextSplitAction->setEnabled(
+        optionalActions & TextEditorActionHandler::FollowTypeUnderCursor);
     m_findUsageAction->setEnabled(
         optionalActions & TextEditorActionHandler::FindUsage);
     m_jumpToFileAction->setEnabled(
@@ -517,26 +579,28 @@ void TextEditorActionHandlerPrivate::updateCopyAction(bool hasCopyableText)
         m_copyHtmlAction->setEnabled(hasCopyableText);
 }
 
-void TextEditorActionHandlerPrivate::updateCurrentEditor(Core::IEditor *editor)
+void TextEditorActionHandlerPrivate::updateCurrentEditor(IEditor *editor)
 {
     if (m_currentEditorWidget)
         m_currentEditorWidget->disconnect(this);
     m_currentEditorWidget = nullptr;
 
+    m_currentEditor = editor;
+
     if (editor && editor->document()->id() == m_editorId) {
-        TextEditorWidget *editorWidget = m_findTextWidget(editor);
-        QTC_ASSERT(editorWidget, return); // editor has our id, so shouldn't happen
-        m_currentEditorWidget = editorWidget;
-        connect(editorWidget, &QPlainTextEdit::undoAvailable,
-                this, &TextEditorActionHandlerPrivate::updateUndoAction);
-        connect(editorWidget, &QPlainTextEdit::redoAvailable,
-                this, &TextEditorActionHandlerPrivate::updateRedoAction);
-        connect(editorWidget, &QPlainTextEdit::copyAvailable,
-                this, &TextEditorActionHandlerPrivate::updateCopyAction);
-        connect(editorWidget, &TextEditorWidget::readOnlyChanged,
-                this, &TextEditorActionHandlerPrivate::updateActions);
-        connect(editorWidget, &TextEditorWidget::optionalActionMaskChanged,
-                this, &TextEditorActionHandlerPrivate::updateOptionalActions);
+        m_currentEditorWidget = m_findTextWidget(editor);
+        if (m_currentEditorWidget) {
+            connect(m_currentEditorWidget, &QPlainTextEdit::undoAvailable,
+                    this, &TextEditorActionHandlerPrivate::updateUndoAction);
+            connect(m_currentEditorWidget, &QPlainTextEdit::redoAvailable,
+                    this, &TextEditorActionHandlerPrivate::updateRedoAction);
+            connect(m_currentEditorWidget, &QPlainTextEdit::copyAvailable,
+                    this, &TextEditorActionHandlerPrivate::updateCopyAction);
+            connect(m_currentEditorWidget, &TextEditorWidget::readOnlyChanged,
+                    this, &TextEditorActionHandlerPrivate::updateActions);
+            connect(m_currentEditorWidget, &TextEditorWidget::optionalActionMaskChanged,
+                    this, &TextEditorActionHandlerPrivate::updateOptionalActions);
+        }
     }
     updateActions();
 }
@@ -563,6 +627,31 @@ uint TextEditorActionHandler::optionalActions() const
 TextEditorActionHandler::~TextEditorActionHandler()
 {
     delete d;
+}
+
+void TextEditorActionHandler::updateCurrentEditor()
+{
+    d->updateCurrentEditor(EditorManager::currentEditor());
+}
+
+void TextEditorActionHandler::updateActions()
+{
+    d->updateActions();
+}
+
+void TextEditorActionHandler::setCanUndoCallback(const Predicate &callback)
+{
+    d->m_canUndoCallback = callback;
+}
+
+void TextEditorActionHandler::setCanRedoCallback(const Predicate &callback)
+{
+    d->m_canRedoCallback = callback;
+}
+
+void TextEditorActionHandler::setUnhandledCallback(const UnhandledCallback &callback)
+{
+    d->m_unhandledCallback = callback;
 }
 
 } // namespace TextEditor

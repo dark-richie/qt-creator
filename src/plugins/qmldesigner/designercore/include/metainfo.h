@@ -3,19 +3,22 @@
 
 #pragma once
 
-#include "qmldesignercorelib_global.h"
+#ifndef QDS_USE_PROJECTSTORAGE
 
-#include <QStringList>
-#include <QSharedPointer>
+#  include "qmldesignercorelib_global.h"
 
-#include <nodemetainfo.h>
-#include "itemlibraryinfo.h"
+#  include <QStringList>
+#  include <QSharedPointer>
+
+#  include <nodemetainfo.h>
+#  include "itemlibraryinfo.h"
 
 namespace QmlDesigner {
 
 class ModelNode;
 class AbstractProperty;
 class ItemLibraryInfo;
+class ExternalDependenciesInterface;
 
 namespace Internal {
     class MetaInfoPrivate;
@@ -44,15 +47,14 @@ public:
 
     ItemLibraryInfo *itemLibraryInfo() const;
 public:
-    static MetaInfo global();
-    static void clearGlobal();
-
-    static void setPluginPaths(const QStringList &paths);
+    static void initializeGlobal(const QStringList &pluginPaths,
+                                 const ExternalDependenciesInterface &externalDependencies);
 
     static void disableParseItemLibraryDescriptionsUgly(); // ugly hack around broken tests
 
 private:
     bool isGlobal() const;
+    static MetaInfo global();
 
 private:
     MetaInfo();
@@ -63,3 +65,4 @@ private:
 };
 
 } //namespace QmlDesigner
+#endif

@@ -1,6 +1,6 @@
-set(IDE_VERSION "10.0.82")                            # The IDE version.
-set(IDE_VERSION_COMPAT "10.0.82")                     # The IDE Compatibility version.
-set(IDE_VERSION_DISPLAY "11.0.0-beta1")               # The IDE display version.
+set(IDE_VERSION "12.0.82")                            # The IDE version.
+set(IDE_VERSION_COMPAT "12.0.82")                     # The IDE Compatibility version.
+set(IDE_VERSION_DISPLAY "13.0.0-beta1")               # The IDE display version.
 set(IDE_COPYRIGHT_YEAR "2023")                        # The IDE current copyright year.
 
 set(IDE_SETTINGSVARIANT "QtProject")                  # The IDE settings variation.
@@ -16,6 +16,6 @@ set(IDE_DOC_FILE_ONLINE "qtcreator/qtcreator-online.qdocconf")
 # Absolute, or relative to <qtcreator>/src/app
 # Should contain qtcreator.ico, qtcreator.xcassets
 set(IDE_ICON_PATH "")
-# Absolute, or relative to <qtcreator>/src/plugins/coreplugin
+# Absolute, or relative to <qtcreator>/src/app
 # Should contain images/logo/(16|24|32|48|64|128|256|512)/QtProject-qtcreator.png
 set(IDE_LOGO_PATH "")

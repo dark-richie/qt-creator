@@ -86,7 +86,7 @@ void QmlProfilerStatisticsModel::restrictToFeatures(quint64 features)
     m_modelManager->replayQmlEvents(filter(std::bind(&QmlProfilerStatisticsModel::loadEvent, this,
                                                      std::placeholders::_1, std::placeholders::_2)),
                                     std::bind(&QmlProfilerStatisticsModel::beginResetModel, this),
-                                    [this]() {
+                                    [this] {
         finalize();
         notesChanged(QmlProfilerStatisticsModel::s_invalidTypeId); // Reload notes
     }, [this](const QString &message) {
@@ -121,11 +121,7 @@ QStringList QmlProfilerStatisticsModel::details(int typeIndex) const
             data = data.left(maxColumnWidth - 1) + ellipsisChar;
     }
 
-    return QStringList({
-        displayName,
-        data,
-        QString::number(durationPercent(typeIndex), 'f', 2) + QLatin1Char('%')
-    });
+    return {displayName, data, QString::number(durationPercent(typeIndex), 'f', 2) + '%'};
 }
 
 QString QmlProfilerStatisticsModel::summary(const QVector<int> &typeIds) const

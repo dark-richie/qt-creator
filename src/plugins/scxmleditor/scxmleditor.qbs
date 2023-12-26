@@ -11,8 +11,6 @@ QtcPlugin {
     Depends { name: "ProjectExplorer" }
     Depends { name: "QtSupport" }
 
-    Depends { name: "app_version_header" }
-
     cpp.includePaths: base.concat([
         ".",
         common.prefix,
@@ -23,10 +21,9 @@ QtcPlugin {
     files: [
         "scxmleditor_global.h", "scxmleditortr.h",
         "scxmleditorconstants.h",
-        "scxmleditordata.cpp", "scxmleditordata.h",
+        "scxmleditor.cpp", "scxmleditor.h",
         "scxmleditordocument.cpp", "scxmleditordocument.h",
-        "scxmleditorfactory.cpp", "scxmleditorfactory.h",
-        "scxmleditorplugin.cpp", "scxmleditorplugin.h",
+        "scxmleditorplugin.cpp",
         "scxmleditorstack.cpp", "scxmleditorstack.h",
         "scxmltexteditor.cpp", "scxmltexteditor.h",
     ]
@@ -93,6 +90,7 @@ QtcPlugin {
             "baseitem.cpp", "baseitem.h",
             "connectableitem.cpp", "connectableitem.h",
             "cornergrabberitem.cpp", "cornergrabberitem.h",
+            "eventitem.cpp", "eventitem.h",
             "finalstateitem.cpp", "finalstateitem.h",
             "genericscxmlplugin.cpp", "genericscxmlplugin.h",
             "graphicsitemprovider.h",

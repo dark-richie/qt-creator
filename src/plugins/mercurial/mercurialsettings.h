@@ -3,25 +3,19 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <vcsbase/vcsbaseclientsettings.h>
 
 namespace Mercurial::Internal {
 
-class MercurialSettings : public VcsBase::VcsBaseSettings
+class MercurialSettings final : public VcsBase::VcsBaseSettings
 {
 public:
     MercurialSettings();
 
-    Utils::StringAspect diffIgnoreWhiteSpace;
-    Utils::StringAspect diffIgnoreBlankLines;
+    Utils::StringAspect diffIgnoreWhiteSpace{this};
+    Utils::StringAspect diffIgnoreBlankLines{this};
 };
 
-class MercurialSettingsPage final : public Core::IOptionsPage
-{
-public:
-    explicit MercurialSettingsPage(MercurialSettings *settings);
-};
+MercurialSettings &settings();
 
 } // Mercurial::Internal

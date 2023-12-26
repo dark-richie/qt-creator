@@ -8,7 +8,6 @@
 #include "wrappablelineedit.h"
 
 #include <utils/environment.h>
-#include <utils/executeondestruction.h>
 #include <utils/infolabel.h>
 #include <utils/layoutbuilder.h>
 #include <utils/stringutils.h>
@@ -21,6 +20,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QTabWidget>
 #include <QTreeView>
 
@@ -120,9 +120,11 @@ class ClangBaseChecksWidget : public QWidget
 public:
     ClangBaseChecksWidget()
     {
-        auto label = new QLabel(Tr::tr("For appropriate options, consult the GCC or Clang manual "
-            "pages or the %1 GCC online documentation</a>.")
-                .arg("<a href=\"https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html\">"));
+        auto label = new QLabel;
+        label->setTextFormat(Qt::MarkdownText);
+        label->setText(Tr::tr("For appropriate options, consult the GCC or Clang manual "
+                              "pages or the [GCC online documentation](%1).")
+                           .arg("https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html"));
         label->setOpenExternalLinks(true);
 
         useFlagsFromBuildSystemCheckBox = new QCheckBox(Tr::tr("Use diagnostic flags from build system"));
@@ -321,7 +323,7 @@ void ClangDiagnosticConfigsWidget::sync()
         return;
 
     disconnectClangOnlyOptionsChanged();
-    ExecuteOnDestruction e([this] { connectClangOnlyOptionsChanged(); });
+    const QScopeGuard cleanup([this] { connectClangOnlyOptionsChanged(); });
 
     // Update main button row
     const ClangDiagnosticConfig &config = currentConfig();

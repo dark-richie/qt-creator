@@ -26,7 +26,7 @@ TreeView::TreeView(CurveEditorModel *model, QWidget *parent)
 
     setModel(model);
 
-    auto expandItems = [this]() { expandAll(); };
+    auto expandItems = [this] { expandAll(); };
     connect(model, &QAbstractItemModel::modelReset, expandItems);
 
     setItemDelegate(new TreeItemDelegate(model->style(), this));
@@ -36,6 +36,8 @@ TreeView::TreeView(CurveEditorModel *model, QWidget *parent)
     setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     setStyle(model->style());
+
+    header()->setMinimumSectionSize(20);
 
     header()->setSectionResizeMode(0, QHeaderView::Stretch);
     header()->setSectionResizeMode(1, QHeaderView::Fixed);

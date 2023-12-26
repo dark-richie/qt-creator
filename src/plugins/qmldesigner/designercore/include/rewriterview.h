@@ -84,7 +84,7 @@ public:
     void rewriterBeginTransaction() override;
     void rewriterEndTransaction() override;
 
-    void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports) override;
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
 
     TextModifier *textModifier() const;
     void setTextModifier(TextModifier *textModifier);
@@ -176,8 +176,8 @@ signals:
     void modelInterfaceProjectUpdated();
 
 protected: // functions
-    void importAdded(const Import &import);
-    void importRemoved(const Import &import);
+    void importsAdded(const Imports &imports);
+    void importsRemoved(const Imports &imports);
 
     Internal::ModelToTextMerger *modelToTextMerger() const;
     Internal::TextToModelMerger *textToModelMerger() const;

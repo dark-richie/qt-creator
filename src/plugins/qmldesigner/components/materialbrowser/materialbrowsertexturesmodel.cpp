@@ -5,6 +5,7 @@
 
 #include "designmodewidget.h"
 #include "imageutils.h"
+#include "materialbrowserview.h"
 #include "qmldesignerplugin.h"
 #include "qmlobjectnode.h"
 #include "variantproperty.h"
@@ -13,8 +14,9 @@
 
 namespace QmlDesigner {
 
-MaterialBrowserTexturesModel::MaterialBrowserTexturesModel(QObject *parent)
+MaterialBrowserTexturesModel::MaterialBrowserTexturesModel(MaterialBrowserView *view, QObject *parent)
     : QAbstractListModel(parent)
+    , m_view(view)
 {
 }
 
@@ -24,12 +26,12 @@ MaterialBrowserTexturesModel::~MaterialBrowserTexturesModel()
 
 int MaterialBrowserTexturesModel::rowCount(const QModelIndex &) const
 {
-    return m_textureList.count();
+    return m_textureList.size();
 }
 
 QVariant MaterialBrowserTexturesModel::data(const QModelIndex &index, int role) const
 {
-    QTC_ASSERT(index.isValid() && index.row() < m_textureList.count(), return {});
+    QTC_ASSERT(index.isValid() && index.row() < m_textureList.size(), return {});
     QTC_ASSERT(roleNames().contains(role), return {});
 
     if (role == RoleTexSource) {
@@ -50,6 +52,10 @@ QVariant MaterialBrowserTexturesModel::data(const QModelIndex &index, int role) 
 
     if (role == RoleTexInternalId)
         return m_textureList.at(index.row()).internalId();
+
+    if (role == RoleTexId) {
+        return m_textureList.at(index.row()).id();
+    }
 
     if (role == RoleTexToolTip) {
         QString source = data(index, RoleTexSource).toString(); // absolute path
@@ -88,6 +94,7 @@ QHash<int, QByteArray> MaterialBrowserTexturesModel::roleNames() const
     static const QHash<int, QByteArray> roles {
         {RoleTexHasDynamicProps, "hasDynamicProperties"},
         {RoleTexInternalId,      "textureInternalId"},
+        {RoleTexId,              "textureId"},
         {RoleTexSource,          "textureSource"},
         {RoleTexToolTip,         "textureToolTip"},
         {RoleTexVisible,         "textureVisible"}
@@ -119,7 +126,7 @@ void MaterialBrowserTexturesModel::refreshSearch()
     // if selected texture goes invisible, select nearest one
     if (!isVisible(m_selectedIndex)) {
         int inc = 1;
-        int incCap = m_textureList.count();
+        int incCap = m_textureList.size();
         while (!isEmpty && inc < incCap) {
             if (isVisible(m_selectedIndex - inc)) {
                 selectTexture(m_selectedIndex - inc);
@@ -287,10 +294,28 @@ void MaterialBrowserTexturesModel::duplicateTexture(int idx)
 
 void MaterialBrowserTexturesModel::deleteTexture(int idx)
 {
-    if (isValidIndex(idx)) {
+    if (m_view && isValidIndex(idx)) {
         ModelNode node = m_textureList[idx];
-        if (node.isValid())
-            QmlObjectNode(node).destroy();
+        if (node.isValid()) {
+            m_view->executeInTransaction(__FUNCTION__, [&] {
+                node.destroy();
+            });
+        }
+    }
+}
+
+void MaterialBrowserTexturesModel::setTextureId(int idx, const QString &newId)
+{
+    if (!isValidIndex(idx))
+        return;
+
+    ModelNode node = m_textureList[idx];
+    if (!node.isValid())
+        return;
+
+    if (node.id() != newId) {
+        node.setIdWithRefactoring(newId);
+        emit dataChanged(index(idx, 0), index(idx, 0), {RoleTexId});
     }
 }
 

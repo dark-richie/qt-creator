@@ -44,11 +44,12 @@ enum class View3DActionType {
     ParticlesPlay,
     ParticlesRestart,
     ParticlesSeek,
-    SelectBackgroundColor,
-    SelectGridColor,
-    ResetBackgroundColor,
-    SyncBackgroundColor,
-    GetNodeAtPos
+    SyncEnvBackground,
+    GetNodeAtPos,
+    SetBakeLightsView3D,
+    SplitViewToggle,
+    MaterialOverride,
+    ShowWireframe
 };
 
 constexpr bool isNanotraceEnabled()

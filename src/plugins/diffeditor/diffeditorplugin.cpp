@@ -13,12 +13,13 @@
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
 
+#include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/textdocument.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/differ.h>
 #include <utils/fileutils.h>
-#include <utils/futuresynchronizer.h>
 #include <utils/qtcassert.h>
 
 #include <QAction>
@@ -28,8 +29,7 @@ using namespace Core;
 using namespace TextEditor;
 using namespace Utils;
 
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 class ReloadInput {
 public:
@@ -108,49 +108,45 @@ DiffFilesController::DiffFilesController(IDocument *document)
     setDisplayName(Tr::tr("Diff"));
     using namespace Tasking;
 
-    const TreeStorage<QList<std::optional<FileData>>> storage;
+    const Storage<QList<std::optional<FileData>>> storage;
 
-    const auto setupTree = [this, storage](TaskTree &taskTree) {
+    const auto onTreeSetup = [this, storage](TaskTree &taskTree) {
         QList<std::optional<FileData>> *outputList = storage.activeStorage();
-
-        const auto setupDiff = [this](AsyncTask<FileData> &async, const ReloadInput &reloadInput) {
-            async.setConcurrentCallData(DiffFile(ignoreWhitespace(), contextLineCount()), reloadInput);
-            async.setFutureSynchronizer(Internal::DiffEditorPlugin::futureSynchronizer());
-        };
-        const auto onDiffDone = [outputList](const AsyncTask<FileData> &async, int i) {
-            if (async.isResultAvailable())
-                (*outputList)[i] = async.result();
-        };
 
         const QList<ReloadInput> inputList = reloadInputList();
         outputList->resize(inputList.size());
 
-        using namespace std::placeholders;
-        QList<TaskItem> tasks {parallel, optional};
+        QList<GroupItem> tasks { parallel, finishAllAndSuccess };
         for (int i = 0; i < inputList.size(); ++i) {
-            tasks.append(Async<FileData>(std::bind(setupDiff, _1, inputList.at(i)),
-                                         std::bind(onDiffDone, _1, i)));
+            const auto onDiffSetup = [this, reloadInput = inputList.at(i)](Async<FileData> &async) {
+                async.setConcurrentCallData(
+                    DiffFile(ignoreWhitespace(), contextLineCount()), reloadInput);
+                async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
+            };
+
+            const auto onDiffDone = [outputList, i](const Async<FileData> &async) {
+                if (async.isResultAvailable())
+                    (*outputList)[i] = async.result();
+            };
+            tasks.append(AsyncTask<FileData>(onDiffSetup, onDiffDone, CallDoneIf::Success));
         }
-        taskTree.setupRoot(tasks);
+        taskTree.setRecipe(tasks);
     };
-    const auto onTreeDone = [this, storage] {
-        const QList<std::optional<FileData>> &results = *storage;
+    const auto onTreeDone = [this, storage](DoneWith result) {
         QList<FileData> finalList;
-        for (const std::optional<FileData> &result : results) {
-            if (result.has_value())
-                finalList.append(*result);
+        if (result == DoneWith::Success) {
+            const QList<std::optional<FileData>> &results = *storage;
+            for (const std::optional<FileData> &result : results) {
+                if (result.has_value())
+                    finalList.append(*result);
+            }
         }
         setDiffFiles(finalList);
     };
-    const auto onTreeError = [this, storage] {
-        setDiffFiles({});
-    };
 
     const Group root = {
-        Storage(storage),
-        Tree(setupTree),
-        OnGroupDone(onTreeDone),
-        OnGroupError(onTreeError)
+        storage,
+        TaskTreeTask(onTreeSetup, onTreeDone)
     };
     setReloadRecipe(root);
 }
@@ -415,12 +411,10 @@ public:
 
     DiffEditorFactory m_editorFactory;
     DiffEditorServiceImpl m_service;
-    FutureSynchronizer m_futureSynchronizer;
 };
 
 DiffEditorPluginPrivate::DiffEditorPluginPrivate()
 {
-    m_futureSynchronizer.setCancelOnWait(true);
     //register actions
     ActionContainer *toolsContainer = ActionManager::actionContainer(Core::Constants::M_TOOLS);
     toolsContainer->insertGroup(Core::Constants::G_TOOLS_DEBUG, Constants::G_TOOLS_DIFF);
@@ -535,14 +529,7 @@ void DiffEditorPlugin::initialize()
     d = new DiffEditorPluginPrivate;
 }
 
-FutureSynchronizer *DiffEditorPlugin::futureSynchronizer()
-{
-    QTC_ASSERT(s_instance, return nullptr);
-    return &s_instance->d->m_futureSynchronizer;
-}
-
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal
 
 #ifdef WITH_TESTS
 

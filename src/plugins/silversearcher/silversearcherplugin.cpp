@@ -1,19 +1,28 @@
 // Copyright (C) 2017 Przemyslaw Gorszkowski <pgorszkowski@gmail.com>.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "silversearcherplugin.h"
 #include "findinfilessilversearcher.h"
-#include "outputparser_test.h"
+#include "silversearcherparser_test.h"
+
+#include <extensionsystem/iplugin.h>
 
 namespace SilverSearcher::Internal {
 
-void SilverSearcherPlugin::initialize()
+class SilverSearcherPlugin final : public ExtensionSystem::IPlugin
 {
-    new FindInFilesSilverSearcher(this);
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "SilverSearcher.json")
+
+    void initialize() final
+    {
+        setupFindInFilesSilverSearcher();
 
 #ifdef WITH_TESTS
-    addTest<OutputParserTest>();
+        addTest<OutputParserTest>();
 #endif
-}
+    }
+};
 
 } // SilverSearcher::Internal
+
+#include "silversearcherplugin.moc"

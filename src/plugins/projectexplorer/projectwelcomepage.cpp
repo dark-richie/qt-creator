@@ -3,8 +3,6 @@
 
 #include "projectwelcomepage.h"
 
-#include "session.h"
-#include "sessionmodel.h"
 #include "projectexplorer.h"
 #include "projectexplorertr.h"
 #include "projectmanager.h"
@@ -16,6 +14,8 @@
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/iwizardfactory.h>
+#include <coreplugin/session.h>
+#include <coreplugin/sessionmodel.h>
 #include <coreplugin/welcomepagehelper.h>
 
 #include <utils/algorithm.h>
@@ -23,7 +23,7 @@
 #include <utils/icon.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
-#include <utils/qtcassert.h>
+#include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 
 #include <QAbstractItemDelegate>
@@ -81,10 +81,10 @@ QVariant ProjectModel::data(const QModelIndex &index, int role) const
         const Id projectBase = PROJECT_BASE_ID;
         if (Command *cmd = ActionManager::command(projectBase.withSuffix(index.row() + 1)))
             return cmd->keySequence().toString(QKeySequence::NativeText);
-        return QVariant();
+        return {};
     }
     default:
-        return QVariant();
+        return {};
     }
 }
 
@@ -523,19 +523,19 @@ public:
                 QAction *action = new QAction(Tr::tr("Remove Project from Recent Projects"));
                 const auto projectModel = qobject_cast<ProjectModel *>(model);
                 contextMenu.addAction(action);
-                connect(action, &QAction::triggered, [idx, projectModel](){
+                connect(action, &QAction::triggered, this, [idx, projectModel] {
                     const QVariant projectFile = idx.data(ProjectModel::FilePathRole);
                     ProjectExplorerPlugin::removeFromRecentProjects(FilePath::fromVariant(projectFile));
                     projectModel->resetProjects();
                 });
                 contextMenu.addSeparator();
                 action = new QAction(Tr::tr("Clear Recent Project List"));
-                connect(action, &QAction::triggered, [projectModel]() {
+                connect(action, &QAction::triggered, this, [projectModel] {
                     ProjectExplorerPlugin::clearRecentProjects();
                     projectModel->resetProjects();
                 });
                 contextMenu.addAction(action);
-                contextMenu.exec(mouseEvent->globalPos());
+                contextMenu.exec(mouseEvent->globalPosition().toPoint());
                 return true;
             }
         }
@@ -580,14 +580,14 @@ public:
         auto manageSessionsButton = new WelcomePageButton(this);
         manageSessionsButton->setText(Tr::tr("Manage..."));
         manageSessionsButton->setWithAccentColor(true);
-        manageSessionsButton->setOnClicked([] { ProjectExplorerPlugin::showSessionManager(); });
+        manageSessionsButton->setOnClicked([] { SessionManager::showSessionManager(); });
 
         auto sessionsLabel = new QLabel(this);
-        sessionsLabel->setFont(brandFont());
+        sessionsLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
         sessionsLabel->setText(Tr::tr("Sessions"));
 
         auto recentProjectsLabel = new QLabel(this);
-        recentProjectsLabel->setFont(brandFont());
+        recentProjectsLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
         recentProjectsLabel->setText(Tr::tr("Projects"));
 
         auto sessionsList = new TreeView(this, "Sessions");

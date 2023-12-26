@@ -30,17 +30,14 @@ public:
         : database(database)
     {
         transaction.commit();
+        database.walCheckpointFull();
     }
 
     ImageEntry fetchImage(Utils::SmallStringView name, Sqlite::TimeStamp minimumTimeStamp) const override
     {
         try {
-            Sqlite::DeferredTransaction transaction{database};
-
-            auto optionalBlob = selectImageStatement.template optionalValue<Sqlite::ByteArrayBlob>(
-                name, minimumTimeStamp.value);
-
-            transaction.commit();
+            auto optionalBlob = selectImageStatement.template optionalValueWithTransaction<
+                Sqlite::ByteArrayBlob>(name, minimumTimeStamp.value);
 
             if (optionalBlob)
                 return {readImage(optionalBlob->byteArray)};
@@ -55,12 +52,8 @@ public:
                                  Sqlite::TimeStamp minimumTimeStamp) const override
     {
         try {
-            Sqlite::DeferredTransaction transaction{database};
-
-            auto optionalBlob = selectMidSizeImageStatement.template optionalValue<Sqlite::ByteArrayBlob>(
-                name, minimumTimeStamp.value);
-
-            transaction.commit();
+            auto optionalBlob = selectMidSizeImageStatement.template optionalValueWithTransaction<
+                Sqlite::ByteArrayBlob>(name, minimumTimeStamp.value);
 
             if (optionalBlob)
                 return {readImage(optionalBlob->byteArray)};
@@ -75,12 +68,8 @@ public:
                                Sqlite::TimeStamp minimumTimeStamp) const override
     {
         try {
-            Sqlite::DeferredTransaction transaction{database};
-
-            auto optionalBlob = selectSmallImageStatement.template optionalValue<Sqlite::ByteArrayBlob>(
-                name, minimumTimeStamp.value);
-
-            transaction.commit();
+            auto optionalBlob = selectSmallImageStatement.template optionalValueWithTransaction<
+                Sqlite::ByteArrayBlob>(name, minimumTimeStamp.value);
 
             if (optionalBlob)
                 return ImageEntry{readImage(optionalBlob->byteArray)};
@@ -95,12 +84,8 @@ public:
     IconEntry fetchIcon(Utils::SmallStringView name, Sqlite::TimeStamp minimumTimeStamp) const override
     {
         try {
-            Sqlite::DeferredTransaction transaction{database};
-
-            auto optionalBlob = selectIconStatement.template optionalValue<Sqlite::ByteArrayBlob>(
-                name, minimumTimeStamp.value);
-
-            transaction.commit();
+            auto optionalBlob = selectIconStatement.template optionalValueWithTransaction<
+                Sqlite::ByteArrayBlob>(name, minimumTimeStamp.value);
 
             if (optionalBlob)
                 return {readIcon(optionalBlob->byteArray)};
@@ -119,19 +104,16 @@ public:
                     const QImage &smallImage) override
     {
         try {
-            Sqlite::ImmediateTransaction transaction{database};
-
             auto imageBuffer = createBuffer(image);
             auto midSizeImageBuffer = createBuffer(midSizeImage);
             auto smallImageBuffer = createBuffer(smallImage);
-            upsertImageStatement.write(name,
-                                       newTimeStamp.value,
-                                       createBlobView(imageBuffer.get()),
-                                       createBlobView(midSizeImageBuffer.get()),
-                                       createBlobView(smallImageBuffer.get()));
-
-            transaction.commit();
-
+            Sqlite::withImmediateTransaction(database, [&] {
+                upsertImageStatement.write(name,
+                                           newTimeStamp.value,
+                                           createBlobView(imageBuffer.get()),
+                                           createBlobView(midSizeImageBuffer.get()),
+                                           createBlobView(smallImageBuffer.get()));
+            });
         } catch (const Sqlite::StatementIsBusy &) {
             return storeImage(name, newTimeStamp, image, midSizeImage, smallImage);
         }
@@ -140,12 +122,10 @@ public:
     void storeIcon(Utils::SmallStringView name, Sqlite::TimeStamp newTimeStamp, const QIcon &icon) override
     {
         try {
-            Sqlite::ImmediateTransaction transaction{database};
-
             auto iconBuffer = createBuffer(icon);
-            upsertIconStatement.write(name, newTimeStamp.value, createBlobView(iconBuffer.get()));
-
-            transaction.commit();
+            Sqlite::withImmediateTransaction(database, [&] {
+                upsertIconStatement.write(name, newTimeStamp.value, createBlobView(iconBuffer.get()));
+            });
 
         } catch (const Sqlite::StatementIsBusy &) {
             return storeIcon(name, newTimeStamp, icon);
@@ -178,16 +158,10 @@ private:
         Initializer(DatabaseType &database)
         {
             if (!database.isInitialized()) {
-                Sqlite::ExclusiveTransaction transaction{database};
-
                 createImagesTable(database);
                 database.setVersion(1);
 
-                transaction.commit();
-
                 database.setIsInitialized(true);
-
-                database.walCheckpointFull();
             } else if (database.version() < 1) {
                 updateTableToVersion1(database);
             }
@@ -224,13 +198,9 @@ private:
 
         void updateTableToVersion1(DatabaseType &database)
         {
-            Sqlite::ExclusiveTransaction transaction{database};
-
             database.execute("DELETE FROM images");
             database.execute("ALTER TABLE images ADD COLUMN midSizeImage");
             database.setVersion(1);
-
-            transaction.commit();
         }
     };
 
@@ -298,8 +268,8 @@ private:
 
 public:
     DatabaseType &database;
+    Sqlite::ExclusiveNonThrowingDestructorTransaction<DatabaseType> transaction{database};
     Initializer initializer{database};
-    Sqlite::ImmediateNonThrowingDestructorTransaction<DatabaseType> transaction{database};
     mutable ReadStatement<1, 2> selectImageStatement{
         "SELECT image FROM images WHERE name=?1 AND mtime >= ?2", database};
     mutable ReadStatement<1, 2> selectMidSizeImageStatement{

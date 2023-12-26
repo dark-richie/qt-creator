@@ -6,19 +6,18 @@
 #include <utils/aspects.h>
 
 namespace Terminal {
+
 class TerminalSettings : public Utils::AspectContainer
 {
 public:
     TerminalSettings();
 
-    static TerminalSettings &instance();
+    Utils::BoolAspect enableTerminal{this};
 
-    Utils::BoolAspect enableTerminal;
-
-    Utils::StringAspect font;
-    Utils::IntegerAspect fontSize;
-    Utils::StringAspect shell;
-    Utils::StringAspect shellArguments;
+    Utils::StringAspect font{this};
+    Utils::IntegerAspect fontSize{this};
+    Utils::FilePathAspect shell{this};
+    Utils::StringAspect shellArguments{this};
 
     Utils::ColorAspect foregroundColor;
     Utils::ColorAspect backgroundColor;
@@ -27,10 +26,15 @@ public:
 
     Utils::ColorAspect colors[16];
 
-    Utils::BoolAspect allowBlinkingCursor;
+    Utils::BoolAspect allowBlinkingCursor{this};
 
-    Utils::BoolAspect sendEscapeToTerminal;
-    Utils::BoolAspect audibleBell;
+    Utils::ToggleAspect sendEscapeToTerminal{this};
+    Utils::BoolAspect audibleBell{this};
+    Utils::ToggleAspect lockKeyboard{this};
+
+    Utils::BoolAspect enableMouseTracking{this};
 };
 
-} // namespace Terminal
+TerminalSettings &settings();
+
+} // Terminal

@@ -286,7 +286,7 @@ class VirtualMethodsSettings
 public:
     void read()
     {
-        QSettings *s = Core::ICore::settings();
+        QtcSettings *s = Core::ICore::settings();
         s->beginGroup(group());
         insertVirtualKeyword = s->value(insertVirtualKeywordKey(), kInsertVirtualKeywordDefault)
                                    .toBool();
@@ -304,7 +304,7 @@ public:
 
     void write() const
     {
-        Utils::QtcSettings *s = Core::ICore::settings();
+        QtcSettings *s = Core::ICore::settings();
         s->beginGroup(group());
         s->setValueWithDefault(insertVirtualKeywordKey(),
                                insertVirtualKeyword,
@@ -334,14 +334,13 @@ public:
     bool insertOverrideReplacement = kInsertOVerrideReplacementDefault;
 
 private:
-    using _ = QLatin1String;
-    static QString group() { return _("QuickFix/InsertVirtualMethods"); }
-    static QString insertVirtualKeywordKey() { return _("insertKeywordVirtual"); }
-    static QString insertOverrideReplacementKey() { return _("insertOverrideReplacement"); }
-    static QString overrideReplacementIndexKey() { return _("overrideReplacementIndex"); }
-    static QString userAddedOverrideReplacementsKey() { return _("userAddedOverrideReplacements"); }
-    static QString implementationModeKey() { return _("implementationMode"); }
-    static QString hideReimplementedFunctionsKey() { return _("hideReimplementedFunctions"); }
+    static Key group() { return "QuickFix/InsertVirtualMethods"; }
+    static Key insertVirtualKeywordKey() { return "insertKeywordVirtual"; }
+    static Key insertOverrideReplacementKey() { return "insertOverrideReplacement"; }
+    static Key overrideReplacementIndexKey() { return "overrideReplacementIndex"; }
+    static Key userAddedOverrideReplacementsKey() { return "userAddedOverrideReplacements"; }
+    static Key implementationModeKey() { return "implementationMode"; }
+    static Key hideReimplementedFunctionsKey() { return "hideReimplementedFunctions"; }
 };
 
 class InsertVirtualMethodsModel : public QAbstractItemModel
@@ -764,7 +763,7 @@ public:
         Utils::ChangeSet headerChangeSet;
         const CppRefactoringChanges refactoring(snapshot());
         const Utils::FilePath filePath = currentFile()->filePath();
-        const CppRefactoringFilePtr headerFile = refactoring.file(filePath);
+        const CppRefactoringFilePtr headerFile = refactoring.cppFile(filePath);
         const LookupContext targetContext(headerFile->cppDocument(), snapshot());
 
         const Class *targetClass = m_classAST->symbol;
@@ -865,8 +864,6 @@ public:
         // Write header file
         if (!headerChangeSet.isEmpty()) {
             headerFile->setChangeSet(headerChangeSet);
-            headerFile->appendIndentRange(Utils::ChangeSet::Range(m_insertPosDecl,
-                                                                  m_insertPosDecl + 1));
             headerFile->setOpenEditor(true, m_insertPosDecl);
             headerFile->apply();
         }
@@ -882,7 +879,7 @@ public:
             if (!clazz)
                 return;
 
-            CppRefactoringFilePtr implementationFile = refactoring.file(m_cppFilePath);
+            CppRefactoringFilePtr implementationFile = refactoring.cppFile(m_cppFilePath);
             Utils::ChangeSet implementationChangeSet;
             const int insertPos = qMax(0, implementationFile->document()->characterCount() - 1);
 
@@ -921,8 +918,6 @@ public:
 
             if (!implementationChangeSet.isEmpty()) {
                 implementationFile->setChangeSet(implementationChangeSet);
-                implementationFile->appendIndentRange(Utils::ChangeSet::Range(insertPos,
-                                                                              insertPos + 1));
                 implementationFile->apply();
             }
         }
@@ -1048,7 +1043,7 @@ void InsertVirtualMethodsDialog::initGui()
     auto clearUserAddedReplacements = new QAction(this);
     clearUserAddedReplacements->setIcon(Utils::Icons::CLEAN_TOOLBAR.icon());
     clearUserAddedReplacements->setText(Tr::tr("Clear Added \"override\" Equivalents"));
-    connect(clearUserAddedReplacements, &QAction::triggered, [this] {
+    connect(clearUserAddedReplacements, &QAction::triggered, this, [this] {
        m_availableOverrideReplacements = defaultOverrideReplacements();
        updateOverrideReplacementsComboBox();
        m_clearUserAddedReplacementsButton->setEnabled(false);
@@ -1241,8 +1236,8 @@ InsertVirtualMethods::~InsertVirtualMethods()
     m_dialog->deleteLater();
 }
 
-void InsertVirtualMethods::match(const CppQuickFixInterface &interface,
-                                 QuickFixOperations &result)
+void InsertVirtualMethods::doMatch(const CppQuickFixInterface &interface,
+                                   QuickFixOperations &result)
 {
     QSharedPointer<InsertVirtualMethodsOp> op(new InsertVirtualMethodsOp(interface, m_dialog));
     if (op->isValid())
@@ -1271,8 +1266,8 @@ public:
         m_settings->overrideReplacement = QLatin1String("override");
     }
 
-    bool gather() { return true; }
-    void saveSettings() { }
+    bool gather() override { return true; }
+    void saveSettings() override { }
 };
 
 void InsertVirtualMethodsTest::test_data()

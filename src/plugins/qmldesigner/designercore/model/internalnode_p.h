@@ -13,6 +13,7 @@
 
 #include <auxiliarydata.h>
 #include <projectstorageids.h>
+#include <tracing/qmldesignertracing.h>
 #include <utils/smallstring.h>
 
 #include <QHash>
@@ -23,18 +24,20 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 namespace QmlDesigner {
 
 namespace Internal {
+using namespace NanotraceHR::Literals;
 
 class InternalProperty;
 class InternalNode;
 
 using InternalNodePointer = std::shared_ptr<InternalNode>;
-using InternalPropertyPointer = QSharedPointer<InternalProperty>;
+using InternalPropertyPointer = std::shared_ptr<InternalProperty>;
 
 class InternalNode : public std::enable_shared_from_this<InternalNode>
 {
@@ -44,8 +47,6 @@ public:
     using Pointer = std::shared_ptr<InternalNode>;
     using WeakPointer = std::weak_ptr<InternalNode>;
 
-    explicit InternalNode() = default;
-
     explicit InternalNode(TypeName typeName, int majorVersion, int minorVersion, qint32 internalId)
         : typeName(std::move(typeName))
         , majorVersion(majorVersion)
@@ -54,7 +55,7 @@ public:
         , internalId(internalId)
     {}
 
-    InternalNodeAbstractProperty::Pointer parentProperty() const;
+    InternalNodeAbstractProperty::Pointer parentProperty() const { return m_parentProperty.lock(); }
 
     // Reparent within model
     void setParentProperty(const InternalNodeAbstractProperty::Pointer &parent);
@@ -67,31 +68,120 @@ public:
     AuxiliaryDatasForType auxiliaryData(AuxiliaryDataType type) const;
     AuxiliaryDatasView auxiliaryData() const { return std::as_const(m_auxiliaryDatas); }
 
-    InternalProperty::Pointer property(const PropertyName &name) const;
-    InternalBindingProperty::Pointer bindingProperty(const PropertyName &name) const;
-    InternalSignalHandlerProperty::Pointer signalHandlerProperty(const PropertyName &name) const;
-    InternalSignalDeclarationProperty::Pointer signalDeclarationProperty(const PropertyName &name) const;
-    InternalVariantProperty::Pointer variantProperty(const PropertyName &name) const;
-    InternalNodeListProperty::Pointer nodeListProperty(const PropertyName &name) const;
-    InternalNodeAbstractProperty::Pointer nodeAbstractProperty(const PropertyName &name) const;
-    InternalNodeProperty::Pointer nodeProperty(const PropertyName &name) const;
+    template<typename Type>
+    Type *property(PropertyNameView name) const
+    {
+        auto propertyIter = m_nameProperties.find(name);
 
-    void addBindingProperty(const PropertyName &name);
-    void addSignalHandlerProperty(const PropertyName &name);
-    void addSignalDeclarationProperty(const PropertyName &name);
-    void addNodeListProperty(const PropertyName &name);
-    void addVariantProperty(const PropertyName &name);
-    void addNodeProperty(const PropertyName &name, const TypeName &dynamicTypeName);
+        if (propertyIter != m_nameProperties.end()) {
+            if (auto property = propertyIter->second.get();
+                property && property->propertyType() == Type::type)
+                return static_cast<Type *>(property);
+        }
+
+        return {};
+    }
+
+    InternalProperty *property(PropertyNameView name) const
+    {
+        auto propertyIter = m_nameProperties.find(name);
+        if (propertyIter != m_nameProperties.end())
+            return propertyIter->second.get();
+
+        return nullptr;
+    }
+
+    auto bindingProperty(PropertyNameView name) const
+    {
+        return property<InternalBindingProperty>(name);
+    }
+
+    auto signalHandlerProperty(PropertyNameView name) const
+    {
+        return property<InternalSignalHandlerProperty>(name);
+    }
+
+    auto signalDeclarationProperty(PropertyNameView name) const
+    {
+        return property<InternalSignalDeclarationProperty>(name);
+    }
+
+    auto variantProperty(PropertyNameView name) const
+    {
+        return property<InternalVariantProperty>(name);
+    }
+
+    auto nodeListProperty(PropertyNameView name) const
+    {
+        return property<InternalNodeListProperty>(name);
+    }
+
+    InternalNodeAbstractProperty::Pointer nodeAbstractProperty(PropertyNameView name) const
+    {
+        auto found = m_nameProperties.find(name);
+        if (found != m_nameProperties.end()) {
+            auto property = found->second;
+            auto propertyType = property->propertyType();
+            if (propertyType == PropertyType::NodeList || propertyType == PropertyType::Node) {
+                return std::static_pointer_cast<InternalNodeAbstractProperty>(property);
+            }
+        }
+        return {};
+    }
+
+    auto nodeProperty(PropertyNameView name) const { return property<InternalNodeProperty>(name); }
+
+    template<typename Type>
+    Type *addProperty(const PropertyName &name)
+    {
+        auto newProperty = std::make_shared<Type>(name, shared_from_this());
+        auto pointer = newProperty.get();
+        m_nameProperties.try_emplace(name, std::move(newProperty));
+
+        return pointer;
+    }
+
+    auto addBindingProperty(const PropertyName &name)
+    {
+        return addProperty<InternalBindingProperty>(name);
+    }
+
+    auto addSignalHandlerProperty(const PropertyName &name)
+    {
+        return addProperty<InternalSignalHandlerProperty>(name);
+    }
+
+    auto addSignalDeclarationProperty(const PropertyName &name)
+    {
+        return addProperty<InternalSignalDeclarationProperty>(name);
+    }
+
+    auto addNodeListProperty(const PropertyName &name)
+    {
+        return addProperty<InternalNodeListProperty>(name);
+    }
+
+    auto addVariantProperty(const PropertyName &name)
+    {
+        return addProperty<InternalVariantProperty>(name);
+    }
+
+    auto addNodeProperty(const PropertyName &name, const TypeName &dynamicTypeName)
+    {
+        auto property = addProperty<InternalNodeProperty>(name);
+        property->setDynamicTypeName(dynamicTypeName);
+
+        return property;
+    }
 
     PropertyNameList propertyNameList() const;
 
-    bool hasProperties() const;
-    bool hasProperty(const PropertyName &name) const;
-
-    QList<InternalProperty::Pointer> propertyList() const;
-    QList<InternalNodeAbstractProperty::Pointer> nodeAbstractPropertyList() const;
     QList<InternalNode::Pointer> allSubNodes() const;
     QList<InternalNode::Pointer> allDirectSubNodes() const;
+    void addSubNodes(QList<InternalNodePointer> &nodes) const;
+    void addDirectSubNodes(QList<InternalNodePointer> &nodes) const;
+    static void addSubNodes(QList<InternalNodePointer> &nodes, const InternalProperty *property);
+    static void addDirectSubNodes(QList<InternalNodePointer> &nodes, const InternalProperty *property);
 
     friend bool operator<(const InternalNode::Pointer &firstNode,
                           const InternalNode::Pointer &secondNode)
@@ -105,16 +195,19 @@ public:
         return firstNode->internalId < secondNode->internalId;
     }
 
-    friend size_t qHash(const InternalNodePointer &node)
-    {
-        if (!node)
-            return ::qHash(-1);
+    friend size_t qHash(const InternalNodePointer &node) { return ::qHash(node.get()); }
 
-        return ::qHash(node->internalId);
+    void removeProperty(PropertyNameView name)
+    {
+        auto found = m_nameProperties.find(name);
+        m_nameProperties.erase(found); // C++ 23 -> m_nameProperties.erase(name)
     }
 
-protected:
-    void removeProperty(const PropertyName &name);
+    using PropertyDict = std::map<PropertyName, InternalPropertyPointer, std::less<>>;
+
+    PropertyDict::const_iterator begin() const { return m_nameProperties.begin(); }
+
+    PropertyDict::const_iterator end() const { return m_nameProperties.end(); }
 
 public:
     TypeName typeName;
@@ -127,14 +220,16 @@ public:
     int nodeSourceType = 0;
     QString behaviorPropertyName;
     QStringList scriptFunctions;
-    ModuleId moduleId;                   // is invalid if type is implicit
-    Utils::SmallString documentTypeName; // how the type is written in den Document
+    ModuleId moduleId;
+    ImportedTypeNameId importedTypeNameId;
     TypeId typeId;
+    NO_UNIQUE_ADDRESS ModelTracing::ObjectTraceToken traceToken = ModelTracing::category().beginObject(
+        "InternalNode"_t);
 
 private:
     AuxiliaryDatas m_auxiliaryDatas;
     InternalNodeAbstractProperty::WeakPointer m_parentProperty;
-    QHash<PropertyName, InternalPropertyPointer> m_namePropertyHash;
+    PropertyDict m_nameProperties;
 };
 
 } // Internal

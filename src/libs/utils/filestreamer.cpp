@@ -3,8 +3,10 @@
 
 #include "filestreamer.h"
 
-#include "asynctask.h"
-#include "qtcprocess.h"
+#include "async.h"
+#include "process.h"
+
+#include <solutions/tasking/barrier.h>
 
 #include <QFile>
 #include <QMutex>
@@ -28,27 +30,25 @@ public:
     void start() {
         QTC_ASSERT(!m_taskTree, return);
 
-        const TaskItem task = m_filePath.needsDevice() ? remoteTask() : localTask();
+        const GroupItem task = m_filePath.needsDevice() ? remoteTask() : localTask();
         m_taskTree.reset(new TaskTree({task}));
-        const auto finalize = [this](bool success) {
+        connect(m_taskTree.get(), &TaskTree::done, this, [this](DoneWith result) {
             m_taskTree.release()->deleteLater();
-            emit done(success);
-        };
-        connect(m_taskTree.get(), &TaskTree::done, this, [=] { finalize(true); });
-        connect(m_taskTree.get(), &TaskTree::errorOccurred, this, [=] { finalize(false); });
+            emit done(toDoneResult(result == DoneWith::Success));
+        });
         m_taskTree->start();
     }
 
 signals:
-    void done(bool success);
+    void done(DoneResult result);
 
 protected:
     FilePath m_filePath;
     std::unique_ptr<TaskTree> m_taskTree;
 
 private:
-    virtual TaskItem remoteTask() = 0;
-    virtual TaskItem localTask() = 0;
+    virtual GroupItem remoteTask() = 0;
+    virtual GroupItem localTask() = 0;
 };
 
 static void localRead(QPromise<QByteArray> &promise, const FilePath &filePath)
@@ -82,27 +82,27 @@ signals:
     void readyRead(const QByteArray &newData);
 
 private:
-    TaskItem remoteTask() final {
-        const auto setup = [this](QtcProcess &process) {
+    GroupItem remoteTask() final {
+        const auto setup = [this](Process &process) {
             const QStringList args = {"if=" + m_filePath.path()};
             const FilePath dd = m_filePath.withNewPath("dd");
             process.setCommand({dd, args, OsType::OsTypeLinux});
-            QtcProcess *processPtr = &process;
-            connect(processPtr, &QtcProcess::readyReadStandardOutput, this, [this, processPtr] {
+            Process *processPtr = &process;
+            connect(processPtr, &Process::readyReadStandardOutput, this, [this, processPtr] {
                 emit readyRead(processPtr->readAllRawStandardOutput());
             });
         };
-        return Process(setup);
+        return ProcessTask(setup);
     }
-    TaskItem localTask() final {
-        const auto setup = [this](AsyncTask<QByteArray> &async) {
+    GroupItem localTask() final {
+        const auto setup = [this](Async<QByteArray> &async) {
             async.setConcurrentCallData(localRead, m_filePath);
-            AsyncTask<QByteArray> *asyncPtr = &async;
-            connect(asyncPtr, &AsyncTaskBase::resultReadyAt, this, [=](int index) {
+            Async<QByteArray> *asyncPtr = &async;
+            connect(asyncPtr, &AsyncBase::resultReadyAt, this, [this, asyncPtr](int index) {
                 emit readyRead(asyncPtr->resultAt(index));
             });
         };
-        return Async<QByteArray>(setup);
+        return AsyncTask<QByteArray>(setup);
     }
 };
 
@@ -221,6 +221,11 @@ public:
     ~FileStreamWriter() { // TODO: should d'tor remove unfinished file write leftovers?
         if (m_writeBuffer && isBuffered())
             m_writeBuffer->cancel();
+        // m_writeBuffer is a child of either Process or Async<void>. So, if m_writeBuffer
+        // is still alive now (in case when TaskTree::stop() was called), the FileStreamBase
+        // d'tor is going to delete m_writeBuffer later. In case of Async<void>, coming from
+        // localTask(), the d'tor of Async<void>, run by FileStreamBase, busy waits for the
+        // already canceled here WriteBuffer to finish before deleting WriteBuffer child.
     }
 
     void setWriteData(const QByteArray &writeData) {
@@ -244,12 +249,12 @@ signals:
     void started();
 
 private:
-    TaskItem remoteTask() final {
-        const auto setup = [this](QtcProcess &process) {
+    GroupItem remoteTask() final {
+        const auto onSetup = [this](Process &process) {
             m_writeBuffer = new WriteBuffer(false, &process);
-            connect(m_writeBuffer, &WriteBuffer::writeRequested, &process, &QtcProcess::writeRaw);
+            connect(m_writeBuffer, &WriteBuffer::writeRequested, &process, &Process::writeRaw);
             connect(m_writeBuffer, &WriteBuffer::closeWriteChannelRequested,
-                    &process, &QtcProcess::closeWriteChannel);
+                    &process, &Process::closeWriteChannel);
             const QStringList args = {"of=" + m_filePath.path()};
             const FilePath dd = m_filePath.withNewPath("dd");
             process.setCommand({dd, args, OsType::OsTypeLinux});
@@ -257,25 +262,25 @@ private:
                 process.setProcessMode(ProcessMode::Writer);
             else
                 process.setWriteData(m_writeData);
-            connect(&process, &QtcProcess::started, this, [this] { emit started(); });
+            connect(&process, &Process::started, this, [this] { emit started(); });
         };
-        const auto finalize = [this](const QtcProcess &) {
+        const auto onDone = [this] {
             delete m_writeBuffer;
             m_writeBuffer = nullptr;
         };
-        return Process(setup, finalize, finalize);
+        return ProcessTask(onSetup, onDone);
     }
-    TaskItem localTask() final {
-        const auto setup = [this](AsyncTask<void> &async) {
+    GroupItem localTask() final {
+        const auto onSetup = [this](Async<void> &async) {
             m_writeBuffer = new WriteBuffer(isBuffered(), &async);
             async.setConcurrentCallData(localWrite, m_filePath, m_writeData, m_writeBuffer);
             emit started();
         };
-        const auto finalize = [this](const AsyncTask<void> &) {
+        const auto onDone = [this] {
             delete m_writeBuffer;
             m_writeBuffer = nullptr;
         };
-        return Async<void>(setup, finalize, finalize);
+        return AsyncTask<void>(onSetup, onDone);
     }
 
     bool isBuffered() const { return m_writeData.isEmpty(); }
@@ -283,26 +288,22 @@ private:
     WriteBuffer *m_writeBuffer = nullptr;
 };
 
-class FileStreamReaderAdapter : public Utils::Tasking::TaskAdapter<FileStreamReader>
+class FileStreamReaderAdapter : public TaskAdapter<FileStreamReader>
 {
 public:
     FileStreamReaderAdapter() { connect(task(), &FileStreamBase::done, this, &TaskInterface::done); }
     void start() override { task()->start(); }
 };
 
-class FileStreamWriterAdapter : public Utils::Tasking::TaskAdapter<FileStreamWriter>
+class FileStreamWriterAdapter : public TaskAdapter<FileStreamWriter>
 {
 public:
     FileStreamWriterAdapter() { connect(task(), &FileStreamBase::done, this, &TaskInterface::done); }
     void start() override { task()->start(); }
 };
 
-} // namespace Utils
-
-QTC_DECLARE_CUSTOM_TASK(Reader, Utils::FileStreamReaderAdapter);
-QTC_DECLARE_CUSTOM_TASK(Writer, Utils::FileStreamWriterAdapter);
-
-namespace Utils {
+using FileStreamReaderTask = CustomTask<FileStreamReaderAdapter>;
+using FileStreamWriterTask = CustomTask<FileStreamWriterAdapter>;
 
 static Group sameRemoteDeviceTransferTask(const FilePath &source, const FilePath &destination)
 {
@@ -310,46 +311,46 @@ static Group sameRemoteDeviceTransferTask(const FilePath &source, const FilePath
     QTC_CHECK(destination.needsDevice());
     QTC_CHECK(source.isSameDevice(destination));
 
-    const auto setup = [source, destination](QtcProcess &process) {
+    const auto setup = [source, destination](Process &process) {
         const QStringList args = {source.path(), destination.path()};
         const FilePath cp = source.withNewPath("cp");
         process.setCommand({cp, args, OsType::OsTypeLinux});
     };
-    return {Process(setup)};
+    return {ProcessTask(setup)};
 }
 
 static Group interDeviceTransferTask(const FilePath &source, const FilePath &destination)
 {
     struct TransferStorage { QPointer<FileStreamWriter> writer; };
-    Condition condition;
-    TreeStorage<TransferStorage> storage;
+    SingleBarrier writerReadyBarrier;
+    Storage<TransferStorage> storage;
 
-    const auto setupReader = [=](FileStreamReader &reader) {
+    const auto onReaderSetup = [storage, source](FileStreamReader &reader) {
         reader.setFilePath(source);
         QTC_CHECK(storage->writer != nullptr);
         QObject::connect(&reader, &FileStreamReader::readyRead,
                          storage->writer, &FileStreamWriter::write);
     };
-    const auto finalizeReader = [=](const FileStreamReader &) {
-        QTC_CHECK(storage->writer != nullptr);
-        storage->writer->closeWriteChannel();
+    const auto onReaderDone = [storage] {
+        if (storage->writer) // writer may be deleted before the reader on TaskTree::stop().
+            storage->writer->closeWriteChannel();
     };
-    const auto setupWriter = [=](FileStreamWriter &writer) {
+    const auto onWriterSetup = [writerReadyBarrier, storage, destination](FileStreamWriter &writer) {
         writer.setFilePath(destination);
-        ConditionActivator *activator = condition.activator();
         QObject::connect(&writer, &FileStreamWriter::started,
-                         &writer, [activator] { activator->activate(); });
+                         writerReadyBarrier->barrier(), &Barrier::advance);
         QTC_CHECK(storage->writer == nullptr);
         storage->writer = &writer;
     };
 
     const Group root {
+        writerReadyBarrier,
         parallel,
-        Storage(storage),
-        Writer(setupWriter),
+        storage,
+        FileStreamWriterTask(onWriterSetup),
         Group {
-            WaitFor(condition),
-            Reader(setupReader, finalizeReader, finalizeReader)
+            waitForBarrierTask(writerReadyBarrier),
+            FileStreamReaderTask(onReaderSetup, onReaderDone)
         }
     };
 
@@ -368,34 +369,8 @@ static void transfer(QPromise<void> &promise, const FilePath &source, const File
     if (promise.isCanceled())
         return;
 
-    std::unique_ptr<TaskTree> taskTree(new TaskTree(transferTask(source, destination)));
-
-    QEventLoop eventLoop;
-    bool finalized = false;
-    const auto finalize = [loop = &eventLoop, &taskTree, &finalized](int exitCode) {
-        if (finalized) // finalize only once
-            return;
-        finalized = true;
-        // Give the tree a chance to delete later all tasks that have finished and caused
-        // emission of tree's done or errorOccurred signal.
-        // TODO: maybe these signals should be sent queued already?
-        QMetaObject::invokeMethod(loop, [loop, &taskTree, exitCode] {
-            taskTree.reset();
-            loop->exit(exitCode);
-        }, Qt::QueuedConnection);
-    };
-    QTimer timer;
-    timer.setInterval(50);
-    QObject::connect(&timer, &QTimer::timeout, [&promise, finalize] {
-        if (promise.isCanceled())
-            finalize(2);
-    });
-    QObject::connect(taskTree.get(), &TaskTree::done, &eventLoop, [=] { finalize(0); });
-    QObject::connect(taskTree.get(), &TaskTree::errorOccurred, &eventLoop, [=] { finalize(1); });
-    taskTree->start();
-    timer.start();
-    if (eventLoop.exec())
-        promise.future().cancel();
+    if (TaskTree::runBlocking(transferTask(source, destination), promise.future()) != DoneWith::Success)
+        promise.future().cancel(); // TODO: Is this needed?
 }
 
 class FileStreamerPrivate : public QObject
@@ -406,10 +381,10 @@ public:
     FilePath m_destination;
     QByteArray m_readBuffer;
     QByteArray m_writeBuffer;
-    StreamResult m_streamResult = StreamResult::FinishedWithError;
+    DoneResult m_streamResult = DoneResult::Error;
     std::unique_ptr<TaskTree> m_taskTree;
 
-    TaskItem task() {
+    GroupItem task() {
         if (m_streamerMode == StreamMode::Reader)
             return readerTask();
         if (m_streamerMode == StreamMode::Writer)
@@ -418,7 +393,7 @@ public:
     }
 
 private:
-    TaskItem readerTask() {
+    GroupItem readerTask() {
         const auto setup = [this](FileStreamReader &reader) {
             m_readBuffer.clear();
             reader.setFilePath(m_source);
@@ -426,20 +401,20 @@ private:
                 m_readBuffer += data;
             });
         };
-        return Reader(setup);
+        return FileStreamReaderTask(setup);
     }
-    TaskItem writerTask() {
+    GroupItem writerTask() {
         const auto setup = [this](FileStreamWriter &writer) {
             writer.setFilePath(m_destination);
             writer.setWriteData(m_writeBuffer);
         };
-        return Writer(setup);
+        return FileStreamWriterTask(setup);
     }
-    TaskItem transferTask() {
-        const auto setup = [this](AsyncTask<void> &async) {
+    GroupItem transferTask() {
+        const auto setup = [this](Async<void> &async) {
             async.setConcurrentCallData(transfer, m_source, m_destination);
         };
-        return Async<void>(setup);
+        return AsyncTask<void>(setup);
     }
 };
 
@@ -479,7 +454,7 @@ void FileStreamer::setWriteData(const QByteArray &writeData)
     d->m_writeBuffer = writeData;
 }
 
-StreamResult FileStreamer::result() const
+DoneResult FileStreamer::result() const
 {
     return d->m_streamResult;
 }
@@ -489,14 +464,11 @@ void FileStreamer::start()
     // TODO: Preliminary check if local source exists?
     QTC_ASSERT(!d->m_taskTree, return);
     d->m_taskTree.reset(new TaskTree({d->task()}));
-    const auto finalize = [this](bool success) {
-        d->m_streamResult = success ? StreamResult::FinishedWithSuccess
-                                    : StreamResult::FinishedWithError;
+    connect(d->m_taskTree.get(), &TaskTree::done, this, [this](DoneWith result) {
+        d->m_streamResult = toDoneResult(result == DoneWith::Success);
         d->m_taskTree.release()->deleteLater();
         emit done();
-    };
-    connect(d->m_taskTree.get(), &TaskTree::done, this, [=] { finalize(true); });
-    connect(d->m_taskTree.get(), &TaskTree::errorOccurred, this, [=] { finalize(false); });
+    });
     d->m_taskTree->start();
 }
 

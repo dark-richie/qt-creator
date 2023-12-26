@@ -12,7 +12,7 @@ TripleTab = '\t\t\t'
 def main():
     files = map(lambda record: os.path.join(srcPath, testData.field(record, "filename")),
                 testData.dataset("files.tsv"))
-    files = filter(lambda x: not x.endswith(".bin"), files)
+    files = list(filter(lambda x: not x.endswith(".bin"), files))
     for currentFile in files:
         if not neededFilePresent(currentFile):
             return
@@ -28,7 +28,7 @@ def main():
         baseName = os.path.basename(currentFile)
         fileName = os.path.join(directory, baseName)
         test.log("Testing file %s" % fileName)
-        content = readFile(currentFile)
+        content = stringify(readFile(currentFile))
         preparedContent, emptyLine, trailingWS = prepareFileExternal(fileName, content)
         isIgnored = isIgnoredFile(baseName, ignoredFiles)
         test.verify(preparedContent.find('\t') != -1, "Added at least one tab.")
@@ -89,7 +89,7 @@ def prepareFileExternal(fileName, content):
                 test.log("Added trailing whitespace.")
         modifiedContent += currentLine
 
-    with open(fileName, "w") as f:
+    with open(fileName, "w", encoding="utf-8") as f: # used only with text files, so okay
         f.write(modifiedContent)
 
     if not emptyLine or not trailingWS:

@@ -10,7 +10,7 @@ QtcPlugin {
     Depends { name: "CppEditor" }
     Depends { name: "LanguageClient" }
     Depends { name: "ProjectExplorer" }
-    Depends { name: "QtSupport"; condition: qtc.testsEnabled }
+    Depends { name: "QtSupport"; condition: qtc.withPluginTests }
     Depends { name: "TextEditor" }
     Depends { name: "Utils" }
 
@@ -26,7 +26,6 @@ QtcPlugin {
         "clangactivationsequenceprocessor.cpp",
         "clangactivationsequenceprocessor.h",
         "clangcodemodelplugin.cpp",
-        "clangcodemodelplugin.h",
         "clangcodemodeltr.h",
         "clangcompletioncontextanalyzer.cpp",
         "clangcompletioncontextanalyzer.h",

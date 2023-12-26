@@ -4,6 +4,8 @@
 source("../../shared/qtcreator.py")
 
 currentSelectedTreeItem = None
+sectionInProgress = None
+genericDebuggers = []
 warningOrError = re.compile('<p><b>((Error|Warning).*?)</p>')
 
 def main():
@@ -28,6 +30,7 @@ def __createMinimumIni__(emptyParent):
     iniFile.close()
 
 def __checkKits__():
+    global genericDebuggers
     mouseClick(waitForObjectItem(":Options_QListView", "Kits"))
     # check compilers
     expectedCompilers = __getExpectedCompilers__()
@@ -36,6 +39,7 @@ def __checkKits__():
         internalClangExe = os.path.join(llvmForBuild, "bin", "clang")
         if platform.system() in ("Microsoft", "Windows"):
             internalClangExe += ".exe"
+        internalClangExe = os.path.realpath(internalClangExe) # clean symlinks
         if os.path.exists(internalClangExe):
             expectedCompilers.append(internalClangExe)
     foundCompilers = []
@@ -51,6 +55,8 @@ def __checkKits__():
     __iterateTree__(":BuildAndRun_QTreeView", __dbgFunc__, foundDebugger)
     test.verify(__compareDebuggers__(foundDebugger, expectedDebuggers),
                 "Verifying found and expected debuggers are equal.")
+    if not test.compare(len(genericDebuggers), 2, "Verifying generic debugger count."):
+        test.log(str(genericDebuggers))
     # check Qt versions
     qmakePath = which("qmake")
     foundQt = []
@@ -87,14 +93,16 @@ def __processSubItems__(treeObjStr, section, parModelIndexStr, doneItems,
                                 additionalFunc, *additionalParameters)
 
 def __iterateTree__(treeObjStr, additionalFunc, *additionalParameters):
-    global currentSelectedTreeItem
+    global currentSelectedTreeItem, sectionInProgress
     model = waitForObject(treeObjStr).model()
-    # 1st row: Auto-detected, 2nd row: Manual
+    # 1st row: Auto-detected, 2nd row: Manual (Debugger has additional section Generic prepended)
     for sect in dumpIndices(model):
+        sectionInProgress = str(sect.text)
         doneItems = []
         parentModelIndex = "%s container='%s'}" % (objectMap.realName(sect)[:-1], treeObjStr)
         __processSubItems__(treeObjStr, sect, parentModelIndex, doneItems,
                             additionalFunc, *additionalParameters)
+    sectionInProgress = None
 
 def __compFunc__(it, foundComp, foundCompNames):
     # skip sub section items (will continue on its children)
@@ -118,9 +126,16 @@ def __compFunc__(it, foundComp, foundCompNames):
     foundCompNames.append(it)
 
 def __dbgFunc__(it, foundDbg):
+    global sectionInProgress, genericDebuggers
     waitFor("object.exists(':Path.Utils_BaseValidatingLineEdit')", 2000)
     pathLineEdit = findObject(":Path.Utils_BaseValidatingLineEdit")
-    foundDbg.append(str(pathLineEdit.text))
+    if sectionInProgress == 'Generic':
+        debugger = str(pathLineEdit.text)
+        test.verify(debugger == 'gdb' or debugger == 'lldb',
+                    'Verifying generic debugger is GDB or LLDB.')
+        genericDebuggers.append(debugger)
+    else:
+        foundDbg.append(str(pathLineEdit.text))
 
 def __qtFunc__(it, foundQt, qmakePath):
     qtPath = str(waitForObject(":QtSupport__Internal__QtVersionManager.qmake_QLabel").text)
@@ -141,6 +156,9 @@ def __qtFunc__(it, foundQt, qmakePath):
 
 def __kitFunc__(it, foundQt, foundCompNames):
     global currentSelectedTreeItem, warningOrError
+    if 'Python' in it: # skip Python kits
+        return
+
     qtVersionStr = str(waitForObjectExists(":Kits_QtVersion_QComboBox").currentText)
     # The following may fail if Creator doesn't find a Qt version in PATH. It will then create one
     # Qt-less kit for each available toolchain instead of just one default Desktop kit.
@@ -254,7 +272,9 @@ def __getExpectedDebuggers__():
     for debugger in ["gdb", "lldb"]:
         result.extend(findAllFilesInPATH(debugger + exeSuffix))
     if platform.system() == 'Linux':
-        result.extend(filter(lambda s: not ("lldb-platform" in s or "lldb-gdbserver" in s),
+        explicitlyOmitted = ("lldb-platform", "lldb-gdbserver", "lldb-instr", "lldb-argdumper",
+                             "lldb-server", "lldb-vscode")
+        result.extend(filter(lambda s: not (any(omitted in s for omitted in explicitlyOmitted)),
                              findAllFilesInPATH("lldb-*")))
     if platform.system() == 'Darwin':
         xcodeLLDB = getOutputFromCmdline(["xcrun", "--find", "lldb"]).strip("\n")
@@ -275,7 +295,9 @@ def __getCDB__():
                          "C:\\Program Files\\Windows Kits\\8.1\\Debuggers\\x86",
                          "C:\\Program Files\\Windows Kits\\8.1\\Debuggers\\x64",
                          "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x86",
-                         "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64"]
+                         "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64",
+                         "C:\\Program Files\\Windows Kits\\10\\Debuggers\\x86",
+                         "C:\\Program Files\\Windows Kits\\10\\Debuggers\\x64"]
     for cdbPath in possibleLocations:
         cdb = os.path.join(cdbPath, "cdb.exe")
         if os.path.exists(cdb):
@@ -295,15 +317,15 @@ def __compareCompilers__(foundCompilers, expectedCompilers):
             for currentExp in expectedCompilers:
                 if isString(currentExp):
                     continue
-                key = list(currentExp.keys())[0]
+                key = next(iter(currentExp.keys()))
                 # the regex .*? is used for the different possible version strings of the WinSDK
                 # if it's present a regex will be validated otherwise simple string comparison
                 # same applies for [.0-9]+ which is used for minor/patch versions
                 isRegex = ".*?" in key or "[.0-9]+" in key
-                if (((isRegex and re.match(key, list(currentFound.keys())[0], flags)))
+                if (((isRegex and re.match(key, next(iter(currentFound.keys())), flags)))
                     or currentFound.keys() == currentExp.keys()):
-                    if ((isWin and os.path.abspath(currentFound.values()[0].lower())
-                         == os.path.abspath(currentExp.values()[0].lower()))
+                    if ((isWin and os.path.abspath(next(iter(currentFound.values())).lower())
+                         == os.path.abspath(next(iter(currentExp.values())).lower()))
                         or currentFound.values() == currentExp.values()):
                         foundExp = True
                         break
@@ -343,24 +365,22 @@ def __lowerStrs__(iterable):
 def __checkCreatedSettings__(settingsFolder):
     waitForCleanShutdown()
     qtProj = os.path.join(settingsFolder, "QtProject")
-    folders = []
-    files = [{os.path.join(qtProj, "QtCreator.db"):0},
-             {os.path.join(qtProj, "QtCreator.ini"):30}]
-    folders.append(os.path.join(qtProj, "qtcreator"))
-    files.extend([{os.path.join(folders[0], "debuggers.xml"):0},
-                  {os.path.join(folders[0], "devices.xml"):0},
-                  {os.path.join(folders[0], "helpcollection.qhc"):0},
-                  {os.path.join(folders[0], "profiles.xml"):0},
-                  {os.path.join(folders[0], "qtversion.xml"):0},
-                  {os.path.join(folders[0], "toolchains.xml"):0}])
-    folders.extend([os.path.join(folders[0], "generic-highlighter"),
-                    os.path.join(folders[0], "macros")])
+    creatorFolder = os.path.join(qtProj, "qtcreator")
+    folders = [creatorFolder,
+               os.path.join(creatorFolder, "generic-highlighter"),
+               os.path.join(creatorFolder, "macros")]
+    files = {os.path.join(qtProj, "QtCreator.db"):0,
+             os.path.join(qtProj, "QtCreator.ini"):30,
+             os.path.join(creatorFolder, "debuggers.xml"):0,
+             os.path.join(creatorFolder, "devices.xml"):0,
+             os.path.join(creatorFolder, "helpcollection.qhc"):0,
+             os.path.join(creatorFolder, "profiles.xml"):0,
+             os.path.join(creatorFolder, "qtversion.xml"):0,
+             os.path.join(creatorFolder, "toolchains.xml"):0}
     for f in folders:
         test.verify(os.path.isdir(f),
                     "Verifying whether folder '%s' has been created." % os.path.basename(f))
-    for f in files:
-        fName = list(f.keys())[0]
-        fMinSize = list(f.values())[0]
+    for fName, fMinSize in files.items():
         text = "created non-empty"
         if fMinSize > 0:
             text = "modified"

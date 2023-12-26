@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <coreplugin/core_global.h>
-#include <coreplugin/featureprovider.h>
+#include "core_global.h"
+#include "featureprovider.h"
 
 #include <QIcon>
 #include <QObject>
@@ -77,8 +77,9 @@ public:
     virtual bool isAvailable(Utils::Id platformId) const;
     QSet<Utils::Id> supportedPlatforms() const;
 
-    using FactoryCreator = std::function<IWizardFactory *()>;
+    using FactoryCreator = std::function<QList<IWizardFactory *>()>;
     static void registerFactoryCreator(const FactoryCreator &creator);
+    static void registerFactoryCreator(const std::function<IWizardFactory *()> &creator);
 
     // Utility to find all registered wizards
     static QList<IWizardFactory*> allWizardFactories();

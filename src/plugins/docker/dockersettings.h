@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
 namespace Docker::Internal {
@@ -14,13 +12,9 @@ class DockerSettings final : public Utils::AspectContainer
 public:
     DockerSettings();
 
-    Utils::StringAspect dockerBinaryPath;
+    Utils::FilePathAspect dockerBinaryPath{this};
 };
 
-class DockerSettingsPage final : public Core::IOptionsPage
-{
-public:
-    explicit DockerSettingsPage(DockerSettings *settings);
-};
+DockerSettings &settings();
 
 } // Docker::Internal

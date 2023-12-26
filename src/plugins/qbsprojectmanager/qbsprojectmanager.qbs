@@ -11,12 +11,14 @@ QtcPlugin {
     Depends { name: "QmlJS" }
     Depends { name: "Utils" }
 
-    Depends { name: "ProjectExplorer" }
     Depends { name: "Core" }
     Depends { name: "CppEditor" }
-    Depends { name: "QtSupport" }
+    Depends { name: "LanguageClient" }
+    Depends { name: "ProjectExplorer" }
+    Depends { name: "QmlJSEditor" }
     Depends { name: "QmlJSTools" }
-    Depends { name: "app_version_header" }
+    Depends { name: "QtSupport" }
+    Depends { name: "TextEditor" }
 
     files: [
         "customqbspropertiesdialog.h",
@@ -30,10 +32,14 @@ QtcPlugin {
         "qbsbuildstep.h",
         "qbscleanstep.cpp",
         "qbscleanstep.h",
+        "qbseditor.cpp",
+        "qbseditor.h",
         "qbsinstallstep.cpp",
         "qbsinstallstep.h",
-        "qbskitinformation.cpp",
-        "qbskitinformation.h",
+        "qbskitaspect.cpp",
+        "qbskitaspect.h",
+        "qbslanguageclient.cpp",
+        "qbslanguageclient.h",
         "qbsnodes.cpp",
         "qbsnodes.h",
         "qbsnodetreebuilder.cpp",
@@ -49,12 +55,15 @@ QtcPlugin {
         "qbsprojectimporter.cpp",
         "qbsprojectimporter.h",
         "qbsprojectmanager.qrc",
-        "qbsprojectmanager_global.h", "qbsprojectmanagertr.h",
+        "qbsprojectmanager_global.h",
+        "qbsprojectmanagertr.h",
         "qbsprojectmanagerconstants.h",
         "qbsprojectmanagerplugin.cpp",
         "qbsprojectmanagerplugin.h",
         "qbsprojectparser.cpp",
         "qbsprojectparser.h",
+        "qbsrequest.cpp",
+        "qbsrequest.h",
         "qbssession.cpp",
         "qbssession.h",
         "qbssettings.cpp",

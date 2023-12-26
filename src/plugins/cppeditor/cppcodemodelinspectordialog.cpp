@@ -1429,7 +1429,9 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
     m_workingCopyView->setModel(m_proxyWorkingCopyModel);
 
     using namespace Layouting;
-    m_projectPartTab = qobject_cast<QTabWidget*>(TabWidget{
+
+    TabWidget projectPart {
+        bindTo(&m_projectPartTab),
         Tab("&General",
             Row {
                 m_partGeneralView,
@@ -1454,10 +1456,10 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
         ),
         Tab("&Header Paths", Column{ projectHeaderPathsView }),
         Tab("Pre&compiled Headers", Column{ m_partPrecompiledHeadersEdit }),
-    }.widget);
-    QTC_CHECK(m_projectPartTab);
+    };
 
-    m_docTab = qobject_cast<QTabWidget*>(TabWidget{
+    TabWidget docTab {
+        bindTo(&m_docTab),
         Tab("&General", Column { m_docGeneralView }),
         Tab("&Includes", Column { m_docIncludesView }),
         Tab("&Diagnostic Messages", Column { m_docDiagnosticMessagesView }),
@@ -1465,8 +1467,7 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
         Tab("P&reprocessed Source", Column { m_docPreprocessedSourceEdit }),
         Tab("&Symbols", Column { m_docSymbolsView }),
         Tab("&Tokens", Column { m_docTokensView }),
-    }.widget);
-    QTC_CHECK(m_docTab);
+    };
 
     Column {
         TabWidget {
@@ -1474,7 +1475,7 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
                 Column {
                     Splitter {
                         m_projectPartsView,
-                        m_projectPartTab,
+                        projectPart,
                     },
                 }
             ),
@@ -1484,8 +1485,9 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
                         Column {
                             Form { QString("Sn&apshot:"), m_snapshotSelector },
                             m_snapshotView,
-                        }.emerge(Utils::Layouting::WithoutMargins),
-                        m_docTab,
+                            noMargin,
+                        }.emerge(),
+                        docTab,
                     },
                 }
             ),
@@ -1506,6 +1508,7 @@ CppCodeModelInspectorDialog::CppCodeModelInspectorDialog(QWidget *parent)
         }
     }.attachTo(this);
 
+    QTC_CHECK(m_projectPartTab);
     m_projectPartTab->setCurrentIndex(3);
 
     connect(m_snapshotView->selectionModel(),
@@ -1639,8 +1642,6 @@ void CppCodeModelInspectorDialog::onWorkingCopyDocumentSelected(const QModelInde
 
 void CppCodeModelInspectorDialog::refresh()
 {
-    CppModelManager *cmmi = CppModelManager::instance();
-
     const int oldSnapshotIndex = m_snapshotSelector->currentIndex();
     const bool selectEditorRelevant
         = m_selectEditorRelevantEntriesAfterRefreshCheckBox->isChecked();
@@ -1649,7 +1650,7 @@ void CppCodeModelInspectorDialog::refresh()
     m_snapshotInfos->clear();
     m_snapshotSelector->clear();
 
-    const Snapshot globalSnapshot = cmmi->snapshot();
+    const Snapshot globalSnapshot = CppModelManager::snapshot();
     CppCodeModelInspector::Dumper dumper(globalSnapshot);
     m_snapshotModel->setGlobalSnapshot(globalSnapshot);
 
@@ -1663,7 +1664,7 @@ void CppCodeModelInspectorDialog::refresh()
     CppEditorDocumentHandle *cppEditorDocument = nullptr;
     if (editor) {
         const FilePath editorFilePath = editor->document()->filePath();
-        cppEditorDocument = cmmi->cppEditorDocument(editorFilePath);
+        cppEditorDocument = CppModelManager::cppEditorDocument(editorFilePath);
         if (auto documentProcessor = CppModelManager::cppEditorDocumentProcessor(editorFilePath)) {
             const Snapshot editorSnapshot = documentProcessor->snapshot();
             m_snapshotInfos->append(SnapshotInfo(editorSnapshot, SnapshotInfo::EditorSnapshot));
@@ -1718,7 +1719,7 @@ void CppCodeModelInspectorDialog::refresh()
         ? cppEditorDocument->processor()->parser()->projectPartInfo().projectPart
         : ProjectPart::ConstPtr();
 
-    const QList<ProjectInfo::ConstPtr> projectInfos = cmmi->projectInfos();
+    const QList<ProjectInfo::ConstPtr> projectInfos = CppModelManager::projectInfos();
     dumper.dumpProjectInfos(projectInfos);
     m_projectPartsModel->configure(projectInfos, editorsProjectPart);
     m_projectPartsView->resizeColumns(ProjectPartsModel::ColumnCount);
@@ -1734,7 +1735,7 @@ void CppCodeModelInspectorDialog::refresh()
     }
 
     // Working Copy
-    const WorkingCopy workingCopy = cmmi->workingCopy();
+    const WorkingCopy workingCopy = CppModelManager::workingCopy();
     dumper.dumpWorkingCopy(workingCopy);
     m_workingCopyModel->configure(workingCopy);
     m_workingCopyView->resizeColumns(WorkingCopyModel::ColumnCount);
@@ -1749,8 +1750,8 @@ void CppCodeModelInspectorDialog::refresh()
     }
 
     // Merged entities
-    dumper.dumpMergedEntities(cmmi->headerPaths(),
-                              ProjectExplorer::Macro::toByteArray(cmmi->definedMacros()));
+    dumper.dumpMergedEntities(CppModelManager::headerPaths(),
+                              ProjectExplorer::Macro::toByteArray(CppModelManager::definedMacros()));
 }
 
 enum DocumentTabs {

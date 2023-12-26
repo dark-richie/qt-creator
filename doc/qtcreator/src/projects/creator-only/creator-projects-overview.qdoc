@@ -1,4 +1,4 @@
-// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 // **********************************************************************
@@ -16,10 +16,6 @@
 
     \image front-projects.png
 
-    One of the major advantages of \QC is that it allows a team of designers and
-    developers to share a project across different development platforms with a
-    common tool for design, development, and debugging.
-
     \list
 
         \li \l{Creating Projects}
@@ -30,7 +26,7 @@
             language to implement the application logic: C++, JavaScript, or
             Python.
 
-        \li \l{Using Version Control Systems}
+        \li \l{Version Control Systems}
 
             The recommended way to set up a project is to use a version control
             system. Store and edit only project source files and configuration
@@ -40,20 +36,10 @@
 
             Installation programs and project wizards create default
             configurations for \QC and your projects. You can modify
-            the settings in the Projects mode.
-
-        \li \l{Managing Sessions}
-
-            Sessions store items such as open files, breakpoints, and evaluated
-            expressions, which you do not typically want to share across
-            platforms.
+            the settings in the \uicontrol Projects mode.
 
     \endlist
 
-    \section1 Related Topics
-
-    \list
-        \li \l{Build Systems}
-    \endlist
-
+    \sa {Manage Projects}{How To: Manage Projects}, {Manage sessions},
+    {Build Systems}
 */

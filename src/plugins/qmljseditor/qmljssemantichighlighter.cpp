@@ -20,7 +20,7 @@
 #include <texteditor/texteditorconstants.h>
 #include <texteditor/texteditorsettings.h>
 #include <texteditor/fontsettings.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
@@ -542,7 +542,6 @@ SemanticHighlighter::SemanticHighlighter(QmlJSEditorDocument *document)
             this, &SemanticHighlighter::applyResults);
     connect(&m_watcher, &QFutureWatcherBase::finished,
             this, &SemanticHighlighter::finished);
-    m_futureSynchronizer.setCancelOnWait(true);
 }
 
 void SemanticHighlighter::rerun(const QmlJSTools::SemanticInfo &semanticInfo)
@@ -570,7 +569,7 @@ void SemanticHighlighter::applyResults(int from, int to)
 
     if (m_enableHighlighting)
         TextEditor::SemanticHighlighter::incrementalApplyExtraAdditionalFormats(
-            m_document->syntaxHighlighter(), m_watcher.future(), from, to, m_extraFormats);
+            m_document->syntaxHighlighterRunner(), m_watcher.future(), from, to, m_extraFormats);
 }
 
 void SemanticHighlighter::finished()
@@ -585,7 +584,7 @@ void SemanticHighlighter::finished()
 
     if (m_enableHighlighting)
         TextEditor::SemanticHighlighter::clearExtraAdditionalFormatsUntilEnd(
-            m_document->syntaxHighlighter(), m_watcher.future());
+            m_document->syntaxHighlighterRunner(), m_watcher.future());
 }
 
 void SemanticHighlighter::run(QPromise<Use> &promise,

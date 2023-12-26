@@ -12,6 +12,7 @@
 #include <utils/qtcassert.h>
 
 using namespace Core;
+using namespace Tasking;
 using namespace Utils;
 
 namespace DiffEditor {
@@ -109,29 +110,28 @@ void DiffEditorController::requestReload()
 {
     m_document->beginReload();
     m_taskTree.reset(new TaskTree(m_reloadRecipe));
-    connect(m_taskTree.get(), &TaskTree::done, this, [this] { reloadFinished(true); });
-    connect(m_taskTree.get(), &TaskTree::errorOccurred, this, [this] { reloadFinished(false); });
+    connect(m_taskTree.get(), &TaskTree::done, this, [this](DoneWith result) {
+        if (m_taskTree)
+            m_taskTree.release()->deleteLater();
+        m_document->endReload(result == DoneWith::Success);
+    });
     auto progress = new TaskProgress(m_taskTree.get());
     progress->setDisplayName(m_displayName);
     m_taskTree->start();
 }
 
-void DiffEditorController::reloadFinished(bool success)
+void DiffEditorController::addExtraActions(QMenu *menu, int fileIndex, int chunkIndex,
+                                           const ChunkSelection &selection)
 {
-    if (m_taskTree)
-        m_taskTree.release()->deleteLater();
-    m_document->endReload(success);
+    Q_UNUSED(menu)
+    Q_UNUSED(fileIndex)
+    Q_UNUSED(chunkIndex)
+    Q_UNUSED(selection)
 }
 
 void DiffEditorController::setStartupFile(const QString &startupFile)
 {
     m_document->setStartupFile(startupFile);
-}
-
-void DiffEditorController::requestChunkActions(QMenu *menu, int fileIndex, int chunkIndex,
-                                               const ChunkSelection &selection)
-{
-    emit chunkActionsRequested(menu, fileIndex, chunkIndex, selection);
 }
 
 bool DiffEditorController::chunkExists(int fileIndex, int chunkIndex) const

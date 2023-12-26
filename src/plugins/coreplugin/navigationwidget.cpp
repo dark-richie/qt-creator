@@ -12,14 +12,17 @@
 #include "modemanager.h"
 #include "navigationsubwidget.h"
 
+#include <utils/algorithm.h>
+#include <utils/fancymainwindow.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
-#include <QCoreApplication>
-#include <QDebug>
-#include <QSettings>
+#include <aggregation/aggregate.h>
 
 #include <QAction>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QDockWidget>
 #include <QHBoxLayout>
 #include <QResizeEvent>
 #include <QStandardItemModel>
@@ -110,7 +113,7 @@ void NavigationWidgetPlaceHolder::currentModeAboutToChange(Id mode)
         setCurrent(m_side, nullptr);
         navigationWidget->setParent(nullptr);
         navigationWidget->hide();
-        navigationWidget->placeHolderChanged(nullptr);
+        navigationWidget->placeHolderChanged();
     }
 
     if (m_mode == mode) {
@@ -121,7 +124,7 @@ void NavigationWidgetPlaceHolder::currentModeAboutToChange(Id mode)
 
         applyStoredSize();
         setVisible(navigationWidget->isShown());
-        navigationWidget->placeHolderChanged(this);
+        navigationWidget->placeHolderChanged();
     }
 }
 
@@ -145,6 +148,7 @@ struct NavigationWidgetPrivate
     QHash<QAction *, Id> m_actionMap;
     QHash<Id, Command *> m_commandMap;
     QStandardItemModel *m_factoryModel;
+    FancyMainWindow *m_mainWindow = nullptr;
 
     bool m_shown;
     int m_width;
@@ -188,6 +192,11 @@ NavigationWidget::NavigationWidget(QAction *toggleSideBarAction, Side side) :
         NavigationWidgetPrivate::s_instanceLeft = this;
     else
         NavigationWidgetPrivate::s_instanceRight = this;
+
+    connect(ModeManager::instance(),
+            &ModeManager::currentMainWindowChanged,
+            this,
+            &NavigationWidget::updateMode);
 }
 
 NavigationWidget::~NavigationWidget()
@@ -246,14 +255,12 @@ void NavigationWidget::setFactories(const QList<INavigationWidgetFactory *> &fac
         d->m_factoryModel->appendRow(newRow);
     }
     d->m_factoryModel->sort(0);
-    updateToggleText();
+    updateToggleAction();
 }
 
-QString NavigationWidget::settingsGroup() const
+Key NavigationWidget::settingsGroup() const
 {
-    const QString side(d->m_side == Side::Left ? QStringLiteral("Left")
-                                               : QStringLiteral("Right"));
-    return QStringLiteral("Navigation%1").arg(side);
+    return d->m_side == Side::Left ? Key("NavigationLeft") : Key("NavigationRight");
 }
 
 int NavigationWidget::storedWidth()
@@ -266,23 +273,41 @@ QAbstractItemModel *NavigationWidget::factoryModel() const
     return d->m_factoryModel;
 }
 
-void NavigationWidget::updateToggleText()
+void NavigationWidget::updateMode()
 {
-    bool haveData = d->m_factoryModel->rowCount();
-    d->m_toggleSideBarAction->setVisible(haveData);
-    d->m_toggleSideBarAction->setEnabled(haveData && NavigationWidgetPlaceHolder::current(d->m_side));
+    IMode *currentMode = ModeManager::currentMode();
+    FancyMainWindow *mainWindow = currentMode ? currentMode->mainWindow() : nullptr;
+    if (d->m_mainWindow == mainWindow)
+        return;
+    if (d->m_mainWindow)
+        disconnect(d->m_mainWindow, nullptr, this, nullptr);
+    d->m_mainWindow = mainWindow;
+    if (d->m_mainWindow)
+        connect(d->m_mainWindow,
+                &FancyMainWindow::dockWidgetsChanged,
+                this,
+                &NavigationWidget::updateToggleAction);
+    updateToggleAction();
+}
 
-    const char *trToolTip = d->m_side == Side::Left
-                                ? (isShown() ? Constants::TR_HIDE_LEFT_SIDEBAR : Constants::TR_SHOW_LEFT_SIDEBAR)
-                                : (isShown() ? Constants::TR_HIDE_RIGHT_SIDEBAR : Constants::TR_SHOW_RIGHT_SIDEBAR);
+void NavigationWidget::updateToggleAction()
+{
+    d->m_toggleSideBarAction->setVisible(toggleActionVisible());
+    d->m_toggleSideBarAction->setEnabled(toggleActionEnabled());
+    d->m_toggleSideBarAction->setChecked(toggleActionChecked());
+    const char *trToolTip = d->m_side == Side::Left ? (d->m_toggleSideBarAction->isChecked()
+                                                           ? Constants::TR_HIDE_LEFT_SIDEBAR
+                                                           : Constants::TR_SHOW_LEFT_SIDEBAR)
+                                                    : (d->m_toggleSideBarAction->isChecked()
+                                                           ? Constants::TR_HIDE_RIGHT_SIDEBAR
+                                                           : Constants::TR_SHOW_RIGHT_SIDEBAR);
 
     d->m_toggleSideBarAction->setToolTip(Tr::tr(trToolTip));
 }
 
-void NavigationWidget::placeHolderChanged(NavigationWidgetPlaceHolder *holder)
+void NavigationWidget::placeHolderChanged()
 {
-    d->m_toggleSideBarAction->setChecked(holder && isShown());
-    updateToggleText();
+    updateToggleAction();
 }
 
 void NavigationWidget::resizeEvent(QResizeEvent *re)
@@ -301,7 +326,9 @@ static QIcon closeIconForSide(Side side, int itemCount)
             : Utils::Icons::CLOSE_SPLIT_RIGHT.icon();
 }
 
-Internal::NavigationSubWidget *NavigationWidget::insertSubItem(int position, int factoryIndex)
+Internal::NavigationSubWidget *NavigationWidget::insertSubItem(int position,
+                                                               int factoryIndex,
+                                                               bool updateActivationsMap)
 {
     for (int pos = position + 1; pos < d->m_subWidgets.size(); ++pos) {
         Internal::NavigationSubWidget *nsw = d->m_subWidgets.at(pos);
@@ -327,7 +354,8 @@ Internal::NavigationSubWidget *NavigationWidget::insertSubItem(int position, int
 
     d->m_subWidgets.insert(position, nsw);
     d->m_subWidgets.at(0)->setCloseIcon(closeIconForSide(d->m_side, d->m_subWidgets.size()));
-    NavigationWidgetPrivate::updateActivationsMap(nsw->factory()->id(), {d->m_side, position});
+    if (updateActivationsMap)
+        NavigationWidgetPrivate::updateActivationsMap(nsw->factory()->id(), {d->m_side, position});
     return nsw;
 }
 
@@ -378,6 +406,37 @@ void NavigationWidget::closeSubWidget(Internal::NavigationSubWidget *subWidget)
     }
 }
 
+bool NavigationWidget::toggleActionVisible() const
+{
+    const bool haveData = d->m_factoryModel->rowCount();
+    return haveData || d->m_mainWindow;
+}
+
+static Qt::DockWidgetArea dockAreaForSide(Side side)
+{
+    return side == Side::Left ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea;
+}
+
+bool NavigationWidget::toggleActionEnabled() const
+{
+    const bool haveData = d->m_factoryModel->rowCount();
+    if (haveData && NavigationWidgetPlaceHolder::current(d->m_side))
+        return true;
+    if (!d->m_mainWindow)
+        return false;
+    return d->m_mainWindow->isDockAreaAvailable(dockAreaForSide(d->m_side));
+}
+
+bool NavigationWidget::toggleActionChecked() const
+{
+    const bool haveData = d->m_factoryModel->rowCount();
+    if (haveData && NavigationWidgetPlaceHolder::current(d->m_side))
+        return d->m_shown;
+    if (!d->m_mainWindow)
+        return false;
+    return d->m_mainWindow->isDockAreaVisible(dockAreaForSide(d->m_side));
+}
+
 static QString defaultFirstView(Side side)
 {
     return side == Side::Left ? QString("Projects") : QString("Outline");
@@ -400,16 +459,19 @@ void NavigationWidget::saveSettings(QtcSettings *settings)
     settings->setValue(settingsKey("VerticalPosition"), saveState());
     settings->setValue(settingsKey("Width"), d->m_width);
 
-    const QString activationKey = QStringLiteral("ActivationPosition.");
+    const Key activationKey = "ActivationPosition.";
     const auto keys = NavigationWidgetPrivate::s_activationsMap.keys();
     for (const auto &factoryId : keys) {
         const auto &info = NavigationWidgetPrivate::s_activationsMap[factoryId];
+        const Utils::Key key = settingsKey(activationKey + factoryId.name());
         if (info.side == d->m_side)
-            settings->setValue(settingsKey(activationKey + factoryId.toString()), info.position);
+            settings->setValue(key, info.position);
+        else
+            settings->remove(key);
     }
 }
 
-void NavigationWidget::restoreSettings(QSettings *settings)
+void NavigationWidget::restoreSettings(QtcSettings *settings)
 {
     if (!d->m_factoryModel->rowCount()) {
         // We have no widgets to show!
@@ -438,7 +500,7 @@ void NavigationWidget::restoreSettings(QSettings *settings)
         int index = factoryIndex(Id::fromString(id));
         if (index >= 0) {
             // Only add if the id was actually found!
-            insertSubItem(position, index);
+            insertSubItem(position, index, /*updateActivationsMap=*/false);
             ++position;
         } else {
             restoreSplitterState = false;
@@ -447,7 +509,9 @@ void NavigationWidget::restoreSettings(QSettings *settings)
 
     if (d->m_subWidgets.isEmpty())
         // Make sure we have at least the projects widget or outline widget
-        insertSubItem(0, qMax(0, factoryIndex(Id::fromString(defaultFirstView(d->m_side)))));
+        insertSubItem(0,
+                      qMax(0, factoryIndex(Id::fromString(defaultFirstView(d->m_side)))),
+                      /*updateActivationsMap=*/false);
 
     setShown(settings->value(settingsKey("Visible"), defaultVisible(d->m_side)).toBool());
 
@@ -477,7 +541,7 @@ void NavigationWidget::restoreSettings(QSettings *settings)
         if (!key.startsWith(activationKey))
             continue;
 
-        int position = settings->value(key).toInt();
+        int position = settings->value(keyFromString(key)).toInt();
         Id factoryId = Id::fromString(key.mid(activationKey.length()));
         NavigationWidgetPrivate::updateActivationsMap(factoryId, {d->m_side, position});
     }
@@ -495,19 +559,22 @@ void NavigationWidget::closeSubWidgets()
 
 void NavigationWidget::setShown(bool b)
 {
-    if (d->m_shown == b)
-        return;
-    bool haveData = d->m_factoryModel->rowCount();
-    d->m_shown = b;
     NavigationWidgetPlaceHolder *current = NavigationWidgetPlaceHolder::current(d->m_side);
-    if (current) {
-        bool visible = d->m_shown && haveData;
-        current->setVisible(visible);
-        d->m_toggleSideBarAction->setChecked(visible);
+    if (!current && d->m_mainWindow) {
+        // mode without placeholder but with main window
+        d->m_mainWindow->setDockAreaVisible(dockAreaForSide(d->m_side), b);
     } else {
-        d->m_toggleSideBarAction->setChecked(false);
+        // mode with navigation widget placeholder or e.g. during startup/settings restore
+        if (d->m_shown == b)
+            return;
+        const bool haveData = d->m_factoryModel->rowCount();
+        d->m_shown = b;
+        if (current) {
+            const bool visible = d->m_shown && haveData;
+            current->setVisible(visible);
+        }
     }
-    updateToggleText();
+    updateToggleAction();
 }
 
 bool NavigationWidget::isShown() const
@@ -524,9 +591,9 @@ int NavigationWidget::factoryIndex(Id id)
     return -1;
 }
 
-QString NavigationWidget::settingsKey(const QString &key) const
+Key NavigationWidget::settingsKey(const Key &key) const
 {
-    return QStringLiteral("%1/%2").arg(settingsGroup(), key);
+    return settingsGroup() + '/' + key;
 }
 
 QHash<Id, Command *> NavigationWidget::commandMap() const

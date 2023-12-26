@@ -45,12 +45,12 @@ static QString msgUnexpectedOutput(const QByteArray &what)
 
 static QString msgCannotChangeToWorkDir(const FilePath &dir, const QString &why)
 {
-    return Tr::tr("Cannot change to working directory \"%1\": %2").arg(dir.toString(), why);
+    return Tr::tr("Cannot change to working directory \"%1\": %2").arg(dir.toUserOutput(), why);
 }
 
-static QString msgCannotExecute(const QString &p, const QString &why)
+static QString msgCannotExecute(const FilePath &p, const QString &why)
 {
-    return Tr::tr("Cannot execute \"%1\": %2").arg(p, why);
+    return Tr::tr("Cannot execute \"%1\": %2").arg(p.toUserOutput(), why);
 }
 
 static QString msgPromptToClose()
@@ -92,6 +92,7 @@ public:
     StubCreator *stubCreator{nullptr};
 
     const bool waitOnExit;
+    bool didInferiorRun{false};
 };
 
 TerminalInterface::TerminalInterface(bool waitOnExit)
@@ -156,6 +157,11 @@ void TerminalInterface::onStubExited()
 
     if (d->inferiorProcessId)
         emitFinished(-1, QProcess::CrashExit);
+    else if (!d->didInferiorRun) {
+        emitError(QProcess::FailedToStart,
+                  Tr::tr("Failed to start terminal process. The stub exited before the inferior "
+                         "was started."));
+    }
 }
 
 void TerminalInterface::onStubReadyRead()
@@ -169,13 +175,14 @@ void TerminalInterface::onStubReadyRead()
                                                errnoToString(out.mid(10).toInt())));
         } else if (out.startsWith("err:exec ")) {
             emitError(QProcess::FailedToStart,
-                      msgCannotExecute(m_setup.m_commandLine.executable().toString(),
+                      msgCannotExecute(m_setup.m_commandLine.executable(),
                                        errnoToString(out.mid(9).toInt())));
         } else if (out.startsWith("spid ")) {
             d->envListFile.reset();
             d->envListFile = nullptr;
         } else if (out.startsWith("pid ")) {
             d->inferiorProcessId = out.mid(4).toInt();
+            d->didInferiorRun = true;
             emit started(d->inferiorProcessId, d->inferiorThreadId);
         } else if (out.startsWith("thread ")) { // Windows only
             d->inferiorThreadId = out.mid(7).toLongLong();
@@ -183,8 +190,8 @@ void TerminalInterface::onStubReadyRead()
             emitFinished(out.mid(5).toInt(), QProcess::NormalExit);
         } else if (out.startsWith("crash ")) {
             emitFinished(out.mid(6).toInt(), QProcess::CrashExit);
-        } else if (out.startsWith("qtc: ")) {
-            emit readyRead(out.mid(5) + "\n", {});
+        } else if (out.startsWith("ack ")) {
+            qCDebug(terminalInterfaceLog) << "Received ack from stub: " << out;
         } else {
             emitError(QProcess::UnknownError, msgUnexpectedOutput(out));
             break;
@@ -280,8 +287,10 @@ void TerminalInterface::sendCommand(char c)
 void TerminalInterface::killInferiorProcess()
 {
     sendCommand('k');
-    if (d->stubSocket)
+    if (d->stubSocket) {
         d->stubSocket->waitForReadyRead();
+        emitFinished(-1, QProcess::CrashExit);
+    }
 }
 
 void TerminalInterface::killStubProcess()
@@ -299,6 +308,23 @@ void TerminalInterface::start()
 {
     if (isRunning())
         return;
+
+    if (m_setup.m_terminalMode == TerminalMode::Detached) {
+        expected_str<qint64> result;
+        QMetaObject::invokeMethod(
+            d->stubCreator,
+            [this, &result] { result = d->stubCreator->startStubProcess(m_setup); },
+            d->stubCreator->thread() == QThread::currentThread() ? Qt::DirectConnection
+                                                                 : Qt::BlockingQueuedConnection);
+
+        if (result) {
+            emit started(*result, 0);
+            emitFinished(0, QProcess::NormalExit);
+        } else {
+            emitError(QProcess::FailedToStart, result.error());
+        }
+        return;
+    }
 
     const expected_str<void> result = startStubServer();
     if (!result) {
@@ -330,8 +356,9 @@ void TerminalInterface::start()
             return;
         }
         QTextStream stream(d->envListFile.get());
-        finalEnv.forEachEntry([&stream](const QString &key, const QString &value, bool) {
-            stream << key << '=' << value << '\0';
+        finalEnv.forEachEntry([&stream](const QString &key, const QString &value, bool enabled) {
+            if (enabled)
+                stream << key << '=' << value << '\0';
         });
 
         if (d->envListFile->error() != QFile::NoError) {
@@ -367,9 +394,24 @@ void TerminalInterface::start()
 
     QTC_ASSERT(d->stubCreator, return);
 
+    ProcessSetupData stubSetupData;
+    stubSetupData.m_commandLine = cmd;
+
+    stubSetupData.m_extraData[TERMINAL_SHELL_NAME]
+        = m_setup.m_extraData.value(TERMINAL_SHELL_NAME,
+                                    m_setup.m_commandLine.executable().fileName());
+
+    if (m_setup.m_runAsRoot && !HostOsInfo::isWindowsHost()) {
+        CommandLine rootCommand("sudo", {});
+        rootCommand.addCommandLineAsArgs(cmd);
+        stubSetupData.m_commandLine = rootCommand;
+    } else {
+        stubSetupData.m_commandLine = cmd;
+    }
+
     QMetaObject::invokeMethod(
         d->stubCreator,
-        [cmd, this] { d->stubCreator->startStubProcess(cmd, m_setup); },
+        [stubSetupData, this] { d->stubCreator->startStubProcess(stubSetupData); },
         d->stubCreator->thread() == QThread::currentThread() ? Qt::DirectConnection
                                                              : Qt::BlockingQueuedConnection);
 
@@ -391,6 +433,8 @@ qint64 TerminalInterface::write(const QByteArray &data)
 }
 void TerminalInterface::sendControlSignal(ControlSignal controlSignal)
 {
+    QTC_ASSERT(m_setup.m_terminalMode != TerminalMode::Detached, return);
+
     switch (controlSignal) {
     case ControlSignal::Terminate:
     case ControlSignal::Kill:

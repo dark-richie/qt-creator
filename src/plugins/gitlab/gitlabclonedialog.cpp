@@ -23,8 +23,8 @@
 #include <utils/infolabel.h>
 #include <utils/mimeutils.h>
 #include <utils/pathchooser.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <vcsbase/vcsbaseplugin.h>
 #include <vcsbase/vcscommand.h>
@@ -95,13 +95,15 @@ GitLabCloneDialog::GitLabCloneDialog(const Project &project, QWidget *parent)
 
     connect(m_pathChooser, &PathChooser::textChanged, this, [this] {
         m_directoryLE->validate();
-        GitLabCloneDialog::updateUi();
+        updateUi();
     });
+    connect(m_pathChooser, &PathChooser::validChanged, this, &GitLabCloneDialog::updateUi);
     connect(m_directoryLE, &FancyLineEdit::textChanged, this, &GitLabCloneDialog::updateUi);
+    connect(m_directoryLE, &FancyLineEdit::validChanged, this, &GitLabCloneDialog::updateUi);
     connect(m_cloneButton, &QPushButton::clicked, this, &GitLabCloneDialog::cloneProject);
     connect(m_cancelButton, &QPushButton::clicked,
             this, &GitLabCloneDialog::cancel);
-    connect(this, &QDialog::rejected, this, [this]() {
+    connect(this, &QDialog::rejected, this, [this] {
         if (m_commandRunning) {
             cancel();
             QApplication::restoreOverrideCursor();

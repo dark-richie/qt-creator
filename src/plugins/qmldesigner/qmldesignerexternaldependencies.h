@@ -22,8 +22,6 @@ public:
     QString defaultPuppetToplevelBuildDirectory() const override;
     QUrl projectUrl() const override;
     QString currentProjectDirPath() const override;
-    QList<QColor> designerSettingsEdit3DViewBackgroundColor() const override;
-    QColor designerSettingsEdit3DViewGridColor() const override;
     QUrl currentResourcePath() const override;
     void parseItemLibraryDescriptions() override;
     const DesignerSettings &designerSettings() const override;
@@ -36,6 +34,12 @@ public:
     PuppetStartData puppetStartData(const class Model &model) const override;
     bool instantQmlTextUpdate() const override;
     Utils::FilePath qmlPuppetPath() const override;
+    QStringList modulePaths() const override;
+    QStringList projectModulePaths() const override;
+    bool isQt6Project() const override;
+    bool isQtForMcusProject() const override;
+    QString qtQuickVersion() const override;
+    Utils::FilePath resourcePath(const QString &relativePath) const override;
 
 private:
     const DesignerSettings &m_designerSettings;

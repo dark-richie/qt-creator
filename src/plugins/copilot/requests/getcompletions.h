@@ -11,8 +11,8 @@ namespace Copilot {
 
 class Completion : public LanguageServerProtocol::JsonObject
 {
-    static constexpr char16_t displayTextKey[] = u"displayText";
-    static constexpr char16_t uuidKey[] = u"uuid";
+    static constexpr Key displayTextKey{"displayText"};
+    static constexpr Key uuidKey{"uuid"};
 
 public:
     using JsonObject::JsonObject;
@@ -27,6 +27,7 @@ public:
         return typedValue<LanguageServerProtocol::Range>(LanguageServerProtocol::rangeKey);
     }
     QString text() const { return typedValue<QString>(LanguageServerProtocol::textKey); }
+    void setText(const QString &text) { insert(LanguageServerProtocol::textKey, text); }
     QString uuid() const { return typedValue<QString>(uuidKey); }
 
     bool isValid() const override
@@ -40,7 +41,7 @@ public:
 class GetCompletionParams : public LanguageServerProtocol::JsonObject
 {
 public:
-    static constexpr char16_t docKey[] = u"doc";
+    static constexpr Key docKey{"doc"};
 
     GetCompletionParams(const LanguageServerProtocol::TextDocumentIdentifier &document,
                         int version,
@@ -94,7 +95,7 @@ public:
 
 class GetCompletionResponse : public LanguageServerProtocol::JsonObject
 {
-    static constexpr char16_t completionKey[] = u"completions";
+    static constexpr Key completionKey{"completions"};
 
 public:
     using JsonObject::JsonObject;
@@ -113,7 +114,7 @@ public:
         : Request(methodName, params)
     {}
     using Request::Request;
-    constexpr static const char methodName[] = "getCompletionsCycling";
+    constexpr static const LanguageServerProtocol::Key methodName{"getCompletionsCycling"};
 };
 
 } // namespace Copilot

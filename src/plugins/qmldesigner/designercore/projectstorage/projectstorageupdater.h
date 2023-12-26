@@ -32,7 +32,7 @@ class ProjectStorage;
 class QmlDocumentParserInterface;
 class QmlTypesParserInterface;
 
-class ProjectStorageUpdater : public ProjectStoragePathWatcherNotifierInterface
+class ProjectStorageUpdater final : public ProjectStoragePathWatcherNotifierInterface
 {
 public:
     using PathCache = SourcePathCache<ProjectStorage<Sqlite::Database>, NonLockingMutex>;
@@ -43,7 +43,8 @@ public:
                           PathCache &pathCache,
                           QmlDocumentParserInterface &qmlDocumentParser,
                           QmlTypesParserInterface &qmlTypesParser,
-                          class ProjectStoragePathWatcherInterface &pathWatcher)
+                          class ProjectStoragePathWatcherInterface &pathWatcher,
+                          ProjectPartId projectPartId)
         : m_fileSystem{fileSystem}
         , m_projectStorage{projectStorage}
         , m_fileStatusCache{fileStatusCache}
@@ -51,11 +52,12 @@ public:
         , m_qmlDocumentParser{qmlDocumentParser}
         , m_qmlTypesParser{qmlTypesParser}
         , m_pathWatcher{pathWatcher}
+        , m_projectPartId{projectPartId}
     {}
 
     void update(QStringList directories,
                 QStringList qmlTypesPaths,
-                ProjectPartId projectPartId = ProjectPartId{});
+                const QString &propertyEditorResourcesPath);
     void pathsWithIdsChanged(const std::vector<IdPaths> &idPaths) override;
     void pathsChanged(const SourceIds &filePathIds) override;
 
@@ -96,39 +98,62 @@ public:
         NotExists,
     };
 
-private:
-    struct SourceIdsData
+    struct WatchedSourceIdsIds
     {
-        SourceIdsData(std::size_t reserve)
+        WatchedSourceIdsIds(std::size_t reserve)
         {
-            notUpdatedFileStatusSourceIds.reserve(reserve * 30);
-            notUpdatedSourceIds.reserve(reserve * 30);
-            watchedDirectorySourceIds.reserve(reserve);
-            watchedQmldirSourceIds.reserve(reserve);
-            watchedQmlSourceIds.reserve(reserve * 30);
-            watchedQmltypesSourceIds.reserve(reserve * 30);
+            directorySourceIds.reserve(reserve);
+            qmldirSourceIds.reserve(reserve);
+            qmlSourceIds.reserve(reserve * 30);
+            qmltypesSourceIds.reserve(reserve * 30);
         }
 
-        SourceIds notUpdatedFileStatusSourceIds;
-        SourceIds notUpdatedSourceIds;
-        SourceIds watchedDirectorySourceIds;
-        SourceIds watchedQmldirSourceIds;
-        SourceIds watchedQmlSourceIds;
-        SourceIds watchedQmltypesSourceIds;
+        SourceIds directorySourceIds;
+        SourceIds qmldirSourceIds;
+        SourceIds qmlSourceIds;
+        SourceIds qmltypesSourceIds;
     };
 
+    struct NotUpdatedSourceIds
+    {
+        NotUpdatedSourceIds(std::size_t reserve)
+        {
+            fileStatusSourceIds.reserve(reserve * 30);
+            sourceIds.reserve(reserve * 30);
+        }
+
+        SourceIds fileStatusSourceIds;
+        SourceIds sourceIds;
+    };
+
+private:
     void updateQmlTypes(const QStringList &qmlTypesPaths,
                         Storage::Synchronization::SynchronizationPackage &package,
-                        SourceIdsData &sourceIdData);
+                        NotUpdatedSourceIds &notUpdatedSourceIds,
+                        WatchedSourceIdsIds &watchedSourceIdsIds);
 
     void updateDirectories(const QStringList &directories,
                            Storage::Synchronization::SynchronizationPackage &package,
-                           SourceIdsData &sourceIdData);
+                           NotUpdatedSourceIds &notUpdatedSourceIds,
+                           WatchedSourceIdsIds &watchedSourceIdsIds);
 
     void updateDirectory(const Utils::PathString &directory,
                          Storage::Synchronization::SynchronizationPackage &package,
-                         SourceIdsData &sourceIdData);
+                         NotUpdatedSourceIds &notUpdatedSourceIds,
+                         WatchedSourceIdsIds &watchedSourceIdsIds);
 
+    void updatePropertyEditorPaths(const QString &propertyEditorResourcesPath,
+                                   Storage::Synchronization::SynchronizationPackage &package,
+                                   NotUpdatedSourceIds &notUpdatedSourceIds);
+    void updateTypeAnnotations(const QString &propertyEditorResourcesPath,
+                               Storage::Synchronization::SynchronizationPackage &package,
+                               NotUpdatedSourceIds &notUpdatedSourceIds);
+    void updatePropertyEditorPath(const QString &path,
+                                  Storage::Synchronization::SynchronizationPackage &package,
+                                  SourceId directorySourceId);
+    void updatePropertyEditorFilePath(const QString &filePath,
+                                      Storage::Synchronization::SynchronizationPackage &package,
+                                      SourceId directorySourceId);
     void parseTypeInfos(const QStringList &typeInfos,
                         const QList<QmlDirParser::Import> &qmldirDependencies,
                         const QList<QmlDirParser::Import> &qmldirImports,
@@ -136,36 +161,41 @@ private:
                         Utils::SmallStringView directoryPath,
                         ModuleId moduleId,
                         Storage::Synchronization::SynchronizationPackage &package,
-                        SourceIdsData &sourceIdData);
+                        NotUpdatedSourceIds &notUpdatedSourceIds,
+                        WatchedSourceIdsIds &watchedSourceIdsIds);
     void parseProjectDatas(const Storage::Synchronization::ProjectDatas &projectDatas,
                            Storage::Synchronization::SynchronizationPackage &package,
-                           SourceIdsData &sourceIdData);
+                           NotUpdatedSourceIds &notUpdatedSourceIds,
+                           WatchedSourceIdsIds &watchedSourceIdsIds);
     FileState parseTypeInfo(const Storage::Synchronization::ProjectData &projectData,
                             Utils::SmallStringView qmltypesPath,
                             Storage::Synchronization::SynchronizationPackage &package,
-                            SourceIdsData &sourceIdData);
+                            NotUpdatedSourceIds &notUpdatedSourceIds);
     void parseQmlComponents(Components components,
                             SourceId directorySourceId,
                             SourceContextId directoryId,
                             Storage::Synchronization::SynchronizationPackage &package,
-                            SourceIdsData &sourceIdData,
+                            NotUpdatedSourceIds &notUpdatedSourceIds,
+                            WatchedSourceIdsIds &watchedSourceIdsIds,
                             FileState qmldirState);
     void parseQmlComponent(Utils::SmallStringView fileName,
                            Utils::SmallStringView directory,
                            Storage::Synchronization::ExportedTypes exportedTypes,
                            SourceId directorySourceId,
                            Storage::Synchronization::SynchronizationPackage &package,
-                           SourceIdsData &sourceIdData,
+                           NotUpdatedSourceIds &notUpdatedSourceIds,
+                           WatchedSourceIdsIds &watchedSourceIdsIds,
                            FileState qmldirState);
     void parseQmlComponent(SourceId sourceId,
                            Storage::Synchronization::SynchronizationPackage &package,
-                           SourceIdsData &sourceIdData);
+                           NotUpdatedSourceIds &notUpdatedSourceIds);
 
     FileState fileState(SourceId sourceId,
                         Storage::Synchronization::SynchronizationPackage &package,
-                        SourceIdsData &sourceIdData) const;
+                        NotUpdatedSourceIds &notUpdatedSourceIds) const;
 
 private:
+    std::vector<IdPaths> m_changedIdPaths;
     FileSystemInterface &m_fileSystem;
     ProjectStorageInterface &m_projectStorage;
     FileStatusCache &m_fileStatusCache;
@@ -173,6 +203,7 @@ private:
     QmlDocumentParserInterface &m_qmlDocumentParser;
     QmlTypesParserInterface &m_qmlTypesParser;
     ProjectStoragePathWatcherInterface &m_pathWatcher;
+    ProjectPartId m_projectPartId;
 };
 
 } // namespace QmlDesigner

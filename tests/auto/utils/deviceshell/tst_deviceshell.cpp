@@ -8,7 +8,7 @@
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
 #include <utils/launcherinterface.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/temporarydirectory.h>
 
 #include <QObject>
@@ -28,7 +28,7 @@ public:
     }
 
 private:
-    void setupShellProcess(QtcProcess *shellProcess) override
+    void setupShellProcess(Process *shellProcess) override
     {
         shellProcess->setCommand(m_cmdLine);
     }
@@ -38,7 +38,7 @@ private:
 
 bool testDocker(const FilePath &executable)
 {
-    QtcProcess p;
+    Process p;
     p.setCommand({executable, {"info", "--format", "{{.OSType}}"}});
     p.runBlocking();
     const QString platform = p.cleanedStdOut().trimmed();

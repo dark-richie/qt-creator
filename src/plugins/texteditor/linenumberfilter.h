@@ -5,24 +5,15 @@
 
 #include <coreplugin/locator/ilocatorfilter.h>
 
-namespace Core { class IEditor; }
-
-namespace TextEditor {
-namespace Internal {
+namespace TextEditor::Internal {
 
 class LineNumberFilter : public Core::ILocatorFilter
 {
-    Q_OBJECT
-
 public:
-    explicit LineNumberFilter(QObject *parent = nullptr);
+    LineNumberFilter();
 
-    void prepareSearch(const QString &entry) override;
-    QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
-                                               const QString &entry) override;
 private:
-    bool m_hasCurrentEditor = false;
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-} // namespace Internal
-} // namespace TextEditor
+} // namespace TextEditor::Internal

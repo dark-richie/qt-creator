@@ -7,13 +7,13 @@
 #include "fancyactionbar.h"
 
 #include <utils/hostosinfo.h>
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
 #include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 
 #include <QDebug>
-#include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmapCache>
@@ -68,9 +68,7 @@ QSize FancyTabBar::tabSizeHint(bool minimum) const
                     Core::Constants::MODEBAR_ICONSONLY_BUTTON_SIZE / (minimum ? 3 : 1)};
     }
 
-    QFont boldFont(font());
-    boldFont.setPointSizeF(StyleHelper::sidebarFontSize());
-    boldFont.setBold(true);
+    const QFont boldFont = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
     const QFontMetrics fm(boldFont);
     const int spacing = 8;
     const int width = 60 + spacing + 2;
@@ -285,9 +283,7 @@ static void paintIconAndText(QPainter *painter, const QRect &rect,
                              const QIcon &icon, const QString &text,
                              bool enabled, bool selected)
 {
-    QFont boldFont(painter->font());
-    boldFont.setPointSizeF(StyleHelper::sidebarFontSize());
-    boldFont.setBold(true);
+    const QFont boldFont = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
     painter->setFont(boldFont);
 
     const bool drawIcon = rect.height() > 36;
@@ -457,56 +453,43 @@ FancyTabWidget::FancyTabWidget(QWidget *parent)
     m_tabBar = new FancyTabBar(this);
     m_tabBar->setObjectName("ModeSelector"); // used for UI introduction
 
-    m_selectionWidget = new QWidget(this);
-    auto selectionLayout = new QVBoxLayout;
-    selectionLayout->setSpacing(0);
-    selectionLayout->setContentsMargins(0, 0, 0, 0);
-
     auto bar = new StyledBar;
-    auto layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    auto fancyButton = new FancyColorButton(this);
+    auto fancyButton = new FancyColorButton;
     connect(fancyButton, &FancyColorButton::clicked, this, &FancyTabWidget::topAreaClicked);
-    layout->addWidget(fancyButton);
-    selectionLayout->addWidget(bar);
-
-    selectionLayout->addWidget(m_tabBar);
-    selectionLayout->addStretch(1);
-    m_selectionWidget->setLayout(selectionLayout);
-    m_selectionWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-
-    m_cornerWidgetContainer = new QWidget(this);
-    m_cornerWidgetContainer->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
-    m_cornerWidgetContainer->setAutoFillBackground(false);
-
-    auto cornerWidgetLayout = new QVBoxLayout;
-    cornerWidgetLayout->setSpacing(0);
-    cornerWidgetLayout->setContentsMargins(0, 0, 0, 0);
-    cornerWidgetLayout->addStretch();
-    m_cornerWidgetContainer->setLayout(cornerWidgetLayout);
-
-    selectionLayout->addWidget(m_cornerWidgetContainer, 0);
 
     m_modesStack = new QStackedLayout;
     m_statusBar = new QStatusBar;
     m_statusBar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 
-    auto vlayout = new QVBoxLayout;
-    vlayout->setContentsMargins(0, 0, 0, 0);
-    vlayout->setSpacing(0);
-    vlayout->addLayout(m_modesStack);
-    vlayout->addWidget(m_statusBar);
+    QVBoxLayout *vlayout;
+
+    using namespace Layouting;
+    Row { fancyButton, noMargin() }.attachTo(bar);
+    Row {
+        Widget {
+            bindTo(&m_selectionWidget),
+            Column {
+                bar,
+                m_tabBar,
+                st,
+                Widget {
+                    bindTo(&m_cornerWidgetContainer),
+                    Column { st, spacing(0), noMargin() },
+                },
+                spacing(0),  noMargin(),
+            },
+        },
+        Column { bindTo(&vlayout), m_modesStack, m_statusBar, spacing(0) },
+        spacing(1), noMargin(),
+    }.attachTo(this);
+
+    m_selectionWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+
+    m_cornerWidgetContainer->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    m_cornerWidgetContainer->setAutoFillBackground(false);
 
     m_infoBarDisplay.setTarget(vlayout, 1);
     m_infoBarDisplay.setEdge(Qt::BottomEdge);
-
-    auto mainLayout = new QHBoxLayout;
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(1);
-    mainLayout->addWidget(m_selectionWidget);
-    mainLayout->addLayout(vlayout);
-    setLayout(mainLayout);
 
     connect(m_tabBar, &FancyTabBar::currentAboutToChange, this, &FancyTabWidget::currentAboutToShow);
     connect(m_tabBar, &FancyTabBar::currentChanged, this, &FancyTabWidget::showWidget);

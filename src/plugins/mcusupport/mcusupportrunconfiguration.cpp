@@ -8,10 +8,11 @@
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
-#include <cmakeprojectmanager/cmakekitinformation.h>
+#include <cmakeprojectmanager/cmakekitaspect.h>
 #include <cmakeprojectmanager/cmaketool.h>
 
 #include <utils/aspects.h>
@@ -42,23 +43,35 @@ static QStringList flashAndRunArgs(const RunConfiguration *rc, const Target *tar
 class FlashAndRunConfiguration final : public RunConfiguration
 {
 public:
-    FlashAndRunConfiguration(Target *target, Utils::Id id)
+    FlashAndRunConfiguration(Target *target, Id id)
         : RunConfiguration(target, id)
     {
-        auto flashAndRunParameters = addAspect<StringAspect>();
-        flashAndRunParameters->setLabelText(Tr::tr("Flash and run CMake parameters:"));
-        flashAndRunParameters->setDisplayStyle(StringAspect::TextEditDisplay);
-        flashAndRunParameters->setSettingsKey("FlashAndRunConfiguration.Parameters");
+        flashAndRunParameters.setLabelText(Tr::tr("Flash and run CMake parameters:"));
+        flashAndRunParameters.setDisplayStyle(StringAspect::TextEditDisplay);
+        flashAndRunParameters.setSettingsKey("FlashAndRunConfiguration.Parameters");
 
-        setUpdater([target, flashAndRunParameters, this] {
-            flashAndRunParameters->setValue(flashAndRunArgs(this, target).join(' '));
+        setUpdater([target, this] {
+            flashAndRunParameters.setValue(flashAndRunArgs(this, target).join(' '));
         });
 
         update();
 
         connect(target->project(), &Project::displayNameChanged, this, &RunConfiguration::update);
     }
+
+    bool isEnabled() const override
+    {
+        if (disabled)
+            return false;
+
+        return RunConfiguration::isEnabled();
+    }
+
+    static bool disabled;
+    StringAspect flashAndRunParameters{this};
 };
+
+bool FlashAndRunConfiguration::disabled = false;
 
 class FlashAndRunWorker : public SimpleTargetRunner
 {
@@ -72,6 +85,15 @@ public:
                             CommandLine::Raw});
             setWorkingDirectory(target->activeBuildConfiguration()->buildDirectory());
             setEnvironment(target->activeBuildConfiguration()->environment());
+        });
+
+        connect(runControl, &RunControl::started, []() {
+            FlashAndRunConfiguration::disabled = true;
+            ProjectExplorerPlugin::updateRunActions();
+        });
+        connect(runControl, &RunControl::stopped, []() {
+            FlashAndRunConfiguration::disabled = false;
+            ProjectExplorerPlugin::updateRunActions();
         });
     }
 };

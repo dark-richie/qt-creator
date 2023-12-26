@@ -9,6 +9,7 @@
 #include <utils/environment.h>
 #include <utils/qtcassert.h>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -36,8 +37,7 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
     auto label = [aspect]() {
         if (aspect->labelText().isEmpty())
             aspect->setLabelText(Tr::tr("Base environment for this run configuration:"));
-        aspect->setupLabel();
-        return aspect->label();
+        return aspect->createLabel();
     };
     m_baseLayout->addWidget(label());
 
@@ -62,6 +62,15 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
     m_environmentWidget->setUserChanges(m_aspect->userEnvironmentChanges());
     m_environmentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     topLayout->addWidget(m_environmentWidget);
+
+    if (m_aspect->isPrintOnRunAllowed()) {
+        const auto printOnRunCheckBox = new QCheckBox(
+            Tr::tr("Show in Application Output when running"));
+        printOnRunCheckBox->setChecked(m_aspect->isPrintOnRunEnabled());
+        connect(printOnRunCheckBox, &QCheckBox::toggled,
+                m_aspect, &EnvironmentAspect::setPrintOnRun);
+        topLayout->addWidget(printOnRunCheckBox);
+    }
 
     connect(m_environmentWidget, &EnvironmentWidget::userChangesChanged,
             this, &EnvironmentAspectWidget::userChangesEdited);

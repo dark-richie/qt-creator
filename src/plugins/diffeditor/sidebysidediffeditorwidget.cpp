@@ -5,7 +5,6 @@
 
 #include "diffeditorconstants.h"
 #include "diffeditordocument.h"
-#include "diffeditorplugin.h"
 #include "diffeditortr.h"
 
 #include <coreplugin/find/highlightscrollbarcontroller.h>
@@ -13,13 +12,15 @@
 #include <coreplugin/minisplitter.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
+#include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/displaysettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/textdocumentlayout.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/mathutils.h>
 #include <utils/tooltip/tooltip.h>
 
@@ -34,8 +35,7 @@ using namespace Utils;
 
 using namespace std::placeholders;
 
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 static DiffSide oppositeSide(DiffSide side)
 {
@@ -315,7 +315,7 @@ static SideBySideDiffOutput diffOutput(QPromise<SideBySideShowResults> &promise,
             addChunkLine(RightSide, -2);
             blockNumber++;
         } else {
-            for (int j = 0; j < contextFileData.chunks.count(); j++) {
+            for (int j = 0; j < contextFileData.chunks.size(); j++) {
                 const ChunkData &chunkData = contextFileData.chunks.at(j);
 
                 int leftLineNumber = chunkData.startingLineNumber[LeftSide];
@@ -330,7 +330,7 @@ static SideBySideDiffOutput diffOutput(QPromise<SideBySideShowResults> &promise,
                         blockNumber++;
                     }
 
-                    const int rows = chunkData.rows.count();
+                    const int rows = chunkData.rows.size();
                     output.side[LeftSide].diffData.m_chunkInfo.setChunkIndex(blockNumber, rows, j);
                     output.side[RightSide].diffData.m_chunkInfo.setChunkIndex(blockNumber, rows, j);
 
@@ -341,11 +341,11 @@ static SideBySideDiffOutput diffOutput(QPromise<SideBySideShowResults> &promise,
                     }
                 }
 
-                if (j == contextFileData.chunks.count() - 1) { // the last chunk
+                if (j == contextFileData.chunks.size() - 1) { // the last chunk
                     int skippedLines = -2;
                     if (chunkData.contextChunk) {
                         // if it's context chunk
-                        skippedLines = chunkData.rows.count();
+                        skippedLines = chunkData.rows.size();
                     } else if (!contextFileData.lastChunkAtTheEndOfFile
                                && !contextFileData.contextChunksIncluded) {
                         // if not a context chunk and not a chunk at the end of file
@@ -380,7 +380,7 @@ void SideDiffData::setLineNumber(int blockNumber, int lineNumber)
 {
     const QString lineNumberString = QString::number(lineNumber);
     m_lineNumbers.insert(blockNumber, lineNumber);
-    m_lineNumberDigits = qMax(m_lineNumberDigits, lineNumberString.count());
+    m_lineNumberDigits = qMax(m_lineNumberDigits, lineNumberString.size());
 }
 
 void SideDiffData::setFileInfo(int blockNumber, const DiffFileInfo &fileInfo)
@@ -868,11 +868,11 @@ void SideBySideDiffEditorWidget::restoreState()
 
 void SideBySideDiffEditorWidget::showDiff()
 {
-    m_asyncTask.reset(new AsyncTask<SideBySideShowResults>());
-    m_asyncTask->setFutureSynchronizer(DiffEditorPlugin::futureSynchronizer());
+    m_asyncTask.reset(new Async<SideBySideShowResults>());
+    m_asyncTask->setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
     m_controller.setBusyShowing(true);
 
-    connect(m_asyncTask.get(), &AsyncTaskBase::done, this, [this] {
+    connect(m_asyncTask.get(), &AsyncBase::done, this, [this] {
         if (m_asyncTask->isCanceled() || !m_asyncTask->isResultAvailable()) {
             for (SideDiffEditorWidget *editor : m_editor)
                 editor->clearAll(Tr::tr("Retrieving data failed."));
@@ -985,7 +985,7 @@ void SideBySideDiffEditorWidget::setFontSettings(const FontSettings &fontSetting
 void SideBySideDiffEditorWidget::jumpToOriginalFileRequested(DiffSide side, int diffFileIndex,
                                                              int lineNumber, int columnNumber)
 {
-    if (diffFileIndex < 0 || diffFileIndex >= m_controller.m_contextFileData.count())
+    if (diffFileIndex < 0 || diffFileIndex >= m_controller.m_contextFileData.size())
         return;
 
     const FileData fileData = m_controller.m_contextFileData.at(diffFileIndex);
@@ -1006,7 +1006,7 @@ void SideBySideDiffEditorWidget::jumpToOriginalFileRequested(DiffSide side, int 
         int thisLineNumber = chunkData.startingLineNumber[side];
         int otherLineNumber = chunkData.startingLineNumber[otherSide];
 
-        for (int j = 0; j < chunkData.rows.count(); j++) {
+        for (int j = 0; j < chunkData.rows.size(); j++) {
             const RowData rowData = chunkData.rows.at(j);
             if (rowData.line[side].textLineType == TextLineData::TextLine)
                 thisLineNumber++;
@@ -1103,7 +1103,6 @@ void SideBySideDiffEditorWidget::syncCursor(SideDiffEditorWidget *source, SideDi
     dest->horizontalScrollBar()->setValue(oldHSliderPos);
 }
 
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal
 
 #include "sidebysidediffeditorwidget.moc"

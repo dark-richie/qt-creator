@@ -18,12 +18,11 @@
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
-#include <qtsupport/qtsupportconstants.h>
-
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditoractionhandler.h>
 
 #include <utils/fsengine/fileiconprovider.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/theme/theme.h>
 
@@ -117,23 +116,22 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
     int line = 0;
     int column = 0;
     convertPosition(cursor.position(), &line, &column);
-    const int positionInBlock = column - 1;
 
     const QString block = cursor.block().text();
 
     // check if the current position is commented out
     const int hashPos = block.indexOf(QLatin1Char('#'));
-    if (hashPos >= 0 && hashPos < positionInBlock)
+    if (hashPos >= 0 && hashPos < column)
         return processLinkCallback(link);
 
     // find the beginning of a filename
     QString buffer;
-    int beginPos = positionInBlock - 1;
-    int endPos = positionInBlock;
+    int beginPos = column - 1;
+    int endPos = column;
 
     // Check is cursor is somewhere on $${PWD}:
-    const int chunkStart = std::max(0, positionInBlock - 7);
-    const int chunkLength = 14 + std::min(0, positionInBlock - 7);
+    const int chunkStart = std::max(0, column - 7);
+    const int chunkLength = 14 + std::min(0, column - 7);
     QString chunk = block.mid(chunkStart, chunkLength);
 
     const QString curlyPwd = "$${PWD}";
@@ -143,18 +141,18 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
     bool doBackwardScan = true;
 
     if (posCurlyPwd >= 0) {
-        const int end = chunkStart + posCurlyPwd + curlyPwd.count();
+        const int end = chunkStart + posCurlyPwd + curlyPwd.size();
         const int start = chunkStart + posCurlyPwd;
-        if (start <= positionInBlock && end >= positionInBlock) {
+        if (start <= column && end >= column) {
             buffer = pwd;
             beginPos = chunkStart + posCurlyPwd - 1;
             endPos = end;
             doBackwardScan = false;
         }
     } else if (posPwd >= 0) {
-        const int end = chunkStart + posPwd + pwd.count();
+        const int end = chunkStart + posPwd + pwd.size();
         const int start = chunkStart + posPwd;
-        if (start <= positionInBlock && end >= positionInBlock) {
+        if (start <= column && end >= column) {
             buffer = pwd;
             beginPos = start - 1;
             endPos = end;
@@ -174,19 +172,19 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
 
     if (doBackwardScan
             && beginPos > 0
-            && block.mid(beginPos - 1, pwd.count()) == pwd
-            && (block.at(beginPos + pwd.count() - 1) == '/' || block.at(beginPos + pwd.count() - 1) == '\\')) {
+            && block.mid(beginPos - 1, pwd.size()) == pwd
+            && (block.at(beginPos + pwd.size() - 1) == '/' || block.at(beginPos + pwd.size() - 1) == '\\')) {
         buffer.prepend("$$");
         beginPos -= 2;
     } else if (doBackwardScan
-               && beginPos >= curlyPwd.count() - 1
-               && block.mid(beginPos - curlyPwd.count() + 1, curlyPwd.count()) == curlyPwd) {
+               && beginPos >= curlyPwd.size() - 1
+               && block.mid(beginPos - curlyPwd.size() + 1, curlyPwd.size()) == curlyPwd) {
         buffer.prepend(pwd);
-        beginPos -= curlyPwd.count();
+        beginPos -= curlyPwd.size();
     }
 
     // find the end of a filename
-    while (endPos < block.count()) {
+    while (endPos < block.size()) {
         QChar c = block.at(endPos);
         if (isValidFileNameChar(c)) {
             buffer.append(c);
@@ -229,8 +227,8 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
         link.targetFilePath = FilePath::fromString(checkForPrfFile(buffer));
     }
     if (!link.targetFilePath.isEmpty()) {
-        link.linkTextStart = cursor.position() - positionInBlock + beginPos + 1;
-        link.linkTextEnd = cursor.position() - positionInBlock + endPos;
+        link.linkTextStart = cursor.position() - column + beginPos + 1;
+        link.linkTextEnd = cursor.position() - column + endPos;
     }
     processLinkCallback(link);
 }
@@ -244,7 +242,7 @@ static TextDocument *createProFileDocument()
 {
     auto doc = new TextDocument;
     doc->setId(Constants::PROFILE_EDITOR_ID);
-    doc->setMimeType(QLatin1String(Constants::PROFILE_MIMETYPE));
+    doc->setMimeType(Utils::Constants::PROFILE_MIMETYPE);
     // qmake project files do not support UTF8-BOM
     // If the BOM would be added qmake would fail and Qt Creator couldn't parse the project file
     doc->setSupportsUtf8Bom(false);
@@ -257,14 +255,15 @@ static TextDocument *createProFileDocument()
 
 ProFileEditorFactory::ProFileEditorFactory()
 {
+    using namespace Utils::Constants;
     setId(Constants::PROFILE_EDITOR_ID);
     setDisplayName(::Core::Tr::tr(Constants::PROFILE_EDITOR_DISPLAY_NAME));
-    addMimeType(Constants::PROFILE_MIMETYPE);
-    addMimeType(Constants::PROINCLUDEFILE_MIMETYPE);
-    addMimeType(Constants::PROFEATUREFILE_MIMETYPE);
-    addMimeType(Constants::PROCONFIGURATIONFILE_MIMETYPE);
-    addMimeType(Constants::PROCACHEFILE_MIMETYPE);
-    addMimeType(Constants::PROSTASHFILE_MIMETYPE);
+    addMimeType(PROFILE_MIMETYPE);
+    addMimeType(PROINCLUDEFILE_MIMETYPE);
+    addMimeType(PROFEATUREFILE_MIMETYPE);
+    addMimeType(PROCONFIGURATIONFILE_MIMETYPE);
+    addMimeType(PROCACHEFILE_MIMETYPE);
+    addMimeType(PROSTASHFILE_MIMETYPE);
 
     setDocumentCreator(createProFileDocument);
     setEditorWidgetCreator([]() { return new ProFileEditorWidget; });

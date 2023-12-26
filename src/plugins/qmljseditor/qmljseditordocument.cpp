@@ -505,7 +505,6 @@ QmlJSEditorDocumentPrivate::QmlJSEditorDocumentPrivate(QmlJSEditorDocument *pare
             this, &QmlJSEditorDocumentPrivate::updateOutlineModel);
 
     modelManager->updateSourceFiles(Utils::FilePaths({parent->filePath()}), false);
-    settingsChanged();
 }
 
 QmlJSEditorDocumentPrivate::~QmlJSEditorDocumentPrivate()
@@ -742,7 +741,7 @@ static Utils::FilePath qmllsForFile(const Utils::FilePath &file,
     QmllsSettings settings = settingsManager->lastSettings();
     bool enabled = settings.useQmlls;
     if (!enabled)
-        return Utils::FilePath();
+        return {};
     if (settings.useLatestQmlls)
         return settingsManager->latestQmlls();
     QmlJS::ModelManagerInterface::ProjectInfo pInfo = modelManager->projectInfoForPath(file);
@@ -785,6 +784,7 @@ void QmlJSEditorDocumentPrivate::settingsChanged()
         case LanguageClient::Client::State::Initialized:
             setSourcesWithCapabilities(client->capabilities());
             break;
+        case LanguageClient::Client::State::FailedToInitialize:
         case LanguageClient::Client::State::Error:
             qCWarning(qmllsLog) << "qmlls" << newQmlls << "requested for document" << q->filePath()
                                 << "had errors, skipping setSourcesWithCababilities";
@@ -818,7 +818,9 @@ QmlJSEditorDocument::QmlJSEditorDocument(Utils::Id id)
     setId(id);
     connect(this, &TextEditor::TextDocument::tabSettingsChanged,
             d, &Internal::QmlJSEditorDocumentPrivate::invalidateFormatterCache);
-    setSyntaxHighlighter(new QmlJSHighlighter(document()));
+    connect(this, &TextEditor::TextDocument::openFinishedSuccessfully,
+            d, &Internal::QmlJSEditorDocumentPrivate::settingsChanged);
+    resetSyntaxHighlighter([] { return new QmlJSHighlighter(); });
     setCodec(QTextCodec::codecForName("UTF-8")); // qml files are defined to be utf-8
     setIndenter(new Internal::Indenter(document()));
 }
@@ -855,6 +857,8 @@ Internal::QmlOutlineModel *QmlJSEditorDocument::outlineModel() const
 
 TextEditor::IAssistProvider *QmlJSEditorDocument::quickFixAssistProvider() const
 {
+    if (const auto baseProvider = TextDocument::quickFixAssistProvider())
+        return baseProvider;
     return Internal::QmlJSEditorPlugin::quickFixAssistProvider();
 }
 

@@ -4,11 +4,7 @@
 /*!
     \page qtquick-text-editor.html
     \previouspage qtquick-curve-editor.html
-    \if defined(qtdesignstudio)
     \nextpage creator-projects-view.html
-    \else
-    \nextpage quick-uis.html
-    \endif
 
     \title Code
 
@@ -25,14 +21,13 @@
     \uicontrol Edit > \uicontrol {Find/Replace} > \uicontrol {Find/Replace}.
     You can also select \key Ctrl + \key {F}.
 
-    You can use a subset of the functions available in the
-    \l{Writing Code}{Edit mode}:
+    The view offers the following features:
 
     \list
         \li \l{Semantic Highlighting}
         \li \l{Checking Code Syntax}
         \li \l{Completing Code}
-        \li \l{Indenting Text or Code}
+        \li \l{Indent text or code}
         \li \l{Using Qt Quick Toolbars}
     \endlist
 */

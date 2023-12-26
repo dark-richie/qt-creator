@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "qmlitemnode.h"
-#include <metainfo.h>
 #include "nodelistproperty.h"
 #include "nodehints.h"
 #include "nodeproperty.h"
 #include "variantproperty.h"
 #include "bindingproperty.h"
 #include "qmlanchors.h"
-#include "itemlibraryinfo.h"
 
 #include <model.h>
 #include <abstractview.h>
@@ -309,7 +307,7 @@ bool QmlItemNode::instanceHasShowContent() const
 
 bool QmlItemNode::instanceCanReparent() const
 {
-    return QmlObjectNode::instanceCanReparent() && !anchors().instanceHasAnchors() && !instanceIsAnchoredBySibling();
+    return isInBaseState() && !anchors().instanceHasAnchors() && !instanceIsAnchoredBySibling();
 }
 
 bool QmlItemNode::instanceIsAnchoredBySibling() const
@@ -349,9 +347,6 @@ bool QmlItemNode::instanceHasScaleOrRotationTransform() const
 
 bool itemIsMovable(const ModelNode &modelNode)
 {
-    if (modelNode.metaInfo().isQtQuickControlsTab())
-        return false;
-
     if (!modelNode.hasParentProperty())
         return false;
 
@@ -363,9 +358,6 @@ bool itemIsMovable(const ModelNode &modelNode)
 
 bool itemIsResizable(const ModelNode &modelNode)
 {
-    if (modelNode.metaInfo().isQtQuickControlsTab())
-        return false;
-
     return NodeHints::fromModelNode(modelNode).isResizable();
 }
 

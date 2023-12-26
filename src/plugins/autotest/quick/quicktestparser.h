@@ -8,6 +8,7 @@
 #include <qmljs/qmljsdocument.h>
 
 #include <QFileSystemWatcher>
+#include <QReadWriteLock>
 
 namespace Autotest {
 namespace Internal {
@@ -24,11 +25,11 @@ class QuickTestParser : public QObject, public CppParser
     Q_OBJECT
 public:
     explicit QuickTestParser(ITestFramework *framework);
-    void init(const Utils::FilePaths &filesToParse, bool fullParse) override;
+    void init(const QSet<Utils::FilePath> &filesToParse, bool fullParse) override;
     void release() override;
     bool processDocument(QPromise<TestParseResultPtr> &promise,
                          const Utils::FilePath &fileName) override;
-    Utils::FilePath projectFileForMainCppFile(const Utils::FilePath &fileName) const;
+    Utils::FilePath projectFileForMainCppFile(const Utils::FilePath &fileName);
     QStringList supportedExtensions() const override { return {"qml"}; };
 
 private:
@@ -44,6 +45,8 @@ private:
     QFileSystemWatcher m_directoryWatcher;
     QMap<QString, QMap<QString, QDateTime> > m_watchedFiles;
     QMap<Utils::FilePath, Utils::FilePath> m_mainCppFiles;
+    QSet<Utils::FilePath> m_prefilteredFiles;
+    QReadWriteLock m_parseLock; // guard for m_mainCppFiles
     bool m_checkForDerivedTests = false;
 };
 

@@ -7,16 +7,16 @@
 #include "clangtoolsdiagnostic.h"
 
 #include <coreplugin/icore.h>
+#include <coreplugin/session.h>
 
 #include <cppeditor/compileroptionsbuilder.h>
 #include <cppeditor/projectinfo.h>
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectmanager.h>
-#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
@@ -31,6 +31,7 @@
 
 #include <functional>
 
+using namespace Core;
 using namespace CppEditor;
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -91,7 +92,7 @@ void PreconfiguredSessionTests::initTestCase()
     // Load session
     const FilePaths projects = ProjectManager::projectsForSessionName(preconfiguredSessionName);
     WaitForParsedProjects waitForParsedProjects(projects);
-    QVERIFY(ProjectManager::loadSession(preconfiguredSessionName));
+    QVERIFY(SessionManager::loadSession(preconfiguredSessionName));
     QVERIFY(waitForParsedProjects.wait());
 }
 
@@ -147,7 +148,7 @@ static QList<Target *> validTargets(Project *project)
             return false;
         }
 
-        const ToolChain * const toolchain = ToolChainKitAspect::cxxToolChain(kit);
+        const Toolchain * const toolchain = ToolchainKitAspect::cxxToolchain(kit);
         QTC_ASSERT(toolchain, return false);
 
         if (Core::ICore::clangExecutable(CLANG_BINDIR).isEmpty()) {

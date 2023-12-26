@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "algorithm.h"
 #include "smallstringfwd.h"
 #include "smallstringiterator.h"
 
@@ -11,6 +12,12 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+
+#if __cpp_lib_constexpr_string >= 201907L
+#define constexpr_string constexpr
+#else
+#define constexpr_string
+#endif
 
 namespace Utils {
 
@@ -63,18 +70,24 @@ public:
         return SmallStringView(data() + position, length);
     }
 
-    constexpr20 operator std::string() const { return std::string(data(), size()); }
+    constexpr_string operator std::string() const { return std::string(data(), size()); }
 
     explicit operator QString() const
     {
         return QString::fromUtf8(data(), int(size()));
     }
 
-    explicit operator QByteArray() const
+    explicit operator QByteArray() const { return QByteArray(data(), int(size())); }
+
+    explicit operator QLatin1StringView() const noexcept
     {
-        return QByteArray(data(), int(size()));
+        return QLatin1StringView(data(), Utils::ssize(*this));
     }
 
+    operator QUtf8StringView() const noexcept
+    {
+        return QUtf8StringView(data(), Utils::ssize(*this));
+    }
     constexpr bool startsWith(SmallStringView subStringToSearch) const noexcept
     {
         if (size() >= subStringToSearch.size())
@@ -129,38 +142,6 @@ constexpr bool operator>=(SmallStringView first, SmallStringView second) noexcep
 constexpr int compare(SmallStringView first, SmallStringView second) noexcept
 {
     return first.compare(second);
-}
-
-namespace Internal {
-constexpr int reverse_memcmp(const char *first, const char *second, size_t n)
-{
-    const char *currentFirst = first + n - 1;
-    const char *currentSecond = second + n - 1;
-
-    while (n > 0) {
-        // If the current characters differ, return an appropriately signed
-        // value; otherwise, keep searching backwards
-        int difference = *currentFirst - *currentSecond;
-        if (difference != 0)
-            return difference;
-
-        --currentFirst;
-        --currentSecond;
-        --n;
-    }
-
-    return 0;
-}
-} // namespace Internal
-
-constexpr int reverseCompare(SmallStringView first, SmallStringView second) noexcept
-{
-    int difference = Internal::reverse_memcmp(first.data(), second.data(), first.size());
-
-    if (difference == 0)
-        return int(first.size()) - int(second.size());
-
-    return difference;
 }
 
 } // namespace Utils

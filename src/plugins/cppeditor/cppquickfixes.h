@@ -3,19 +3,21 @@
 
 #pragma once
 
-#include "cppeditor_global.h"
 #include "cppquickfix.h"
+
+#include <variant>
 
 ///
 /// Adding New Quick Fixes
 ///
-/// When adding new Quick Fixes, make sure that the match() function is "cheap".
+/// When adding new Quick Fixes, make sure that the doMatch() function is "cheap".
 /// Otherwise, since the match() functions are also called to generate context menu
 /// entries, the user might experience a delay opening the context menu.
 ///
 
 namespace CppEditor {
 namespace Internal {
+using TypeOrExpr = std::variant<const CPlusPlus::ExpressionAST *, CPlusPlus::FullySpecifiedType>;
 
 void createCppQuickFixes();
 void destroyCppQuickFixes();
@@ -23,7 +25,7 @@ void destroyCppQuickFixes();
 class ExtraRefactoringOperations : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -34,7 +36,7 @@ public:
 class AddIncludeForUndefinedIdentifier : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 // Exposed for tests
@@ -75,7 +77,7 @@ private:
 class FlipLogicalOperands: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -89,7 +91,7 @@ public:
 class InverseLogicalComparison: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -104,7 +106,7 @@ public:
 class RewriteLogicalAnd: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -121,7 +123,7 @@ public:
 class ConvertCStringToNSString: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -146,7 +148,7 @@ public:
 class ConvertNumericLiteral: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -165,7 +167,7 @@ public:
 class TranslateStringLiteral: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -187,7 +189,7 @@ public:
 class WrapStringLiteral: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -201,7 +203,7 @@ class ConvertToCamelCase : public CppQuickFixFactory
 public:
     ConvertToCamelCase(bool test = false) : CppQuickFixFactory(), m_test(test) {}
 
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 
 private:
     const bool m_test;
@@ -220,7 +222,7 @@ private:
 class MoveDeclarationOutOfIf: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -236,7 +238,7 @@ public:
 class MoveDeclarationOutOfWhile: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -265,7 +267,7 @@ public:
 class SplitIfStatement: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -281,24 +283,7 @@ public:
 class SplitSimpleDeclaration: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
-};
-
-/*!
-  Rewrites
-    a = foo();
-
-  As
-    Type a = foo();
-
-  Where Type is the return type of foo()
-
-  Activates on: the assignee, if the type of the right-hand side of the assignment is known.
-*/
-class AddLocalDeclaration: public CppQuickFixFactory
-{
-public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -317,7 +302,7 @@ public:
 class AddBracesToIf: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -329,7 +314,7 @@ public:
 class RearrangeParamDeclarationList : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -344,7 +329,7 @@ public:
 class ReformatPointerDeclaration : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -353,7 +338,10 @@ public:
 class CompleteSwitchCaseStatement: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+    CompleteSwitchCaseStatement() { setHasClangdReplacement(); }
+
+private:
+    void doMatch(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
 };
 
 /*!
@@ -362,7 +350,7 @@ public:
 class InsertDeclFromDef: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -371,23 +359,40 @@ public:
 class InsertDefFromDecl: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    bool m_defPosOutsideClass = false;
 };
 
-/*!
-  Adds a class member from an initialization in the constructor.
- */
-class InsertMemberFromInitialization : public CppQuickFixFactory
+class AddDeclarationForUndeclaredIdentifier : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface,
+    void doMatch(const CppQuickFixInterface &interface,
                TextEditor::QuickFixOperations &result) override;
 
+#ifdef WITH_TESTS
+    void setMembersOnly() { m_membersOnly = true; }
+#endif
+
 private:
-    QString getType(
-            const CppQuickFixInterface &interface,
-            const CPlusPlus::MemInitializerAST *memInitializer,
-            const CPlusPlus::FunctionDefinitionAST *ctor) const;
+    void collectOperations(const CppQuickFixInterface &interface,
+                           TextEditor::QuickFixOperations &result);
+    void handleCall(const CPlusPlus::CallAST *call, const CppQuickFixInterface &interface,
+                    TextEditor::QuickFixOperations &result);
+
+    // Returns whether to still do other checks.
+    bool checkForMemberInitializer(const CppQuickFixInterface &interface,
+                                   TextEditor::QuickFixOperations &result);
+
+    void maybeAddMember(const CppQuickFixInterface &interface, CPlusPlus::Scope *scope,
+                        const QByteArray &classTypeExpr, const TypeOrExpr &typeOrExpr,
+                        const CPlusPlus::CallAST *call, TextEditor::QuickFixOperations &result);
+
+    void maybeAddStaticMember(
+        const CppQuickFixInterface &interface, const CPlusPlus::QualifiedNameAST *qualName,
+        const TypeOrExpr &typeOrExpr, const CPlusPlus::CallAST *call,
+        TextEditor::QuickFixOperations &result);
+
+    bool m_membersOnly = false;
 };
 
 /*!
@@ -396,11 +401,12 @@ private:
 class InsertDefsFromDecls : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface,
-               TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface,
+                 TextEditor::QuickFixOperations &result) override;
 
     enum class Mode {
             Off,         // Testing: simulates user canceling the dialog
+            Impl,        // Testing: simulates user choosing cpp file for every function
             Alternating, // Testing: simulates user choosing a different DefPos for every function
             User         // Normal interactive mode
     };
@@ -419,7 +425,7 @@ public:
     using FunctionNameGetter = std::function<QString()>;
 
     ExtractFunction(FunctionNameGetter functionNameGetter = FunctionNameGetter());
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 
 private:
     FunctionNameGetter m_functionNameGetter; // For tests to avoid GUI pop-up.
@@ -433,7 +439,7 @@ private:
 class ExtractLiteralAsParameter : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -444,7 +450,7 @@ public:
 class ConvertFromAndToPointer : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -453,7 +459,7 @@ public:
 class GenerateGetterSetter : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -465,8 +471,8 @@ protected:
     void setTest() { m_test = true; }
 
 private:
-    void match(const CppQuickFixInterface &interface,
-               TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface,
+                 TextEditor::QuickFixOperations &result) override;
 
     bool m_test = false;
 };
@@ -477,7 +483,7 @@ private:
 class InsertQtPropertyMembers : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -486,7 +492,7 @@ public:
 class ConvertQt4Connect : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -495,7 +501,7 @@ public:
 class ApplyDeclDefLinkChanges: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -505,7 +511,7 @@ public:
 class MoveFuncDefOutside: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -514,16 +520,25 @@ public:
 class MoveAllFuncDefOutside: public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
- Moves the definition of a function to its declaration.
+ Moves the definition of a function to its declaration, with the cursor on the definition.
  */
-class MoveFuncDefToDecl: public CppQuickFixFactory
+class MoveFuncDefToDeclPush : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+};
+
+/*!
+ Moves the definition of a function to its declaration, with the cursor on the declaration.
+ */
+class MoveFuncDefToDeclPull : public CppQuickFixFactory
+{
+public:
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -532,7 +547,7 @@ public:
 class AssignToLocalVariable : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -542,7 +557,7 @@ public:
 class OptimizeForLoop : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -555,7 +570,7 @@ public:
 class EscapeStringLiteral : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -565,7 +580,10 @@ public:
 class RemoveUsingNamespace : public CppQuickFixFactory
 {
 public:
-    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+    RemoveUsingNamespace() { setHasClangdReplacement(); }
+
+private:
+    void doMatch(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
 };
 
 /*!
@@ -577,10 +595,26 @@ protected:
     void setTest() { m_test = true; }
 
 private:
-    void match(const CppQuickFixInterface &interface,
+    void doMatch(const CppQuickFixInterface &interface,
                TextEditor::QuickFixOperations &result) override;
 
     bool m_test = false;
+};
+
+//! Converts C-style to C++-style comments and vice versa
+class ConvertCommentStyle : public CppQuickFixFactory
+{
+private:
+    void doMatch(const CppQuickFixInterface &interface,
+               TextEditor::QuickFixOperations &result) override;
+};
+
+//! Moves function documentation between declaration and implementation.
+class MoveFunctionComments : public CppQuickFixFactory
+{
+private:
+    void doMatch(const CppQuickFixInterface &interface,
+                 TextEditor::QuickFixOperations &result) override;
 };
 
 } // namespace Internal

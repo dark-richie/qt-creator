@@ -1,18 +1,20 @@
 add_qtc_library(Utils
-  DEPENDS Qt::Qml Qt::Xml
+  DEPENDS Tasking Qt::Qml Qt::Xml Spinner
   PUBLIC_DEPENDS
     Qt::Concurrent Qt::Core Qt::Network Qt::Gui Qt::Widgets
     Qt::Core5Compat
+    $<$<BOOL:${QTC_STATIC_BUILD}>:Tasking>
+    $<$<BOOL:${QTC_STATIC_BUILD}>:Spinner>
   SOURCES
     ../3rdparty/span/span.hpp
     ../3rdparty/tl_expected/include/tl/expected.hpp
-    QtConcurrentTools
     algorithm.h
     ansiescapecodehandler.cpp ansiescapecodehandler.h
+    appinfo.cpp appinfo.h
     appmainwindow.cpp appmainwindow.h
-    archive.cpp archive.h
+    array.h
     aspects.cpp aspects.h
-    asynctask.cpp asynctask.h
+    async.cpp async.h
     basetreeview.cpp basetreeview.h
     benchmarker.cpp benchmarker.h
     buildablehelperlibrary.cpp buildablehelperlibrary.h
@@ -43,8 +45,8 @@ add_qtc_library(Utils
     environmentfwd.h
     environmentmodel.cpp environmentmodel.h
     execmenu.cpp execmenu.h
-    executeondestruction.h
     expected.h
+    externalterminalprocessimpl.cpp externalterminalprocessimpl.h
     fadingindicator.cpp fadingindicator.h
     faketooltip.cpp faketooltip.h
     fancylineedit.cpp fancylineedit.h
@@ -61,40 +63,38 @@ add_qtc_library(Utils
     filesystemwatcher.cpp filesystemwatcher.h
     fileutils.cpp fileutils.h
     filewizardpage.cpp filewizardpage.h
-    fixedsizeclicklabel.cpp fixedsizeclicklabel.h
     flowlayout.cpp flowlayout.h
     fsengine/fsengine.cpp fsengine/fsengine.h
     fsengine/fileiconprovider.cpp fsengine/fileiconprovider.h
-    functiontraits.h
     futuresynchronizer.cpp futuresynchronizer.h
     fuzzymatcher.cpp fuzzymatcher.h
     genericconstants.h
     globalfilechangeblocker.cpp globalfilechangeblocker.h
     guard.cpp guard.h
+    guiutils.cpp guiutils.h
     headerviewstretcher.cpp headerviewstretcher.h
     highlightingitemdelegate.cpp highlightingitemdelegate.h
     historycompleter.cpp historycompleter.h
     hostosinfo.cpp hostosinfo.h
     htmldocextractor.cpp htmldocextractor.h
     icon.cpp icon.h
+    iconbutton.cpp iconbutton.h
     id.cpp id.h
     indexedcontainerproxyconstiterator.h
     infobar.cpp infobar.h
     infolabel.cpp infolabel.h
     itemviews.cpp itemviews.h
-    json.cpp json.h
     jsontreeitem.cpp jsontreeitem.h
     launcherinterface.cpp launcherinterface.h
     launcherpackets.cpp launcherpackets.h
     launchersocket.cpp launchersocket.h
     layoutbuilder.cpp layoutbuilder.h
-    linecolumn.cpp linecolumn.h
     link.cpp link.h
     listmodel.h
     listutils.h
     macroexpander.cpp macroexpander.h
-    mapreduce.h
     mathutils.cpp mathutils.h
+    mimeconstants.h
     mimeutils.h
     minimizableinfobars.cpp
     minimizableinfobars.h
@@ -119,13 +119,16 @@ add_qtc_library(Utils
     overlaywidget.cpp overlaywidget.h
     overridecursor.cpp overridecursor.h
     parameteraction.cpp parameteraction.h
+    passworddialog.cpp passworddialog.h
     pathchooser.cpp pathchooser.h
     pathlisteditor.cpp pathlisteditor.h
+    persistentcachestore.cpp persistentcachestore.h
     persistentsettings.cpp persistentsettings.h
     pointeralgorithm.h
     port.cpp port.h
     portlist.cpp portlist.h
     predicates.h
+    process.cpp process.h
     processenums.h
     processhandle.cpp processhandle.h
     processinfo.cpp processinfo.h
@@ -138,18 +141,17 @@ add_qtc_library(Utils
     qrcparser.cpp qrcparser.h
     qtcassert.cpp qtcassert.h
     qtcolorbutton.cpp qtcolorbutton.h
-    qtcprocess.cpp qtcprocess.h
     qtcsettings.cpp qtcsettings.h
     ranges.h
     reloadpromptutils.cpp reloadpromptutils.h
     removefiledialog.cpp removefiledialog.h
-    runextensions.cpp runextensions.h
     savefile.cpp savefile.h
     scopedswap.h
+    scopedtimer.cpp scopedtimer.h
+    searchresultitem.cpp searchresultitem.h
     set_algorithm.h
     settingsaccessor.cpp settingsaccessor.h
     settingsselector.cpp settingsselector.h
-    settingsutils.h
     singleton.cpp singleton.h
     sizedarray.h
     smallstring.h
@@ -164,12 +166,13 @@ add_qtc_library(Utils
     sortfiltermodel.h
     span.h
     statuslabel.cpp statuslabel.h
+    store.cpp store.h
+    storekey.h
     stringtable.cpp stringtable.h
     stringutils.cpp stringutils.h
     styleanimator.cpp styleanimator.h
     styledbar.cpp styledbar.h
     stylehelper.cpp stylehelper.h
-    tasktree.cpp tasktree.h
     templateengine.cpp templateengine.h
     temporarydirectory.cpp temporarydirectory.h
     temporaryfile.cpp temporaryfile.h
@@ -186,9 +189,12 @@ add_qtc_library(Utils
     tooltip/tips.cpp tooltip/tips.h
     tooltip/tooltip.cpp tooltip/tooltip.h
     touchbar/touchbar.h
+    transientscroll.cpp transientscroll.h
     treemodel.cpp treemodel.h
     treeviewcombobox.cpp treeviewcombobox.h
+    unarchiver.cpp unarchiver.h
     uncommentselection.cpp uncommentselection.h
+    uniqueobjectptr.h
     unixutils.cpp unixutils.h
     url.cpp url.h
     utils.qrc
@@ -273,6 +279,11 @@ extend_qtc_library(Utils
           fsengine/fsenginehandler.cpp
           fsengine/fsenginehandler.h
           fsengine/filepathinfocache.h
+)
+
+extend_qtc_library(Utils
+  CONDITION TARGET Nanotrace
+  DEPENDS Nanotrace
 )
 
 if (WIN32)

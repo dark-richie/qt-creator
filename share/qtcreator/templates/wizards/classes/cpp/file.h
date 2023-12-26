@@ -1,22 +1,21 @@
-%{Cpp:LicenseTemplate}\
-@if '%{Cpp:PragmaOnce}'
+%{JS: Cpp.licenseTemplate()}\
+@if '%{JS: Cpp.usePragmaOnce()}' === 'true'
 #pragma once
 @else
 #ifndef %{GUARD}
 #define %{GUARD}
 @endif
 
-%{JS: Cpp.includeStatement('%{Base}', Util.preferredSuffix('text/x-c++hdr'), ['QObject', 'QWidget', 'QMainWindow', 'QQuickItem', 'QSharedData'], '%{TargetPath}')}\
+%{JS: Cpp.includeStatement('%{Base}', Cpp.cxxHeaderSuffix(), ['QObject', 'QWidget', 'QMainWindow', 'QQuickItem', 'QSharedData'], '%{TargetPath}')}\
 %{JS: QtSupport.qtIncludes([ ( '%{IncludeQObject}' )          ? 'QtCore/%{IncludeQObject}'                 : '',
                              ( '%{IncludeQWidget}' )          ? 'QtGui/%{IncludeQWidget}'                  : '',
                              ( '%{IncludeQMainWindow}' )      ? 'QtGui/%{IncludeQMainWindow}'              : '',
-                             ( '%{IncludeQDeclarativeItem}' ) ? 'QtDeclarative/%{IncludeQDeclarativeItem}' : '',
                              ( '%{IncludeQSharedData}' )      ? 'QtCore/QSharedDataPointer'                : '' ],
                            [ ( '%{IncludeQObject}' )          ? 'QtCore/%{IncludeQObject}'                 : '',
                              ( '%{IncludeQWidget}' )          ? 'QtWidgets/%{IncludeQWidget}'              : '',
                              ( '%{IncludeQMainWindow}' )      ? 'QtWidgets/%{IncludeQMainWindow}'          : '',
-                             ( '%{IncludeQDeclarativeItem}' ) ? 'QtQuick1/%{IncludeQDeclarativeItem}'      : '',
                              ( '%{IncludeQQuickItem}' )       ? 'QtDeclarative/%{IncludeQQuickItem}'       : '',
+                             ( '%{AddQmlElementMacro}' && !'%{IncludeQQuickItem}' ) ? 'QtQml/QQmlEngine'   : '',
                              ( '%{IncludeQSharedData}' )      ? 'QtCore/QSharedDataPointer'                : '' ])}\
 %{JS: Cpp.openNamespaces('%{Class}')}
 @if '%{IncludeQSharedData}'
@@ -64,6 +63,6 @@ private:
 @endif
 };
 %{JS: Cpp.closeNamespaces('%{Class}')}
-@if ! '%{Cpp:PragmaOnce}'
+@if '%{JS: Cpp.usePragmaOnce()}' === 'false'
 #endif // %{GUARD}
 @endif

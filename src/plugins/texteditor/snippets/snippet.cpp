@@ -189,7 +189,7 @@ SnippetParseResult Snippet::parse(const QString &snippet)
     if (!errorMessage.isEmpty())
         return {SnippetParseError{errorMessage, {}, -1}};
 
-    const int count = preprocessedSnippet.count();
+    const int count = preprocessedSnippet.size();
     NameMangler *mangler = nullptr;
 
     QMap<QString, int> variableIndexes;
@@ -330,7 +330,7 @@ void Internal::TextEditorPlugin::testSnippetParsing_data()
         << QString::fromLatin1("\\\\$test\\\\\\\\$\\\\") << false << Parts();
 
     QTest::newRow("Q_PROPERTY") << QString(
-        "Q_PROPERTY($type$ $name$ READ $name$ WRITE set$name:c$ NOTIFY $name$Changed)")
+        "Q_PROPERTY($type$ $name$ READ $name$ WRITE set$name:c$ NOTIFY $name$Changed FINAL)")
                                 << true
                                 << Parts{SnippetPart("Q_PROPERTY("),
                                          SnippetPart("type", 0),
@@ -342,7 +342,7 @@ void Internal::TextEditorPlugin::testSnippetParsing_data()
                                          SnippetPart("name", 1, TCMANGLER_ID),
                                          SnippetPart(" NOTIFY "),
                                          SnippetPart("name", 1),
-                                         SnippetPart("Changed)")};
+                                         SnippetPart("Changed FINAL)")};
 
     QTest::newRow("open identifier") << QString("$test") << false << Parts();
     QTest::newRow("wrong mangler") << QString("$test:X$") << false << Parts();
@@ -404,7 +404,7 @@ void Internal::TextEditorPlugin::testSnippetParsing()
         QCOMPARE(manglerId, expected.manglerId);
     };
 
-    for (int i = 0; i < parts.count(); ++i)
+    for (int i = 0; i < parts.size(); ++i)
         rangesCompare(snippet.parts.at(i), parts.at(i));
 }
 #endif

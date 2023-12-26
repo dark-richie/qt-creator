@@ -3,7 +3,10 @@
 
 #include "examplesparser.h"
 
+#include "qtsupporttr.h"
+
 #include <utils/algorithm.h>
+#include <utils/environment.h>
 #include <utils/filepath.h>
 #include <utils/stylehelper.h>
 
@@ -55,8 +58,7 @@ static QHash<QString, QStringList> parseMeta(QXmlStreamReader *reader)
                     reader->raiseError("Tag \"entry\" requires \"name\" attribute");
                     break;
                 }
-                const QString value = reader->readElementText(
-                    QXmlStreamReader::ErrorOnUnexpectedElement);
+                const QString value = reader->readElementText();
                 if (!value.isEmpty())
                     result[key].append(value);
             }
@@ -70,6 +72,26 @@ static QHash<QString, QStringList> parseMeta(QXmlStreamReader *reader)
         }
     }
     return result;
+}
+
+static QStringList parseCategories(QXmlStreamReader *reader)
+{
+    QStringList categoryOrder;
+    while (!reader->atEnd()) {
+        switch (reader->readNext()) {
+        case QXmlStreamReader::StartElement:
+            if (reader->name() == QLatin1String("category"))
+                categoryOrder.append(reader->readElementText());
+            break;
+        case QXmlStreamReader::EndElement:
+            if (reader->name() == QLatin1String("categories"))
+                return categoryOrder;
+            break;
+        default:
+            break;
+        }
+    }
+    return categoryOrder;
 }
 
 static QList<ExampleItem *> parseExamples(QXmlStreamReader *reader,
@@ -102,28 +124,22 @@ static QList<ExampleItem *> parseExamples(QXmlStreamReader *reader,
                 const QString mainFileAttribute
                     = reader->attributes().value(QLatin1String("mainFile")).toString();
                 const FilePath filePath
-                    = relativeOrInstallPath(FilePath::fromUserInput(reader->readElementText(
-                                                QXmlStreamReader::ErrorOnUnexpectedElement)),
+                    = relativeOrInstallPath(FilePath::fromUserInput(reader->readElementText()),
                                             projectsOffset,
                                             examplesInstallPath);
                 item->filesToOpen.append(filePath);
                 if (mainFileAttribute.compare(QLatin1String("true"), Qt::CaseInsensitive) == 0)
                     item->mainFile = filePath;
             } else if (reader->name() == QLatin1String("description")) {
-                item->description = fixStringForTags(
-                    reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                item->description = fixStringForTags(reader->readElementText());
             } else if (reader->name() == QLatin1String("dependency")) {
-                item->dependencies.append(
-                    projectsOffset
-                    / reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                item->dependencies.append(projectsOffset / reader->readElementText());
             } else if (reader->name() == QLatin1String("tags")) {
                 item->tags = trimStringList(
-                    reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement)
-                        .split(QLatin1Char(','), Qt::SkipEmptyParts));
+                    reader->readElementText().split(QLatin1Char(','), Qt::SkipEmptyParts));
             } else if (reader->name() == QLatin1String("platforms")) {
                 item->platforms = trimStringList(
-                    reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement)
-                        .split(QLatin1Char(','), Qt::SkipEmptyParts));
+                    reader->readElementText().split(QLatin1Char(','), Qt::SkipEmptyParts));
             } else if (reader->name() == QLatin1String("meta")) {
                 item->metaData = parseMeta(reader);
             }
@@ -169,20 +185,18 @@ static QList<ExampleItem *> parseDemos(QXmlStreamReader *reader,
                                       == QLatin1String("true");
             } else if (reader->name() == QLatin1String("fileToOpen")) {
                 item->filesToOpen.append(
-                    relativeOrInstallPath(FilePath::fromUserInput(reader->readElementText(
-                                              QXmlStreamReader::ErrorOnUnexpectedElement)),
+                    relativeOrInstallPath(FilePath::fromUserInput(reader->readElementText()),
                                           projectsOffset,
                                           demosInstallPath));
             } else if (reader->name() == QLatin1String("description")) {
                 item->description = fixStringForTags(
-                    reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                    reader->readElementText());
             } else if (reader->name() == QLatin1String("dependency")) {
                 item->dependencies.append(
                     projectsOffset
-                    / reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                    / reader->readElementText());
             } else if (reader->name() == QLatin1String("tags")) {
-                item->tags = reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement)
-                                 .split(QLatin1Char(','));
+                item->tags = reader->readElementText().split(QLatin1Char(','));
             }
             break;
         case QXmlStreamReader::EndElement:
@@ -211,9 +225,10 @@ static QList<ExampleItem *> parseTutorials(QXmlStreamReader *reader, const FileP
                 item->type = Tutorial;
                 QXmlStreamAttributes attributes = reader->attributes();
                 item->name = attributes.value(QLatin1String("name")).toString();
-                item->projectPath = projectsOffset
-                                    / attributes.value(QLatin1String("projectPath")).toString();
-                item->hasSourceCode = !item->projectPath.isEmpty();
+                const QString projectPath = attributes.value(QLatin1String("projectPath")).toString();
+                item->projectPath = projectPath.isEmpty() ? FilePath()
+                                                          : projectsOffset / projectPath;
+                item->hasSourceCode = !projectPath.isEmpty();
                 item->imageUrl = Utils::StyleHelper::dpiSpecificImageFile(
                     attributes.value(QLatin1String("imageUrl")).toString());
                 QPixmapCache::remove(item->imageUrl);
@@ -225,17 +240,15 @@ static QList<ExampleItem *> parseTutorials(QXmlStreamReader *reader, const FileP
             } else if (reader->name() == QLatin1String("fileToOpen")) {
                 item->filesToOpen.append(
                     projectsOffset
-                    / reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                    / reader->readElementText());
             } else if (reader->name() == QLatin1String("description")) {
-                item->description = fixStringForTags(
-                    reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                item->description = fixStringForTags(reader->readElementText());
             } else if (reader->name() == QLatin1String("dependency")) {
-                item->dependencies.append(
-                    projectsOffset
-                    / reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
+                item->dependencies.append(projectsOffset / reader->readElementText());
             } else if (reader->name() == QLatin1String("tags")) {
-                item->tags = reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement)
-                                 .split(QLatin1Char(','));
+                item->tags = reader->readElementText().split(QLatin1Char(','));
+            } else if (reader->name() == QLatin1String("meta")) {
+                item->metaData = parseMeta(reader);
             }
             break;
         case QXmlStreamReader::EndElement:
@@ -251,10 +264,10 @@ static QList<ExampleItem *> parseTutorials(QXmlStreamReader *reader, const FileP
     return result;
 }
 
-expected_str<QList<ExampleItem *>> parseExamples(const FilePath &manifest,
-                                                 const FilePath &examplesInstallPath,
-                                                 const FilePath &demosInstallPath,
-                                                 const bool examples)
+expected_str<ParsedExamples> parseExamples(const FilePath &manifest,
+                                           const FilePath &examplesInstallPath,
+                                           const FilePath &demosInstallPath,
+                                           const bool examples)
 {
     const expected_str<QByteArray> contents = manifest.fileContents();
     if (!contents)
@@ -263,19 +276,22 @@ expected_str<QList<ExampleItem *>> parseExamples(const FilePath &manifest,
     return parseExamples(*contents, manifest, examplesInstallPath, demosInstallPath, examples);
 }
 
-expected_str<QList<ExampleItem *>> parseExamples(const QByteArray &manifestData,
-                                                 const Utils::FilePath &manifestPath,
-                                                 const FilePath &examplesInstallPath,
-                                                 const FilePath &demosInstallPath,
-                                                 const bool examples)
+expected_str<ParsedExamples> parseExamples(const QByteArray &manifestData,
+                                           const Utils::FilePath &manifestPath,
+                                           const FilePath &examplesInstallPath,
+                                           const FilePath &demosInstallPath,
+                                           const bool examples)
 {
     const FilePath path = manifestPath.parentDir();
+    QStringList categoryOrder;
     QList<ExampleItem *> items;
     QXmlStreamReader reader(manifestData);
     while (!reader.atEnd()) {
         switch (reader.readNext()) {
         case QXmlStreamReader::StartElement:
-            if (examples && reader.name() == QLatin1String("examples"))
+            if (categoryOrder.isEmpty() && reader.name() == QLatin1String("categories"))
+                categoryOrder = parseCategories(&reader);
+            else if (examples && reader.name() == QLatin1String("examples"))
                 items += parseExamples(&reader, path, examplesInstallPath);
             else if (examples && reader.name() == QLatin1String("demos"))
                 items += parseDemos(&reader, path, demosInstallPath);
@@ -295,7 +311,81 @@ expected_str<QList<ExampleItem *>> parseExamples(const QByteArray &manifestData,
                                    .arg(reader.columnNumber())
                                    .arg(reader.errorString()));
     }
-    return items;
+    return {{items, categoryOrder}};
+}
+
+static bool sortByHighlightedAndName(ExampleItem *first, ExampleItem *second)
+{
+    if (first->isHighlighted && !second->isHighlighted)
+        return true;
+    if (!first->isHighlighted && second->isHighlighted)
+        return false;
+    return first->name.compare(second->name, Qt::CaseInsensitive) < 0;
+}
+
+QList<std::pair<Core::Section, QList<ExampleItem *>>> getCategories(const QList<ExampleItem *> &items,
+                                                                    bool sortIntoCategories,
+                                                                    const QStringList &defaultOrder,
+                                                                    bool restrictRows)
+{
+    static const QString otherDisplayName = Tr::tr("Other", "Category for all other examples");
+    const bool useCategories = sortIntoCategories
+                               || qtcEnvironmentVariableIsSet("QTC_USE_EXAMPLE_CATEGORIES");
+    QList<ExampleItem *> other;
+    QMap<QString, QList<ExampleItem *>> categoryMap;
+    if (useCategories) {
+        // Append copies of the items and delete the original ones,
+        // because items might be added to multiple categories and that needs individual items
+        for (ExampleItem *item : items) {
+            const QStringList itemCategories = Utils::filteredUnique(
+                item->metaData.value("category"));
+            for (const QString &category : itemCategories)
+                categoryMap[category].append(new ExampleItem(*item));
+            if (itemCategories.isEmpty())
+                other.append(new ExampleItem(*item));
+        }
+    }
+    QList<std::pair<Core::Section, QList<ExampleItem *>>> categories;
+    if (categoryMap.isEmpty()) {
+        // If we tried sorting into categories, but none were defined, we copied the items
+        // into "other", which we don't use here. Get rid of them again.
+        qDeleteAll(other);
+        // The example set doesn't define categories. Consider the "highlighted" ones as "featured"
+        QList<ExampleItem *> featured;
+        QList<ExampleItem *> allOther;
+        std::tie(featured, allOther) = Utils::partition(items, [](ExampleItem *i) {
+            return i->isHighlighted;
+        });
+        if (!featured.isEmpty()) {
+            categories.append(
+                {{Tr::tr("Featured", "Category for highlighted examples"), 0}, featured});
+        }
+        if (!allOther.isEmpty())
+            categories.append({{otherDisplayName, 1}, allOther});
+    } else {
+        // All original items have been copied into a category or other, delete.
+        qDeleteAll(items);
+        const int defaultOrderSize = defaultOrder.size();
+        int index = 0;
+        const auto end = categoryMap.constKeyValueEnd();
+        for (auto it = categoryMap.constKeyValueBegin(); it != end; ++it) {
+            // order "known" categories as wanted, others come afterwards
+            const int defaultIndex = defaultOrder.indexOf(it->first);
+            const int priority = defaultIndex >= 0 ? defaultIndex : (index + defaultOrderSize);
+            const std::optional<int> maxRows = restrictRows
+                                                   ? std::make_optional<int>(index == 0 ? 2 : 1)
+                                                   : std::nullopt;
+            categories.append({{it->first, priority, maxRows}, it->second});
+            ++index;
+        }
+        if (!other.isEmpty())
+            categories.append({{otherDisplayName, index + defaultOrderSize, /*maxRows=*/1}, other});
+    }
+
+    const auto end = categories.end();
+    for (auto it = categories.begin(); it != end; ++it)
+        sort(it->second, sortByHighlightedAndName);
+    return categories;
 }
 
 } // namespace QtSupport::Internal

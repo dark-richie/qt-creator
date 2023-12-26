@@ -66,8 +66,9 @@ public:
 #endif
 
     void markAllFrameworkItemsForRemoval();
-    void markForRemoval(const Utils::FilePath &filePath);
+    void markForRemoval(const QSet<Utils::FilePath> &filePaths);
     void sweep();
+    QString report(bool full) const;
 
 signals:
     void testTreeModelChanged();
@@ -83,7 +84,6 @@ private:
     void handleParseResult(const TestParseResult *result, TestTreeItem *rootNode);
     void removeAllTestItems();
     void removeAllTestToolItems();
-    void removeFiles(const Utils::FilePaths &files);
     bool sweepChildren(TestTreeItem *item);
     void insertItemInParent(TestTreeItem *item, TestTreeItem *root, bool groupingEnabled);
     void revalidateCheckState(ITestTreeItem *item);
@@ -114,10 +114,10 @@ public:
 
     explicit TestTreeSortFilterModel(TestTreeModel *sourceModel, QObject *parent = nullptr);
     void setSortMode(ITestTreeItem::SortMode sortMode);
-    void setFilterMode(FilterMode filterMode);
     void toggleFilter(FilterMode filterMode);
     static FilterMode toFilterMode(int f);
 
+    QString report() const;
 protected:
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const final;
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const final;

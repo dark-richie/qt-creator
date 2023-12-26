@@ -30,7 +30,6 @@
 #include <cplusplus/Literals.h>
 #include <cplusplus/cppassert.h>
 
-#include <utils/executeondestruction.h>
 #include <utils/filepath.h>
 #include <utils/scopedswap.h>
 
@@ -40,6 +39,7 @@
 #include <QLoggingCategory>
 #include <QTime>
 #include <QPair>
+#include <QScopeGuard>
 
 #include <cctype>
 #include <deque>
@@ -740,6 +740,7 @@ Preprocessor::Preprocessor(Client *client, Environment *env)
     , m_expandFunctionlikeMacros(true)
     , m_keepComments(false)
 {
+    m_scratchBuffer.reserve(256);
 }
 
 QByteArray Preprocessor::run(const Utils::FilePath &filePath,
@@ -1513,14 +1514,15 @@ bool Preprocessor::collectActualArguments(PPToken *tk, QVector<QVector<PPToken> 
     Q_ASSERT(tk);
     Q_ASSERT(actuals);
 
-    ExecuteOnDestruction removeBlockedName;
-    if (m_state.m_tokenBuffer) {
-        removeBlockedName.reset([this] {
-            if (m_state.m_tokenBuffer && !m_state.m_tokenBuffer->blockedMacroNames.empty())
-                m_state.m_tokenBuffer->blockedMacroNames.pop_back();
-        });
+    QScopeGuard cleanup([this] {
+        if (m_state.m_tokenBuffer && !m_state.m_tokenBuffer->blockedMacroNames.empty())
+            m_state.m_tokenBuffer->blockedMacroNames.pop_back();
+    });
+
+    if (m_state.m_tokenBuffer)
         m_state.m_tokenBuffer->blockedMacroNames.push_back(parentMacroName);
-    }
+    else
+        cleanup.dismiss();
 
     lex(tk); // consume the identifier
 

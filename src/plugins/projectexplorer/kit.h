@@ -8,8 +8,9 @@
 
 #include <coreplugin/featureprovider.h>
 
+#include <utils/store.h>
+
 #include <QSet>
-#include <QVariant>
 
 #include <memory>
 
@@ -39,8 +40,8 @@ public:
     using Predicate = std::function<bool(const Kit *)>;
     static Predicate defaultPredicate();
 
-    explicit Kit(Utils::Id id = Utils::Id());
-    explicit Kit(const QVariantMap &data);
+    explicit Kit(Utils::Id id = {});
+    explicit Kit(const Utils::Store &data);
     ~Kit();
 
     // Do not trigger evaluations
@@ -118,8 +119,11 @@ public:
     void makeReplacementKit();
     bool isReplacementKit() const;
 
+    void setRelevantAspects(const QSet<Utils::Id> &relevant);
+    QSet<Utils::Id> relevantAspects() const;
     void setIrrelevantAspects(const QSet<Utils::Id> &irrelevant);
     QSet<Utils::Id> irrelevantAspects() const;
+    bool isAspectRelevant(const Utils::Id &aspect) const;
 
     QSet<Utils::Id> supportedPlatforms() const;
     QSet<Utils::Id> availableFeatures() const;
@@ -138,11 +142,11 @@ private:
 
     void kitUpdated();
 
-    QVariantMap toMap() const;
+    Utils::Store toMap() const;
 
     const std::unique_ptr<Internal::KitPrivate> d;
 
-    friend class KitAspect;
+    friend class KitAspectFactory;
     friend class KitManager;
     friend class Internal::KitManagerPrivate;
     friend class Internal::KitModel; // needed for setAutoDetected() when cloning kits

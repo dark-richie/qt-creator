@@ -10,7 +10,7 @@
 
 #include <coreplugin/icontext.h>
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
@@ -39,7 +39,7 @@ Tasks MesonProject::projectIssues(const Kit *k) const
     if (!NinjaToolKitAspect::isValid(k))
         result.append(
             createProjectTask(Task::TaskType::Error, Tr::tr("No Ninja tool set.")));
-    if (ToolChainKitAspect::toolChains(k).isEmpty())
+    if (ToolchainKitAspect::toolChains(k).isEmpty())
         result.append(createProjectTask(Task::TaskType::Warning,
                                         Tr::tr("No compilers set in kit.")));
     return result;

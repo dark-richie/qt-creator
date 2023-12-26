@@ -12,6 +12,7 @@
 
 #include <utils/environmentfwd.h>
 #include <utils/filepath.h>
+#include <utils/store.h>
 
 #include <QFileSystemModel>
 
@@ -26,6 +27,7 @@ class MacroExpander;
 
 namespace ProjectExplorer {
 
+class BuildConfiguration;
 class BuildInfo;
 class BuildSystem;
 class ContainerNode;
@@ -41,7 +43,6 @@ enum class SetActive : int;
 // Documentation inside.
 class PROJECTEXPLORER_EXPORT Project : public QObject
 {
-    friend class SessionManager; // for setActiveTarget
     Q_OBJECT
 
 public:
@@ -49,7 +50,8 @@ public:
     enum ModelRoles {
         // Absolute file path
         FilePathRole = QFileSystemModel::FilePathRole,
-        isParsingRole
+        isParsingRole,
+        UseUnavailableMarkerRole,
     };
 
     Project(const QString &mimeType, const Utils::FilePath &fileName);
@@ -112,13 +114,13 @@ public:
                                 const NodeMatcher &extraMatcher = {}) const;
     Utils::FilePaths binariesForSourceFile(const Utils::FilePath &sourceFile) const;
 
-    virtual QVariantMap toMap() const;
+    virtual void toMap(Utils::Store &map) const;
 
     Core::Context projectContext() const;
     Core::Context projectLanguages() const;
 
-    QVariant namedSettings(const QString &name) const;
-    void setNamedSettings(const QString &name, const QVariant &value);
+    QVariant namedSettings(const Utils::Key &name) const;
+    void setNamedSettings(const Utils::Key &name, const QVariant &value);
 
     void setAdditionalEnvironment(const Utils::EnvironmentItems &envItems);
     Utils::EnvironmentItems additionalEnvironment() const;
@@ -133,6 +135,7 @@ public:
     bool hasMakeInstallEquivalent() const;
 
     void setup(const QList<BuildInfo> &infoList);
+    BuildConfiguration *setup(const BuildInfo &info);
     Utils::MacroExpander *macroExpander() const;
 
     ProjectNode *findNodeForBuildKey(const QString &buildKey) const;
@@ -156,8 +159,8 @@ public:
     void setDisplayName(const QString &name);
     void setProjectLanguage(Utils::Id id, bool enabled);
 
-    void setExtraData(const QString &key, const QVariant &data);
-    QVariant extraData(const QString &key) const;
+    void setExtraData(const Utils::Key &key, const QVariant &data);
+    QVariant extraData(const Utils::Key &key) const;
 
     QStringList availableQmlPreviewTranslations(QString *errorMessage);
 
@@ -205,8 +208,8 @@ signals:
 #endif
 
 protected:
-    virtual RestoreResult fromMap(const QVariantMap &map, QString *errorMessage);
-    void createTargetFromMap(const QVariantMap &map, int index);
+    virtual RestoreResult fromMap(const Utils::Store &map, QString *errorMessage);
+    void createTargetFromMap(const Utils::Store &map, int index);
     virtual bool setupTarget(Target *t);
 
     void setCanBuildProducts();

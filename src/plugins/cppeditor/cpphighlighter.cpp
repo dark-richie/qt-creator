@@ -56,7 +56,8 @@ void CppHighlighter::highlightBlock(const QString &text)
     const Tokens tokens = tokenize(text, initialLexerState);
     lexerState = tokenize.state(); // refresh lexer state
 
-    initialLexerState &= ~0x80; // discard newline expected bit
+    static const auto lexerStateWithoutNewLineExpectedBit = [](int state) { return state & ~0x80; };
+    initialLexerState = lexerStateWithoutNewLineExpectedBit(initialLexerState);
     int foldingIndent = initialBraceDepth;
     if (TextBlockUserData *userData = TextDocumentLayout::textUserData(currentBlock())) {
         userData->setFoldingIndent(0);
@@ -76,6 +77,7 @@ void CppHighlighter::highlightBlock(const QString &text)
                 setFormat(0, text.length(), formatForCategory(C_VISUAL_WHITESPACE));
         }
         TextDocumentLayout::setFoldingIndent(currentBlock(), foldingIndent);
+        TextDocumentLayout::setExpectedRawStringSuffix(currentBlock(), inheritedRawStringSuffix);
         return;
     }
 
@@ -219,7 +221,8 @@ void CppHighlighter::highlightBlock(const QString &text)
     if (text.length() > lastTokenEnd)
         formatSpaces(text, lastTokenEnd, text.length() - lastTokenEnd);
 
-    if (!initialLexerState && lexerState && !tokens.isEmpty()) {
+    if (!initialLexerState && lexerStateWithoutNewLineExpectedBit(lexerState)
+        && !tokens.isEmpty()) {
         const Token &lastToken = tokens.last();
         if (lastToken.is(T_COMMENT) || lastToken.is(T_DOXY_COMMENT)) {
             insertParen({Parenthesis::Opened, QLatin1Char('+'), lastToken.utf16charsBegin()});
@@ -265,10 +268,10 @@ void CppHighlighter::highlightBlock(const QString &text)
                                                    tokenize.expectedRawStringSuffix());
 }
 
-void CppHighlighter::setLanguageFeatures(const LanguageFeatures &languageFeatures)
+void CppHighlighter::setLanguageFeaturesFlags(unsigned int flags)
 {
-    if (languageFeatures != m_languageFeatures) {
-        m_languageFeatures = languageFeatures;
+    if (flags != m_languageFeatures.flags) {
+        m_languageFeatures.flags = flags;
         rehighlight();
     }
 }
@@ -587,6 +590,12 @@ void CppHighlighterTest::test_data()
         << 38 << 18 << 39 << 3 << C_STRING;
     QTest::newRow("multi-line user-defined UTF-16 string literal (suffix)")
         << 39 << 4 << 39 << 5 << C_OPERATOR;
+    QTest::newRow("multi-line raw string literal with consecutive closing parens (prefix)")
+        << 48 << 18 << 48 << 20 << C_KEYWORD;
+    QTest::newRow("multi-line raw string literal with consecutive closing parens (content)")
+        << 49 << 1 << 49 << 1 << C_STRING;
+    QTest::newRow("multi-line raw string literal with consecutive closing parens (suffix)")
+        << 49 << 2 << 49 << 3 << C_KEYWORD;
 }
 
 void CppHighlighterTest::test()
@@ -620,8 +629,9 @@ void CppHighlighterTest::test()
         const QChar c = m_doc.characterAt(pos);
         if (c == QChar::ParagraphSeparator)
             continue;
-        const QTextCharFormat expectedFormat = c.isSpace()
-                ? whitespacified(formatForStyle) : formatForStyle;
+        const QTextCharFormat expectedFormat = asSyntaxHighlight(
+            c.isSpace() ? whitespacified(formatForStyle) : formatForStyle);
+
         const QTextCharFormat actualFormat = getActualFormat(pos);
         if (actualFormat != expectedFormat) {
             int posLine;
@@ -634,6 +644,30 @@ void CppHighlighterTest::test()
         QCOMPARE(actualFormat, expectedFormat);
     }
 }
+
+void CppHighlighterTest::testParentheses_data()
+{
+    QTest::addColumn<int>("line");
+    QTest::addColumn<int>("expectedParenCount");
+
+    QTest::newRow("function head") << 41 << 2;
+    QTest::newRow("function opening brace") << 42 << 1;
+    QTest::newRow("loop head") << 43 << 1;
+    QTest::newRow("comment") << 44 << 0;
+    QTest::newRow("loop end") << 45 << 3;
+    QTest::newRow("function closing brace") << 46 << 1;
+}
+
+void CppHighlighterTest::testParentheses()
+{
+    QFETCH(int, line);
+    QFETCH(int, expectedParenCount);
+
+    QTextBlock block = m_doc.findBlockByNumber(line - 1);
+    QVERIFY(block.isValid());
+    QCOMPARE(TextDocumentLayout::parentheses(block).count(), expectedParenCount);
+}
+
 } // namespace Internal
 #endif // WITH_TESTS
 

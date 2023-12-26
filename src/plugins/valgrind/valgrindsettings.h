@@ -12,41 +12,39 @@ const char ANALYZER_VALGRIND_SETTINGS[] = "Analyzer.Valgrind.Settings";
 
 class SuppressionAspectPrivate;
 
-class SuppressionAspect final : public Utils::BaseAspect
+class SuppressionAspect final : public Utils::TypedAspect<Utils::FilePaths>
 {
     Q_OBJECT
 
 public:
-    explicit SuppressionAspect(bool global);
+    SuppressionAspect(Utils::AspectContainer *container, bool global);
     ~SuppressionAspect() final;
 
-    Utils::FilePaths value() const;
-    void setValue(const Utils::FilePaths &val);
+    void addToLayout(Layouting::LayoutItem &parent) final;
 
-    void addToLayout(Utils::Layouting::LayoutBuilder &builder) final;
-
-    void fromMap(const QVariantMap &map) final;
-    void toMap(QVariantMap &map) const final;
-
-    QVariant volatileValue() const final;
-    void setVolatileValue(const QVariant &val) final;
+    void fromMap(const Utils::Store &map) final;
+    void toMap(Utils::Store &map) const final;
 
     void addSuppressionFile(const Utils::FilePath &suppressionFile);
 
 private:
-    friend class ValgrindBaseSettings;
+    void bufferToGui() override;
+    bool guiToBuffer() override;
+
+    friend class ValgrindSettings;
     SuppressionAspectPrivate *d = nullptr;
 };
 
 /**
  * Valgrind settings shared for global and per-project.
  */
-class ValgrindBaseSettings : public ProjectExplorer::ISettingsAspect
+class ValgrindSettings : public Utils::AspectContainer
 {
     Q_OBJECT
 
 public:
-    explicit ValgrindBaseSettings(bool global);
+    // These exists once globally, and once per project
+    explicit ValgrindSettings(bool global);
 
     enum SelfModifyingCodeDetection {
         DetectSmcNo,
@@ -61,93 +59,44 @@ public:
         LeakCheckOnFinishYes
     };
 
-signals:
-    void changed(); // sent when multiple values have changed simulatenously (e.g. fromMap)
-
-/**
- * Base valgrind settings
- */
-public:
-    Utils::StringAspect valgrindExecutable;
-    Utils::StringAspect valgrindArguments;
-    Utils::SelectionAspect selfModifyingCodeDetection;
+    // Generic valgrind settings
+    Utils::FilePathAspect valgrindExecutable{this};
+    Utils::StringAspect valgrindArguments{this};
+    Utils::SelectionAspect selfModifyingCodeDetection{this};
 
     SuppressionAspect suppressions;
 
-/**
- * Base memcheck settings
- */
-public:
-    Utils::StringAspect memcheckArguments;
-    Utils::IntegerAspect numCallers;
-    Utils::SelectionAspect leakCheckOnFinish;
-    Utils::BoolAspect showReachable;
-    Utils::BoolAspect trackOrigins;
-    Utils::BoolAspect filterExternalIssues;
-    Utils::IntegersAspect visibleErrorKinds;
+    // Memcheck
+    Utils::StringAspect memcheckArguments{this};
+    Utils::IntegerAspect numCallers{this};
+    Utils::SelectionAspect leakCheckOnFinish{this};
+    Utils::BoolAspect showReachable{this};
+    Utils::BoolAspect trackOrigins{this};
+    Utils::BoolAspect filterExternalIssues{this};
+    Utils::IntegersAspect visibleErrorKinds{this};
+
+    Utils::FilePathAspect lastSuppressionDirectory{this}; // Global only
+    Utils::StringAspect lastSuppressionHistory{this}; // Global only
 
     void setVisibleErrorKinds(const QList<int> &);
 
-/**
- * Base callgrind settings
- */
-public:
-    Utils::StringAspect callgrindArguments;
-    Utils::StringAspect kcachegrindExecutable;
+    // Callgrind
+    Utils::StringAspect callgrindArguments{this};
+    Utils::FilePathAspect kcachegrindExecutable{this};
 
-    Utils::BoolAspect enableCacheSim;
-    Utils::BoolAspect enableBranchSim;
-    Utils::BoolAspect collectSystime;
-    Utils::BoolAspect collectBusEvents;
-    Utils::BoolAspect enableEventToolTips;
-    Utils::DoubleAspect minimumInclusiveCostRatio;
-    Utils::DoubleAspect visualizationMinimumInclusiveCostRatio;
+    Utils::BoolAspect enableCacheSim{this};
+    Utils::BoolAspect enableBranchSim{this};
+    Utils::BoolAspect collectSystime{this};
+    Utils::BoolAspect collectBusEvents{this};
+    Utils::BoolAspect enableEventToolTips{this};
+    Utils::DoubleAspect minimumInclusiveCostRatio{this};
+    Utils::DoubleAspect visualizationMinimumInclusiveCostRatio{this};
 
-    QVariantMap defaultSettings() const;
+    Utils::SelectionAspect costFormat{this}; // Global only
+    Utils::BoolAspect detectCycles{this}; // Global only
+    Utils::BoolAspect shortenTemplates{this}; // Global only
 };
 
-
-/**
- * Global valgrind settings
- */
-class ValgrindGlobalSettings : public ValgrindBaseSettings
-{
-    Q_OBJECT
-
-public:
-    ValgrindGlobalSettings();
-
-    static ValgrindGlobalSettings *instance();
-
-    /**
-     * Global memcheck settings
-     */
-
-    void writeSettings() const;
-    void readSettings();
-
-    Utils::StringAspect lastSuppressionDirectory;
-    Utils::StringAspect lastSuppressionHistory;
-
-
-    /**
-     * Global callgrind settings
-     */
-    Utils::SelectionAspect costFormat;
-    Utils::BoolAspect detectCycles;
-    Utils::BoolAspect shortenTemplates;
-};
-
-
-/**
- * Per-project valgrind settings.
- */
-class ValgrindProjectSettings : public ValgrindBaseSettings
-{
-    Q_OBJECT
-
-public:
-    ValgrindProjectSettings();
-};
+ValgrindSettings &globalSettings();
 
 } // Valgrind::Internal

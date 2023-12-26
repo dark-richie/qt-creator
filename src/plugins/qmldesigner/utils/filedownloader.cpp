@@ -9,18 +9,19 @@
 #include <QDir>
 #include <QQmlEngine>
 #include <QRandomGenerator>
+#include <QSslSocket>
 
 namespace QmlDesigner {
 
 FileDownloader::FileDownloader(QObject *parent)
     : QObject(parent)
 {
-    QObject::connect(this, &FileDownloader::downloadFailed, this, [this]() {
+    QObject::connect(this, &FileDownloader::downloadFailed, this, [this] {
         if (m_outputFile.exists())
             m_outputFile.remove();
     });
 
-    QObject::connect(this, &FileDownloader::downloadCanceled, this, [this]() {
+    QObject::connect(this, &FileDownloader::downloadCanceled, this, [this] {
         if (m_outputFile.exists())
             m_outputFile.remove();
     });
@@ -38,6 +39,27 @@ bool FileDownloader::deleteFileAtTheEnd() const
     return m_targetFilePath.isEmpty();
 }
 
+QNetworkRequest FileDownloader::makeRequest() const
+{
+    QUrl url = m_url;
+
+    if (url.scheme() == "https") {
+#ifndef QT_NO_SSL
+        if (!QSslSocket::supportsSsl())
+#endif
+        {
+            qWarning() << "SSL is not available. HTTP will be used instead of HTTPS.";
+            url.setScheme("http");
+        }
+    }
+
+    auto request = QNetworkRequest(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::UserVerifiedRedirectPolicy);
+
+    return request;
+}
+
 void FileDownloader::start()
 {
     emit downloadStarting();
@@ -48,13 +70,11 @@ void FileDownloader::start()
     m_outputFile.setFileName(tempFileName);
     m_outputFile.open(QIODevice::WriteOnly);
 
-    auto request = QNetworkRequest(m_url);
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                         QNetworkRequest::UserVerifiedRedirectPolicy);
+    QNetworkRequest request = makeRequest();
     QNetworkReply *reply = Utils::NetworkAccessManager::instance()->get(request);
     m_reply = reply;
 
-    QNetworkReply::connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
+    QNetworkReply::connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         bool isDownloadingFile = false;
         QString contentType;
         if (!reply->hasRawHeader("Content-Type")) {
@@ -95,7 +115,7 @@ void FileDownloader::start()
         emit reply->redirectAllowed();
     });
 
-    QNetworkReply::connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QNetworkReply::connect(reply, &QNetworkReply::finished, this, [this, reply] {
         if (reply->error()) {
             if (reply->error() != QNetworkReply::OperationCanceledError) {
                 qWarning() << Q_FUNC_INFO << m_url << reply->errorString();
@@ -112,6 +132,13 @@ void FileDownloader::start()
                 if (!QDir{}.mkpath(dirPath)) {
                     emit downloadFailed();
                     return;
+                }
+
+                if (m_overwriteTarget && QFileInfo().exists(m_targetFilePath)) {
+                    if (!QFile::remove(m_targetFilePath)) {
+                        emit downloadFailed();
+                        return;
+                    }
                 }
 
                 if (!QFileInfo().exists(m_targetFilePath) && !m_outputFile.rename(m_targetFilePath)) {
@@ -183,6 +210,19 @@ bool FileDownloader::downloadEnabled() const
     return m_downloadEnabled;
 }
 
+bool FileDownloader::overwriteTarget() const
+{
+    return m_overwriteTarget;
+}
+
+void FileDownloader::setOverwriteTarget(bool value)
+{
+    if (value != m_overwriteTarget) {
+        m_overwriteTarget = value;
+        emit overwriteTargetChanged();
+    }
+}
+
 bool FileDownloader::finished() const
 {
     return m_finished;
@@ -235,16 +275,14 @@ void FileDownloader::doProbeUrl()
         return;
     }
 
-    auto request = QNetworkRequest(m_url);
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                         QNetworkRequest::UserVerifiedRedirectPolicy);
+    QNetworkRequest request = makeRequest();
     QNetworkReply *reply = Utils::NetworkAccessManager::instance()->head(request);
 
     QNetworkReply::connect(reply, &QNetworkReply::redirected, [reply](const QUrl &) {
         emit reply->redirectAllowed();
     });
 
-    QNetworkReply::connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QNetworkReply::connect(reply, &QNetworkReply::finished, this, [this, reply] {
         if (reply->error())
             return;
 
@@ -253,26 +291,22 @@ void FileDownloader::doProbeUrl()
 
         m_available = true;
         emit availableChanged();
+
+        reply->deleteLater();
     });
 
-    QNetworkReply::connect(reply,
-                           &QNetworkReply::errorOccurred,
-                           this,
-                           [this](QNetworkReply::NetworkError) {
-                               QQmlData *data = QQmlData::get(this, false);
-                               if (!data) {
-                                   qDebug() << Q_FUNC_INFO << "FileDownloader is nullptr.";
-                                   return;
-                               }
+    QNetworkReply::connect(reply, &QNetworkReply::errorOccurred,
+                           this, [this, reply](QNetworkReply::NetworkError code) {
+        if (QQmlData::wasDeleted(this)) {
+            qDebug() << Q_FUNC_INFO << "FileDownloader was deleted.";
+            return;
+        }
 
-                               if (QQmlData::wasDeleted(this)) {
-                                   qDebug() << Q_FUNC_INFO << "FileDownloader was deleted.";
-                                   return;
-                               }
+        qDebug() << Q_FUNC_INFO << "Network error:" << code << reply->errorString();
 
-                               m_available = false;
-                               emit availableChanged();
-                           });
+        m_available = false;
+        emit availableChanged();
+    });
 }
 
 void FileDownloader::setTargetFilePath(const QString &path)

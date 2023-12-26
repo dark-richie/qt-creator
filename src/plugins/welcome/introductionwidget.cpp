@@ -26,10 +26,10 @@ const char kTakeTourSetting[] = "TakeUITour";
 namespace Welcome {
 namespace Internal {
 
-void IntroductionWidget::askUserAboutIntroduction(QWidget *parent, QSettings *settings)
+void IntroductionWidget::askUserAboutIntroduction(QWidget *parent)
 {
     // CheckableMessageBox for compatibility with Qt Creator < 4.11
-    if (!CheckableMessageBox::shouldAskAgain(settings, kTakeTourSetting)
+    if (!CheckableDecider(Key(kTakeTourSetting)).shouldAskAgain()
         || !Core::ICore::infoBar()->canInfoBeAdded(kTakeTourSetting))
         return;
 
@@ -78,9 +78,7 @@ IntroductionWidget::IntroductionWidget(QWidget *parent)
     m_continueLabel->setAlignment(Qt::AlignCenter);
     m_continueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_continueLabel->setWordWrap(true);
-    auto fnt = font();
-    fnt.setPointSizeF(fnt.pointSizeF() * 1.5);
-    m_continueLabel->setFont(fnt);
+    m_continueLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH3));
     m_continueLabel->setPalette(palette());
     layout->addWidget(m_continueLabel);
     m_bodyCss = "font-size: 16px;";

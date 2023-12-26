@@ -12,7 +12,7 @@
 #include <extensionsystem/pluginmanager.h>
 #include <texteditor/basefilefind.h>
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/filesearch.h>
 
 #include <qmljs/qmljsmodelmanagerinterface.h>
@@ -803,7 +803,6 @@ FindReferences::FindReferences(QObject *parent)
     m_watcher.setPendingResultsLimit(1);
     connect(&m_watcher, &QFutureWatcherBase::resultsReadyAt, this, &FindReferences::displayResults);
     connect(&m_watcher, &QFutureWatcherBase::finished, this, &FindReferences::searchFinished);
-    m_synchronizer.setCancelOnWait(true);
 }
 
 FindReferences::~FindReferences() = default;
@@ -953,9 +952,8 @@ QList<FindReferences::Usage> FindReferences::findUsageOfType(const Utils::FilePa
     QSet<Utils::FilePath> docDone;
     for (const QmlJS::Document::Ptr &doc : std::as_const(snapshot)) {
         Utils::FilePath sourceFile = modelManager->fileToSource(doc->fileName());
-        if (docDone.contains(sourceFile))
+        if (!Utils::insert(docDone, sourceFile))
             continue;
-        docDone.insert(sourceFile);
         QmlJS::Document::Ptr sourceDoc = doc;
         if (sourceFile != doc->fileName())
             sourceDoc = snapshot.document(sourceFile);
@@ -993,7 +991,7 @@ void FindReferences::displayResults(int first, int last)
                     this, &FindReferences::onReplaceButtonClicked);
         }
         connect(m_currentSearch.data(), &SearchResult::activated,
-                [](const Core::SearchResultItem& item) {
+                [](const Utils::SearchResultItem &item) {
                     Core::EditorManager::openEditorAtSearchResult(item);
                 });
         connect(m_currentSearch.data(), &SearchResult::canceled, this, &FindReferences::cancel);
@@ -1014,7 +1012,7 @@ void FindReferences::displayResults(int first, int last)
     }
     for (int index = first; index != last; ++index) {
         Usage result = m_watcher.future().resultAt(index);
-        SearchResultItem item;
+        Utils::SearchResultItem item;
         item.setFilePath(result.path);
         item.setLineText(result.lineText);
         item.setMainRange(result.line, result.col, result.len);
@@ -1042,7 +1040,8 @@ void FindReferences::setPaused(bool paused)
         m_watcher.setPaused(paused);
 }
 
-void FindReferences::onReplaceButtonClicked(const QString &text, const QList<SearchResultItem> &items, bool preserveCase)
+void FindReferences::onReplaceButtonClicked(const QString &text,
+                     const Utils::SearchResultItems &items, bool preserveCase)
 {
     const Utils::FilePaths filePaths = TextEditor::BaseFileFind::replaceAll(text,
                                                                             items,

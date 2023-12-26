@@ -4,7 +4,7 @@ Project {
     name: "Utils autotests"
     references: [
         "ansiescapecodehandler/ansiescapecodehandler.qbs",
-        "asynctask/asynctask.qbs",
+        "async/async.qbs",
         "commandline/commandline.qbs",
         "deviceshell/deviceshell.qbs",
         "expected/expected.qbs",
@@ -13,14 +13,15 @@ Project {
         "fsengine/fsengine.qbs",
         "fuzzymatcher/fuzzymatcher.qbs",
         "indexedcontainerproxyconstiterator/indexedcontainerproxyconstiterator.qbs",
+        "synchronizedvalue/synchronizedvalue.qbs",
         "mathutils/mathutils.qbs",
         "multicursor/multicursor.qbs",
         "persistentsettings/persistentsettings.qbs",
-        "qtcprocess/qtcprocess.qbs",
+        "process/process.qbs",
         "settings/settings.qbs",
         "stringutils/stringutils.qbs",
-        "tasktree/tasktree.qbs",
         "templateengine/templateengine.qbs",
+        "text/text.qbs",
         "treemodel/treemodel.qbs",
         "unixdevicefileaccess/unixdevicefileaccess.qbs",
     ]

@@ -15,7 +15,6 @@ QtcPlugin {
     Depends { name: "ProjectExplorer" }
     Depends { name: "QtSupport" }
     Depends { name: "TextEditor" }
-    Depends { name: "app_version_header" }
 
     Group {
         name: "General"
@@ -31,7 +30,6 @@ QtcPlugin {
             "qmleventtype.cpp", "qmleventtype.h",
             "qmlnote.cpp", "qmlnote.h",
             "qmlprofiler_global.h", "qmlprofilertr.h",
-            "qmlprofileractions.h", "qmlprofileractions.cpp",
             "qmlprofileranimationsmodel.h", "qmlprofileranimationsmodel.cpp",
             "qmlprofilerattachdialog.cpp", "qmlprofilerattachdialog.h",
             "qmlprofilerbindingloopsrenderpass.cpp","qmlprofilerbindingloopsrenderpass.h",
@@ -42,7 +40,7 @@ QtcPlugin {
             "qmlprofilereventtypes.h",
             "qmlprofilermodelmanager.cpp", "qmlprofilermodelmanager.h",
             "qmlprofilernotesmodel.cpp", "qmlprofilernotesmodel.h",
-            "qmlprofilerplugin.cpp", "qmlprofilerplugin.h",
+            "qmlprofilerplugin.cpp",
             "qmlprofilerrunconfigurationaspect.cpp", "qmlprofilerrunconfigurationaspect.h",
             "qmlprofilerrangemodel.cpp", "qmlprofilerrangemodel.h",
             "qmlprofilerruncontrol.cpp", "qmlprofilerruncontrol.h",

@@ -9,11 +9,11 @@
 #include "qmljsutils.h"
 
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/filesystemwatcher.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QDir>
 #include <QDirIterator>
@@ -203,7 +203,7 @@ static void printParseWarnings(const FilePath &libraryPath, const QString &warni
                                  "%2").arg(libraryPath.toUserOutput(), warning));
 }
 
-static QString qmlPluginDumpErrorMessage(QtcProcess *process)
+static QString qmlPluginDumpErrorMessage(Process *process)
 {
     QString errorMessage;
     const QString binary = process->commandLine().executable().toUserOutput();
@@ -237,7 +237,7 @@ static QString qmlPluginDumpErrorMessage(QtcProcess *process)
     return errorMessage;
 }
 
-void PluginDumper::qmlPluginTypeDumpDone(QtcProcess *process)
+void PluginDumper::qmlPluginTypeDumpDone(Process *process)
 {
     process->deleteLater();
 
@@ -387,14 +387,14 @@ Utils::FilePath PluginDumper::buildQmltypesPath(const QString &name) const
                                                      m_modelManager->importPathsNames());
 
     if (paths.isEmpty())
-        return Utils::FilePath();
+        return {};
 
     for (const Utils::FilePath &path : paths) {
         auto qmltypes = path.dirEntries(FileFilter(QStringList{"*.qmltypes"}, QDir::Files));
         if (!qmltypes.isEmpty())
             return qmltypes.first();
     }
-    return Utils::FilePath();
+    return {};
 }
 
 /*!
@@ -597,11 +597,11 @@ void PluginDumper::loadQmltypesFile(const FilePaths &qmltypesFilePaths,
 void PluginDumper::runQmlDump(const ModelManagerInterface::ProjectInfo &info,
     const QStringList &arguments, const FilePath &importPath)
 {
-    auto process = new QtcProcess(this);
+    auto process = new Process(this);
     process->setEnvironment(info.qmlDumpEnvironment);
     process->setWorkingDirectory(importPath);
     process->setCommand({info.qmlDumpPath, arguments});
-    connect(process, &QtcProcess::done, this, [this, process] { qmlPluginTypeDumpDone(process); });
+    connect(process, &Process::done, this, [this, process] { qmlPluginTypeDumpDone(process); });
     process->start();
     m_runningQmldumps.insert(process, importPath);
 }

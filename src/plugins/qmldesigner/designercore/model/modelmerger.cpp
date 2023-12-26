@@ -83,7 +83,7 @@ static void splitIdInBaseNameAndNumber(const QString &id, QString *baseId, int *
 {
 
     int counter = 0;
-    while (counter < id.count()) {
+    while (counter < id.size()) {
         bool canConvertToInteger = false;
         int newNumber = id.right(counter + 1).toInt(&canConvertToInteger);
         if (canConvertToInteger)
@@ -94,7 +94,7 @@ static void splitIdInBaseNameAndNumber(const QString &id, QString *baseId, int *
         counter++;
     }
 
-    *baseId = id.left(id.count() - counter);
+    *baseId = id.left(id.size() - counter);
 }
 
 static void setupIdRenamingHash(const ModelNode &modelNode, QHash<QString, QString> &idRenamingHash, AbstractView *view)
@@ -173,7 +173,7 @@ ModelNode ModelMerger::insertModel(const ModelNode &modelNode, const MergePredic
         return {};
     RewriterTransaction transaction(view()->beginRewriterTransaction(QByteArrayLiteral("ModelMerger::insertModel")));
 
-    QList<Import> newImports;
+    Imports newImports;
 
     for (const Import &import : modelNode.model()->imports()) {
         if (!view()->model()->hasImport(import, true, true))

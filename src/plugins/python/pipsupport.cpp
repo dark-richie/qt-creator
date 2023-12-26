@@ -14,9 +14,9 @@
 #include <projectexplorer/target.h>
 
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/mimeutils.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 using namespace Utils;
 
@@ -27,12 +27,22 @@ const char pipInstallTaskId[] = "Python::pipInstallTask";
 PipInstallTask::PipInstallTask(const FilePath &python)
     : m_python(python)
 {
-    connect(&m_process, &QtcProcess::done, this, &PipInstallTask::handleDone);
-    connect(&m_process, &QtcProcess::readyReadStandardError, this, &PipInstallTask::handleError);
-    connect(&m_process, &QtcProcess::readyReadStandardOutput, this, &PipInstallTask::handleOutput);
+    connect(&m_process, &Process::done, this, &PipInstallTask::handleDone);
+    connect(&m_process, &Process::readyReadStandardError, this, &PipInstallTask::handleError);
+    connect(&m_process, &Process::readyReadStandardOutput, this, &PipInstallTask::handleOutput);
     connect(&m_killTimer, &QTimer::timeout, this, &PipInstallTask::cancel);
     connect(&m_watcher, &QFutureWatcher<void>::canceled, this, &PipInstallTask::cancel);
     m_watcher.setFuture(m_future.future());
+}
+
+void PipInstallTask::setRequirements(const Utils::FilePath &requirementFile)
+{
+    m_requirementsFile = requirementFile;
+}
+
+void PipInstallTask::setWorkingDirectory(const Utils::FilePath &workingDirectory)
+{
+    m_process.setWorkingDirectory(workingDirectory);
 }
 
 void PipInstallTask::addPackage(const PipPackage &package)
@@ -45,30 +55,41 @@ void PipInstallTask::setPackages(const QList<PipPackage> &packages)
     m_packages = packages;
 }
 
+void PipInstallTask::setTargetPath(const Utils::FilePath &targetPath)
+{
+    m_targetPath = targetPath;
+}
+
 void PipInstallTask::run()
 {
-    if (m_packages.isEmpty()) {
+    if (m_packages.isEmpty() && m_requirementsFile.isEmpty()) {
         emit finished(false);
         return;
     }
     const QString taskTitle = Tr::tr("Install Python Packages");
     Core::ProgressManager::addTask(m_future.future(), taskTitle, pipInstallTaskId);
     QStringList arguments = {"-m", "pip", "install"};
-    for (const PipPackage &package : m_packages) {
-        QString pipPackage = package.packageName;
-        if (!package.version.isEmpty())
-            pipPackage += "==" + package.version;
-        arguments << pipPackage;
+    if (!m_requirementsFile.isEmpty())
+        arguments << "-r" << m_requirementsFile.toString();
+    else {
+        for (const PipPackage &package : m_packages) {
+            QString pipPackage = package.packageName;
+            if (!package.version.isEmpty())
+                pipPackage += "==" + package.version;
+            arguments << pipPackage;
+        }
     }
 
-    // add --user to global pythons, but skip it for venv pythons
-    if (!QDir(m_python.parentDir().toString()).exists("activate"))
-        arguments << "--user";
+    if (!m_targetPath.isEmpty())
+        arguments << "-t" << m_targetPath.toString();
+    else if (!QDir(m_python.parentDir().toString()).exists("activate"))
+        arguments << "--user"; // add --user to global pythons, but skip it for venv pythons
 
     m_process.setCommand({m_python, arguments});
+    m_process.setTerminalMode(TerminalMode::Run);
     m_process.start();
 
-    Core::MessageManager::writeDisrupting(
+    Core::MessageManager::writeSilently(
         Tr::tr("Running \"%1\" to install %2.")
             .arg(m_process.commandLine().toUserOutput(), packagesDisplayName()));
 
@@ -81,8 +102,10 @@ void PipInstallTask::cancel()
     m_process.stop();
     m_process.waitForFinished();
     Core::MessageManager::writeFlashing(
-        Tr::tr("The %1 installation was canceled by %2.")
-            .arg(packagesDisplayName(), m_killTimer.isActive() ? Tr::tr("user") : Tr::tr("time out")));
+        m_killTimer.isActive()
+            ? Tr::tr("The installation of \"%1\" was canceled by timeout.").arg(packagesDisplayName())
+            : Tr::tr("The installation of \"%1\" was canceled by the user.")
+                  .arg(packagesDisplayName()));
 }
 
 void PipInstallTask::handleDone()
@@ -90,8 +113,9 @@ void PipInstallTask::handleDone()
     m_future.reportFinished();
     const bool success = m_process.result() == ProcessResult::FinishedWithSuccess;
     if (!success) {
-        Core::MessageManager::writeFlashing(Tr::tr("Installing %1 failed with exit code %2")
-                .arg(packagesDisplayName()).arg(m_process.exitCode()));
+        Core::MessageManager::writeFlashing(Tr::tr("Installing \"%1\" failed with exit code %2.")
+                                                .arg(packagesDisplayName())
+                                                .arg(m_process.exitCode()));
     }
     emit finished(success);
 }
@@ -112,7 +136,9 @@ void PipInstallTask::handleError()
 
 QString PipInstallTask::packagesDisplayName() const
 {
-    return Utils::transform(m_packages, &PipPackage::displayName).join(", ");
+    return m_requirementsFile.isEmpty()
+               ? Utils::transform(m_packages, &PipPackage::displayName).join(", ")
+               : m_requirementsFile.toUserOutput();
 }
 
 void PipPackageInfo::parseField(const QString &field, const QStringList &data)
@@ -160,7 +186,7 @@ static PipPackageInfo infoImpl(const PipPackage &package, const FilePath &python
 {
     PipPackageInfo result;
 
-    QtcProcess pip;
+    Process pip;
     pip.setCommand(CommandLine(python, {"-m", "pip", "show", "-f", package.packageName}));
     pip.runBlocking();
     QString fieldName;

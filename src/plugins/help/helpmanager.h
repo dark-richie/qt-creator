@@ -5,7 +5,6 @@
 
 #include <coreplugin/helpmanager_implementation.h>
 
-#include <QFutureInterface>
 #include <QHelpEngineCore>
 #include <QVariant>
 
@@ -31,8 +30,6 @@ public:
 
     void registerDocumentation(const QStringList &fileNames) override;
     void unregisterDocumentation(const QStringList &fileNames) override;
-
-    static void unregisterNamespaces(const QStringList &nameSpaces);
 
     static void registerUserDocumentation(const QStringList &filePaths);
     static QSet<QString> userDocumentationPaths();
@@ -60,7 +57,6 @@ public:
         Core::HelpManager::HelpViewerLocation location = Core::HelpManager::HelpModeAlways) override;
 
     static void setupHelpManager();
-    static void registerDocumentationNow(QPromise<bool> &promise, const QStringList &fileNames);
 
 signals:
     void collectionFileChanged();

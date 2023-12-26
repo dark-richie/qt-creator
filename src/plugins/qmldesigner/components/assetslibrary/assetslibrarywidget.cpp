@@ -19,10 +19,6 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/messagebox.h>
 
-#include <projectexplorer/projecttree.h>
-#include <projectexplorer/target.h>
-#include <projectexplorer/project.h>
-
 #include <utils/algorithm.h>
 #include <utils/environment.h>
 #include <utils/filepath.h>
@@ -59,7 +55,7 @@ bool AssetsLibraryWidget::eventFilter(QObject *obj, QEvent *event)
     } else if (event->type() == QMouseEvent::MouseMove) {
         if (!m_assetsToDrag.isEmpty() && m_assetsView->model()) {
             QMouseEvent *me = static_cast<QMouseEvent *>(event);
-            if ((me->globalPos() - m_dragStartPoint).manhattanLength() > 10) {
+            if ((me->globalPosition().toPoint() - m_dragStartPoint).manhattanLength() > 10) {
                 QMimeData *mimeData = new QMimeData;
                 mimeData->setData(Constants::MIME_TYPE_ASSETS, m_assetsToDrag.join(',').toUtf8());
 
@@ -119,9 +115,8 @@ AssetsLibraryWidget::AssetsLibraryWidget(AsynchronousImageCache &asynchronousFon
     m_assetsWidget->setClearColor(Theme::getColor(Theme::Color::QmlDesigner_BackgroundColorDarkAlternate));
     m_assetsWidget->engine()->addImageProvider("qmldesigner_assets", m_assetsIconProvider);
 
-    connect(m_assetsModel, &AssetsLibraryModel::fileChanged, [](const QString &changeFilePath) {
-        QmlDesignerPlugin::instance()->emitAssetChanged(changeFilePath);
-    });
+    connect(m_assetsModel, &AssetsLibraryModel::fileChanged,
+            QmlDesignerPlugin::instance(), &QmlDesignerPlugin::assetChanged);
 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins({});
@@ -133,7 +128,7 @@ AssetsLibraryWidget::AssetsLibraryWidget(AsynchronousImageCache &asynchronousFon
     setStyleSheet(Theme::replaceCssColors(
         QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/stylesheet.css"))));
 
-    m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_F6), this);
+    m_qmlSourceUpdateShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F6), this);
     connect(m_qmlSourceUpdateShortcut, &QShortcut::activated, this, &AssetsLibraryWidget::reloadQmlSource);
     connect(this,
             &AssetsLibraryWidget::extFilesDrop,
@@ -151,6 +146,8 @@ AssetsLibraryWidget::AssetsLibraryWidget(AsynchronousImageCache &asynchronousFon
 
     // init the first load of the QML UI elements
     reloadQmlSource();
+
+    setFocusProxy(m_assetsWidget->quickWidget());
 }
 
 void AssetsLibraryWidget::contextHelp(const Core::IContext::HelpCallback &callback) const
@@ -187,12 +184,12 @@ QString AssetsLibraryWidget::getUniqueEffectPath(const QString &parentFolder, co
     return path;
 }
 
-bool AssetsLibraryWidget::createNewEffect(const QString &effectPath, bool openEffectMaker)
+bool AssetsLibraryWidget::createNewEffect(const QString &effectPath, bool openInEffectMaker)
 {
     bool created = QFile(effectPath).open(QIODevice::WriteOnly);
 
-    if (created && openEffectMaker) {
-        ModelNodeOperations::openEffectMaker(effectPath);
+    if (created && openInEffectMaker) {
+        openEffectMaker(effectPath);
         emit directoryCreated(QFileInfo(effectPath).absolutePath());
     }
 

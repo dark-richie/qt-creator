@@ -142,7 +142,7 @@ public:
     virtual ContainerNode *asContainerNode() { return nullptr; }
     virtual const ContainerNode *asContainerNode() const { return nullptr; }
 
-    virtual QString buildKey() const { return QString(); }
+    virtual QString buildKey() const { return {}; }
 
     static bool sortByPath(const Node *a, const Node *b);
     void setParentFolderNode(FolderNode *parentFolder);
@@ -204,10 +204,14 @@ public:
     QIcon icon() const;
     void setIcon(const QIcon icon);
 
+    bool useUnavailableMarker() const;
+    void setUseUnavailableMarker(bool useUnavailableMarker);
+
 private:
     FileType m_fileType;
     mutable QIcon m_icon;
     mutable bool m_hasError = false;
+    bool m_useUnavailableMarker = false;
 };
 
 // Documentation inside.
@@ -248,7 +252,7 @@ public:
                        const Utils::FilePath &overrideBaseDir = Utils::FilePath(),
                        const FolderNodeFactory &factory
                        = [](const Utils::FilePath &fn) { return std::make_unique<FolderNode>(fn); });
-    void compress();
+    virtual void compress();
 
     // takes ownership of newNode.
     // Will delete newNode if oldNode is not a child of this node.

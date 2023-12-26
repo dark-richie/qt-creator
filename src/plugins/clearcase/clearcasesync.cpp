@@ -6,12 +6,11 @@
 #include "clearcasesettings.h"
 
 #include <QDir>
-#include <QFutureInterface>
 #include <QRegularExpression>
 #include <QStringList>
 
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QPromise>
 
@@ -29,7 +28,7 @@ static void runProcess(QPromise<void> &promise, const ClearCaseSettings &setting
                        std::function<void(const QString &buffer, int processed)> processLine)
 {
     const QString viewRoot = ClearCasePlugin::viewData().root;
-    QtcProcess process;
+    Process process;
     process.setWorkingDirectory(FilePath::fromString(viewRoot));
     process.setCommand({settings.ccBinaryPath, args});
     process.start();
@@ -119,10 +118,9 @@ void ClearCaseSync::processCleartoolLsLine(const QDir &viewRootDir, const QStrin
         ClearCasePlugin::setStatus(absFile, FileStatus::CheckedIn, true);
 }
 
-void ClearCaseSync::updateTotalFilesCount(const QString &view, ClearCaseSettings settings,
-                                          const int processed)
+void ClearCaseSync::updateTotalFilesCount(const Key &view, const int processed)
 {
-    settings = ClearCasePlugin::settings(); // Might have changed while task was running
+    ClearCaseSettings settings = ClearCasePlugin::settings();
     settings.totalFiles[view] = processed;
     ClearCasePlugin::setSettings(settings);
 }
@@ -139,7 +137,7 @@ void ClearCaseSync::updateStatusForNotManagedFiles(const QStringList &files)
 void ClearCaseSync::syncSnapshotView(QPromise<void> &promise, QStringList &files,
                                      const ClearCaseSettings &settings)
 {
-    const QString view = ClearCasePlugin::viewData().name;
+    const Key view = keyFromString(ClearCasePlugin::viewData().name);
 
     int totalFileCount = files.size();
     const bool hot = (totalFileCount < 10);
@@ -181,7 +179,7 @@ void ClearCaseSync::syncSnapshotView(QPromise<void> &promise, QStringList &files
         updateStatusForNotManagedFiles(files);
         promise.setProgressValue(totalFileCount + 1);
         if (!hot)
-            updateTotalFilesCount(view, settings, totalProcessed);
+            updateTotalFilesCount(view, totalProcessed);
     }
 }
 

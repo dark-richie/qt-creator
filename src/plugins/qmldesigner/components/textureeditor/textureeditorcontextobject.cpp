@@ -159,6 +159,20 @@ void TextureEditorContextObject::setHasMaterialLibrary(bool b)
     emit hasMaterialLibraryChanged();
 }
 
+bool TextureEditorContextObject::isQt6Project() const
+{
+    return m_isQt6Project;
+}
+
+void TextureEditorContextObject::setIsQt6Project(bool b)
+{
+    if (m_isQt6Project == b)
+        return;
+
+    m_isQt6Project = b;
+    emit isQt6ProjectChanged();
+}
+
 bool TextureEditorContextObject::hasSingleModelSelection() const
 {
     return m_hasSingleModelSelection;
@@ -315,17 +329,8 @@ QStringList TextureEditorContextObject::allStatesForId(const QString &id)
       return {};
 }
 
-bool TextureEditorContextObject::isBlocked(const QString &propName) const
+bool TextureEditorContextObject::isBlocked(const QString &) const
 {
-    if (!m_selectedTexture.isValid())
-        return false;
-
-    if (!m_model || !m_model->rewriterView())
-        return false;
-
-    if (QmlObjectNode(m_selectedTexture).isBlocked(propName.toUtf8()))
-        return true;
-
     return false;
 }
 

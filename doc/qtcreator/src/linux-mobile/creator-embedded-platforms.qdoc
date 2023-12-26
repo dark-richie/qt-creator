@@ -3,10 +3,13 @@
 
 /*!
     \page creator-embedded-platforms.html
-    \previouspage creator-desktop-platforms.html
-    \nextpage creator-mobile-platforms.html
+    \previouspage creator-reference.html
+
+    \ingroup creator-reference
 
     \title Embedded Platforms
+
+    \brief Embedded platforms that you can develop applications for.
 
     You can develop applications for the following embedded platforms:
 
@@ -19,10 +22,10 @@
     \endlist
 
     You must install the tool chain for building applications for the targeted
-    embedded platform on the development PC and use the Qt Maintenance Tool to
+    embedded platform on the development PC and use \QMT to
     install Qt libraries that are built for the platform. You can then add a
     \l{glossary-buildandrun-kit}{kit} with the tool chain and the Qt version
-    for the device's architecture. When possible, the Maintenance Tool creates
+    for the device's architecture. When possible, \QMT creates
     suitable kits for you.
 
     You can connect embedded devices to the development PC to run, debug, and
@@ -55,7 +58,7 @@
         \li \l{https://doc.qt.io/Boot2Qt/b2qt-installation-guides.html}
             {Boot2Qt: Installation Guides}
         \li \l{Connecting Boot2Qt Devices}
-        \li \l{Specifying Run Settings for Boot2Qt Devices}
+        \li \l{Boot2Qt Run Settings}
         \li \l{Deploying to Boot2Qt}
         \li \l{https://doc.qt.io/qtcreator/creator-overview-qtasam.html}
             {Qt Creator Plugin for Qt Application Manager}
@@ -72,7 +75,7 @@
     \list
         \li \l{Connecting Remote Linux Devices}
         \li \l{Deploying to Remote Linux}
-        \li \l{Specifying Run Settings for Linux-Based Devices}
+        \li \l{Remote Linux Run Settings}
         \li \l{Running on Remote Linux Devices}
         \li \l{https://doc.qt.io/qtcreator/creator-overview-qtasam.html}
             {Qt Creator Plugin for Qt Application Manager}
@@ -90,12 +93,12 @@
     \list
         \li \l{Connecting MCUs}
         \li \l{Running Applications on MCUs}
-        \li \l{https://doc.qt.io/QtForMCUs/index.html}{Qt for MCUs}
+        \li \l{https://doc.qt.io/QtForMCUs/index.html}{\QMCU}
     \endlist
 
     \section1 QNX
 
-    The QNX Neutrino RTOS has more command line tools
+    The QNX Neutrino RTOS has more command-line tools
     and services, as described in \l {Qt for QNX}.
 
     \note In Qt 6, \QC support for QNX is considered experimental.
@@ -106,8 +109,10 @@
     \list
         \li \l{Connecting QNX Devices}
         \li \l{Deploying to QNX Neutrino}
-        \li \l{Specifying Run Settings for QNX Devices}
+        \li \l{QNX Run Settings}
         \li \l{Running on QNX Devices}
         \li \l{Qt for QNX}
     \endlist
+
+    \sa {Supported Platforms}
 */

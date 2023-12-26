@@ -48,7 +48,7 @@ public:
 
     QmlVisualNode() = default;
     QmlVisualNode(const ModelNode &modelNode)  : QmlObjectNode(modelNode) {}
-    bool isValid() const override;
+    bool isValid() const;
     explicit operator bool() const { return isValid(); }
     static bool isValidQmlVisualNode(const ModelNode &modelNode);
     bool isRootNode() const;
@@ -106,11 +106,10 @@ private:
 class QMLDESIGNERCORE_EXPORT QmlModelStateGroup
 {
     friend class QmlObjectNode;
-    friend class StatesEditorView;
-    friend class Experimental::StatesEditorView;
 
 public:
     QmlModelStateGroup() = default;
+    QmlModelStateGroup(const ModelNode &modelNode) : m_modelNode(modelNode) {}
 
     explicit operator bool() const { return m_modelNode.isValid(); }
 
@@ -120,9 +119,6 @@ public:
     QmlModelState state(const QString &name) const;
     QmlModelState addState(const QString &name);
     void removeState(const QString &name);
-
-protected:
-    QmlModelStateGroup(const ModelNode &modelNode) : m_modelNode(modelNode) {}
 
 private:
     ModelNode m_modelNode;

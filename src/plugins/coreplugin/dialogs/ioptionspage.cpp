@@ -6,15 +6,13 @@
 
 #include "ioptionspage.h"
 
-#include <coreplugin/icore.h>
-
-#include <utils/aspects.h>
+#include <utils/algorithm.h>
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
 #include <QCheckBox>
 #include <QGroupBox>
-#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -74,12 +72,12 @@ namespace Core {
 */
 
 /*!
-    Returns the category icon of the options page. This icon is displayed in the list on the left
-    side of the \uicontrol Options dialog.
+    Returns the path to the category icon of the options page. This icon will be read from this
+    path and displayed in the list on the left side of the \uicontrol Options dialog.
 */
-QIcon IOptionsPage::categoryIcon() const
+FilePath IOptionsPage::categoryIconPath() const
 {
-    return m_categoryIcon.icon();
+    return m_categoryIconPath;
 }
 
 /*!
@@ -99,23 +97,20 @@ void IOptionsPage::setWidgetCreator(const WidgetCreator &widgetCreator)
 
 QStringList IOptionsPage::keywords() const
 {
-    if (!m_keywordsInitialized) {
-        auto that = const_cast<IOptionsPage *>(this);
-        QWidget *widget = that->widget();
-        if (!widget)
-            return {};
-        // find common subwidgets
-        for (const QLabel *label : widget->findChildren<QLabel *>())
-            m_keywords << Utils::stripAccelerator(label->text());
-        for (const QCheckBox *checkbox : widget->findChildren<QCheckBox *>())
-            m_keywords << Utils::stripAccelerator(checkbox->text());
-        for (const QPushButton *pushButton : widget->findChildren<QPushButton *>())
-            m_keywords << Utils::stripAccelerator(pushButton->text());
-        for (const QGroupBox *groupBox : widget->findChildren<QGroupBox *>())
-            m_keywords << Utils::stripAccelerator(groupBox->title());
+    auto that = const_cast<IOptionsPage *>(this);
+    QWidget *widget = that->widget();
+    if (!widget)
+        return {};
+    // find common subwidgets
+    for (const QLabel *label : widget->findChildren<QLabel *>())
+        m_keywords << label->text();
+    for (const QCheckBox *checkbox : widget->findChildren<QCheckBox *>())
+        m_keywords << checkbox->text();
+    for (const QPushButton *pushButton : widget->findChildren<QPushButton *>())
+        m_keywords << pushButton->text();
+    for (const QGroupBox *groupBox : widget->findChildren<QGroupBox *>())
+        m_keywords << groupBox->title();
 
-        m_keywordsInitialized = true;
-    }
     return m_keywords;
 }
 
@@ -135,9 +130,15 @@ QWidget *IOptionsPage::widget()
     if (!m_widget) {
         if (m_widgetCreator) {
             m_widget = m_widgetCreator();
-        } else if (m_layouter) {
-            m_widget = new QWidget;
-            m_layouter(m_widget);
+            QTC_CHECK(m_widget);
+        } else if (m_settingsProvider) {
+            m_widget = new IOptionsPageWidget;
+            AspectContainer *container = m_settingsProvider();
+            if (auto layouter = container->layouter()) {
+                layouter().attachTo(m_widget);
+            } else {
+                QTC_CHECK(false);
+            }
         } else {
             QTC_CHECK(false);
         }
@@ -156,12 +157,21 @@ QWidget *IOptionsPage::widget()
 
 void IOptionsPage::apply()
 {
-    if (auto widget = qobject_cast<IOptionsPageWidget *>(m_widget)) {
+    if (auto widget = qobject_cast<IOptionsPageWidget *>(m_widget))
         widget->apply();
-    } else if (m_settings) {
-        if (m_settings->isDirty()) {
-            m_settings->apply();
-            m_settings->writeSettings(ICore::settings());
+
+    if (m_settingsProvider) {
+        AspectContainer *container = m_settingsProvider();
+        QTC_ASSERT(container, return);
+        // Sanity check: Aspects in option pages should not autoapply.
+        if (!container->aspects().isEmpty()) {
+            BaseAspect *aspect = container->aspects().first();
+            QTC_ASSERT(aspect, return);
+            QTC_ASSERT(!aspect->isAutoApply(), container->setAutoApply(false));
+        }
+        if (container->isDirty()) {
+            container->apply();
+            container->writeSettings();
          }
     }
 }
@@ -179,8 +189,11 @@ void IOptionsPage::finish()
 {
     if (auto widget = qobject_cast<IOptionsPageWidget *>(m_widget))
         widget->finish();
-    else if (m_settings)
-        m_settings->finish();
+
+    if (m_settingsProvider) {
+        AspectContainer *container = m_settingsProvider();
+        container->finish();
+    }
 
     delete m_widget;
 }
@@ -191,17 +204,12 @@ void IOptionsPage::finish()
 */
 void IOptionsPage::setCategoryIconPath(const FilePath &categoryIconPath)
 {
-    m_categoryIcon = Icon({{categoryIconPath, Theme::PanelTextColorDark}}, Icon::Tint);
+    m_categoryIconPath = categoryIconPath;
 }
 
-void IOptionsPage::setSettings(AspectContainer *settings)
+void IOptionsPage::setSettingsProvider(const std::function<AspectContainer *()> &provider)
 {
-    m_settings = settings;
-}
-
-void IOptionsPage::setLayouter(const std::function<void(QWidget *w)> &layouter)
-{
-    m_layouter = layouter;
+    m_settingsProvider = provider;
 }
 
 /*!
@@ -234,17 +242,20 @@ void IOptionsPage::setLayouter(const std::function<void(QWidget *w)> &layouter)
     Sets \a categoryIcon as the category icon of the options page.
 */
 
-static QList<IOptionsPage *> g_optionsPages;
+static QList<IOptionsPage *> &optionsPages()
+{
+    static QList<IOptionsPage *> thePages;
+    return thePages;
+}
 
 /*!
-    Constructs an options page with the given \a parent and registers it
+    Constructs an options page and registers it
     at the global options page pool if \a registerGlobally is \c true.
 */
-IOptionsPage::IOptionsPage(QObject *parent, bool registerGlobally)
-    : QObject(parent)
+IOptionsPage::IOptionsPage(bool registerGlobally)
 {
     if (registerGlobally)
-        g_optionsPages.append(this);
+        optionsPages().append(this);
 }
 
 /*!
@@ -252,7 +263,7 @@ IOptionsPage::IOptionsPage(QObject *parent, bool registerGlobally)
  */
 IOptionsPage::~IOptionsPage()
 {
-    g_optionsPages.removeOne(this);
+    optionsPages().removeOne(this);
 }
 
 /*!
@@ -260,7 +271,7 @@ IOptionsPage::~IOptionsPage()
  */
 const QList<IOptionsPage *> IOptionsPage::allOptionsPages()
 {
-    return g_optionsPages;
+    return optionsPages();
 }
 
 /*!
@@ -270,7 +281,12 @@ const QList<IOptionsPage *> IOptionsPage::allOptionsPages()
 */
 bool IOptionsPage::matches(const QRegularExpression &regexp) const
 {
-    for (const QString &keyword : keywords())
+    if (!m_keywordsInitialized) {
+        m_keywords = Utils::transform(keywords(), Utils::stripAccelerator);
+        m_keywordsInitialized = true;
+    }
+
+    for (const QString &keyword : m_keywords)
         if (keyword.contains(regexp))
             return true;
     return false;
@@ -278,8 +294,7 @@ bool IOptionsPage::matches(const QRegularExpression &regexp) const
 
 static QList<IOptionsPageProvider *> g_optionsPagesProviders;
 
-IOptionsPageProvider::IOptionsPageProvider(QObject *parent)
-    : QObject(parent)
+IOptionsPageProvider::IOptionsPageProvider()
 {
     g_optionsPagesProviders.append(this);
 }
@@ -292,11 +307,6 @@ IOptionsPageProvider::~IOptionsPageProvider()
 const QList<IOptionsPageProvider *> IOptionsPageProvider::allOptionsPagesProviders()
 {
     return g_optionsPagesProviders;
-}
-
-QIcon IOptionsPageProvider::categoryIcon() const
-{
-    return m_categoryIcon.icon();
 }
 
 } // Core

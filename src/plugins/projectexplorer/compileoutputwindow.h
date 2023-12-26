@@ -26,6 +26,18 @@ namespace Internal {
 class ShowOutputTaskHandler;
 class CompileOutputTextEdit;
 
+class CompileOutputSettings final : public Utils::AspectContainer
+{
+public:
+    CompileOutputSettings();
+
+    Utils::BoolAspect popUp{this};
+    Utils::BoolAspect wrapOutput{this};
+    Utils::IntegerAspect maxCharCount{this};
+};
+
+CompileOutputSettings &compileOutputSettings();
+
 class CompileOutputWindow final : public Core::IOutputPane
 {
     Q_OBJECT
@@ -36,9 +48,6 @@ public:
 
     QWidget *outputWidget(QWidget *) override;
     QList<QWidget *> toolBarWidgets() const override;
-    QString displayName() const override {
-        return QCoreApplication::translate("QtC::ProjectExplorer","Compile Output"); }
-    int priorityInStatusBar() const override;
     void clearContents() override;
     bool canFocus() const override;
     bool hasFocus() const override;
@@ -57,30 +66,17 @@ public:
     void flush();
     void reset();
 
-    const CompileOutputSettings &settings() const { return m_settings; }
-    void setSettings(const CompileOutputSettings &settings);
-
     Utils::OutputFormatter *outputFormatter() const;
 
 private:
     void updateFilter() override;
     const QList<Core::OutputWindow *> outputWindows() const override { return {m_outputWindow}; }
 
-    void loadSettings();
-    void storeSettings() const;
     void updateFromSettings();
-
     Core::OutputWindow *m_outputWindow;
     ShowOutputTaskHandler *m_handler;
     QToolButton *m_cancelBuildButton;
     QToolButton * const m_settingsButton;
-    CompileOutputSettings m_settings;
-};
-
-class CompileOutputSettingsPage final : public Core::IOptionsPage
-{
-public:
-    CompileOutputSettingsPage();
 };
 
 } // namespace Internal

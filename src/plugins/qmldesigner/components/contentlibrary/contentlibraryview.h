@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "createtexture.h"
 #include "abstractview.h"
+#include "createtexture.h"
 #include "nodemetainfo.h"
 
 #include <QObject>
@@ -12,6 +12,7 @@
 
 namespace QmlDesigner {
 
+class ContentLibraryEffect;
 class ContentLibraryMaterial;
 class ContentLibraryTexture;
 class ContentLibraryWidget;
@@ -31,7 +32,7 @@ public:
     // AbstractView
     void modelAttached(Model *model) override;
     void modelAboutToBeDetached(Model *model) override;
-    void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports) override;
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
     void active3DSceneChanged(qint32 sceneId) override;
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
@@ -44,16 +45,28 @@ public:
 
 private:
     void updateBundleMaterialsImportedState();
-    void updateBundleMaterialsQuick3DVersion();
-    void applyBundleMaterialToDropTarget(const ModelNode &bundleMat, const NodeMetaInfo &metaInfo = {});
+    void updateBundleEffectsImportedState();
+    void updateBundlesQuick3DVersion();
+#ifdef QDS_USE_PROJECTSTORAGE
+    void applyBundleMaterialToDropTarget(const ModelNode &bundleMat, const TypeName &typeName = {});
+#else
+    void applyBundleMaterialToDropTarget(const ModelNode &bundleMat,
+                                         const NodeMetaInfo &metaInfo = {});
+#endif
     ModelNode getBundleMaterialDefaultInstance(const TypeName &type);
+#ifdef QDS_USE_PROJECTSTORAGE
+    ModelNode createMaterial(const TypeName &typeName);
+#else
     ModelNode createMaterial(const NodeMetaInfo &metaInfo);
-
+#endif
     QPointer<ContentLibraryWidget> m_widget;
     QList<ModelNode> m_bundleMaterialTargets;
+    ModelNode m_bundleEffectTarget; // target of the dropped bundle effect
+    QVariant m_bundleEffectPos; // pos of the dropped bundle effect
     QList<ModelNode> m_selectedModels; // selected 3D model nodes
     ContentLibraryMaterial *m_draggedBundleMaterial = nullptr;
     ContentLibraryTexture *m_draggedBundleTexture = nullptr;
+    ContentLibraryEffect *m_draggedBundleEffect = nullptr;
     bool m_bundleMaterialAddToSelected = false;
     bool m_hasQuick3DImport = false;
     qint32 m_sceneId = -1;

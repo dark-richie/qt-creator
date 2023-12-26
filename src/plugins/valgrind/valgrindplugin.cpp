@@ -3,11 +3,9 @@
 
 #include "callgrindtool.h"
 #include "memchecktool.h"
-#include "valgrindconfigwidget.h"
 #include "valgrindsettings.h"
 #include "valgrindtr.h"
 
-#include <coreplugin/dialogs/ioptionspage.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 
@@ -33,8 +31,8 @@ class ValgrindRunConfigurationAspect : public GlobalOrProjectAspect
 public:
     ValgrindRunConfigurationAspect(Target *)
     {
-        setProjectSettings(new ValgrindProjectSettings);
-        setGlobalSettings(ValgrindGlobalSettings::instance());
+        setProjectSettings(new ValgrindSettings(false));
+        setGlobalSettings(&globalSettings());
         setId(ANALYZER_VALGRIND_SETTINGS);
         setDisplayName(Tr::tr("Valgrind Settings"));
         setUsingGlobalSettings(true);
@@ -43,27 +41,16 @@ public:
     }
 };
 
-class ValgrindPluginPrivate
-{
-public:
-    ValgrindGlobalSettings valgrindGlobalSettings; // Needs to come before the tools.
-    MemcheckTool memcheckTool;
-    CallgrindTool callgrindTool;
-    ValgrindOptionsPage valgrindOptionsPage;
-};
-
 class ValgrindPlugin final : public ExtensionSystem::IPlugin
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Valgrind.json")
 
 public:
-    ValgrindPlugin() = default;
-    ~ValgrindPlugin() final { delete d; }
-
     void initialize() final
     {
-        d = new ValgrindPluginPrivate;
+        setupMemcheckTool(this);
+        setupCallgrindTool(this);
 
         RunConfiguration::registerAspect<ValgrindRunConfigurationAspect>();
 #ifdef WITH_TESTS
@@ -71,9 +58,6 @@ public:
         addTest<Test::ValgrindTestRunnerTest>();
 #endif
     }
-
-private:
-    class ValgrindPluginPrivate *d = nullptr;
 };
 
 } // Valgrind::Internal

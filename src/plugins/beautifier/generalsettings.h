@@ -3,40 +3,24 @@
 
 #pragma once
 
+#include <utils/aspects.h>
 #include <utils/mimeutils.h>
-
-#include <QList>
 
 namespace Beautifier::Internal {
 
-class GeneralSettings
+class GeneralSettings final : public Utils::AspectContainer
 {
 public:
-    explicit GeneralSettings();
-    static GeneralSettings *instance();
+    GeneralSettings();
 
-    void read();
-    void save();
+    QList<Utils::MimeType> allowedMimeTypes() const;
 
-    bool autoFormatOnSave() const;
-    void setAutoFormatOnSave(bool autoFormatOnSave);
-
-    QString autoFormatTool() const;
-    void setAutoFormatTool(const QString &autoFormatTool);
-
-    QList<Utils::MimeType> autoFormatMime() const;
-    QString autoFormatMimeAsString() const;
-    void setAutoFormatMime(const QList<Utils::MimeType> &autoFormatMime);
-    void setAutoFormatMime(const QString &mimeList);
-
-    bool autoFormatOnlyCurrentProject() const;
-    void setAutoFormatOnlyCurrentProject(bool autoFormatOnlyCurrentProject);
-
-private:
-    bool m_autoFormatOnSave = false;
-    bool m_autoFormatOnlyCurrentProject = true;
-    QString m_autoFormatTool;
-    QList<Utils::MimeType> m_autoFormatMime;
+    Utils::BoolAspect autoFormatOnSave{this};
+    Utils::BoolAspect autoFormatOnlyCurrentProject{this};
+    Utils::SelectionAspect autoFormatTools{this};
+    Utils::StringAspect autoFormatMime{this};
 };
+
+GeneralSettings &generalSettings();
 
 } // Beautifier::Internal

@@ -7,11 +7,9 @@
 
 #include <QPersistentModelIndex>
 
-namespace Valgrind {
+namespace Valgrind::Callgrind { class Function; }
 
-namespace Callgrind { class Function; }
-
-namespace Internal {
+namespace Valgrind::Internal {
 
 class CallgrindTextMark : public TextEditor::TextMark
 {
@@ -28,11 +26,10 @@ public:
     const Valgrind::Callgrind::Function *function() const;
 
 private:
-    bool addToolTipContent(QLayout *target) const;
+    bool addToolTipContent(QLayout *target) const override;
     qreal costs() const;
 
     QPersistentModelIndex m_modelIndex;
 };
 
-} // namespace Internal
-} // namespace Valgrind
+} // namespace Valgrind::Internal

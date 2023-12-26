@@ -13,7 +13,6 @@
 #include <utils/filesystemwatcher.h>
 #include <utils/fileutils.h>
 
-#include <QDir>
 #include <QString>
 #include <QVector>
 #include <QVersionNumber>
@@ -227,9 +226,9 @@ public:
                                  const QString &cmakeBuildType,
                                  QString &errorMessage);
 
-    static bool setupCMakeFileApi(const Utils::FilePath &buildDirectory,
-                                  Utils::FileSystemWatcher &watcher);
+    static bool setupCMakeFileApi(const Utils::FilePath &buildDirectory);
 
+    static Utils::FilePath cmakeReplyDirectory(const Utils::FilePath &buildDirectory);
     static Utils::FilePaths cmakeQueryFilePaths(const Utils::FilePath &buildDirectory);
 
     static Utils::FilePath scanForCMakeReplyFile(const Utils::FilePath &buildDirectory);

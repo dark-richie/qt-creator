@@ -21,7 +21,7 @@ include(FeatureSummary)
 list(APPEND DEFAULT_DEFINES
   QT_CREATOR
   QT_NO_JAVA_STYLE_ITERATORS
-  QT_NO_CAST_TO_ASCII QT_RESTRICTED_CAST_FROM_ASCII
+  QT_NO_CAST_TO_ASCII QT_RESTRICTED_CAST_FROM_ASCII QT_NO_FOREACH
   QT_DISABLE_DEPRECATED_BEFORE=0x050900
   QT_USE_QSTRINGBUILDER
 )
@@ -30,9 +30,7 @@ if (WIN32)
   list(APPEND DEFAULT_DEFINES UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 
   if (NOT BUILD_WITH_PCH)
-    # Windows 8 0x0602
     list(APPEND DEFAULT_DEFINES
-      WINVER=0x0602 _WIN32_WINNT=0x0602
       WIN32_LEAN_AND_MEAN)
   endif()
 endif()
@@ -49,7 +47,7 @@ if (APPLE)
 
   set(_IDE_LIBRARY_BASE_PATH "Frameworks")
   set(_IDE_LIBRARY_PATH "${_IDE_OUTPUT_PATH}/${_IDE_LIBRARY_BASE_PATH}")
-  set(_IDE_PLUGIN_PATH "${_IDE_OUTPUT_PATH}/PlugIns")
+  set(_IDE_PLUGIN_PATH "${_IDE_OUTPUT_PATH}/PlugIns/qtcreator")
   set(_IDE_LIBEXEC_PATH "${_IDE_OUTPUT_PATH}/Resources/libexec")
   set(_IDE_DATA_PATH "${_IDE_OUTPUT_PATH}/Resources")
   set(_IDE_DOC_PATH "${_IDE_OUTPUT_PATH}/Resources/doc")
@@ -182,7 +180,7 @@ endfunction()
 
 function(qtc_add_link_flags_no_undefined target)
   # needs CheckLinkerFlags
-  if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+  if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18 AND NOT MSVC)
     set(no_undefined_flag "-Wl,--no-undefined")
     check_linker_flag(CXX ${no_undefined_flag} QTC_LINKER_SUPPORTS_NO_UNDEFINED)
     if (NOT QTC_LINKER_SUPPORTS_NO_UNDEFINED)
@@ -246,13 +244,13 @@ function(update_resource_files_list sources)
   endforeach()
 endfunction()
 
-function(set_public_includes target includes)
+function(set_public_includes target includes system)
   foreach(inc_dir IN LISTS includes)
     if (NOT IS_ABSOLUTE ${inc_dir})
       set(inc_dir "${CMAKE_CURRENT_SOURCE_DIR}/${inc_dir}")
     endif()
     file(RELATIVE_PATH include_dir_relative_path ${PROJECT_SOURCE_DIR} ${inc_dir})
-    target_include_directories(${target} PUBLIC
+    target_include_directories(${target} ${system} PUBLIC
       $<BUILD_INTERFACE:${inc_dir}>
       $<INSTALL_INTERFACE:${_IDE_HEADER_INSTALL_PATH}/${include_dir_relative_path}>
     )
@@ -465,7 +463,7 @@ function(extend_qtc_target target_name)
   cmake_parse_arguments(_arg
     ""
     "SOURCES_PREFIX;SOURCES_PREFIX_FROM_TARGET;FEATURE_INFO"
-    "CONDITION;DEPENDS;PUBLIC_DEPENDS;DEFINES;PUBLIC_DEFINES;INCLUDES;PUBLIC_INCLUDES;SOURCES;EXPLICIT_MOC;SKIP_AUTOMOC;EXTRA_TRANSLATIONS;PROPERTIES"
+    "CONDITION;DEPENDS;PUBLIC_DEPENDS;DEFINES;PUBLIC_DEFINES;INCLUDES;SYSTEM_INCLUDES;PUBLIC_INCLUDES;PUBLIC_SYSTEM_INCLUDES;SOURCES;EXPLICIT_MOC;SKIP_AUTOMOC;EXTRA_TRANSLATIONS;PROPERTIES;SOURCES_PROPERTIES"
     ${ARGN}
   )
 
@@ -506,8 +504,10 @@ function(extend_qtc_target target_name)
     PUBLIC ${_arg_PUBLIC_DEFINES}
   )
   target_include_directories(${target_name} PRIVATE ${_arg_INCLUDES})
+  target_include_directories(${target_name} SYSTEM PRIVATE ${_arg_SYSTEM_INCLUDES})
 
-  set_public_includes(${target_name} "${_arg_PUBLIC_INCLUDES}")
+  set_public_includes(${target_name} "${_arg_PUBLIC_INCLUDES}" "")
+  set_public_includes(${target_name} "${_arg_PUBLIC_SYSTEM_INCLUDES}" "SYSTEM")
 
   if (_arg_SOURCES_PREFIX)
     foreach(source IN LISTS _arg_SOURCES)
@@ -547,4 +547,17 @@ function(extend_qtc_target target_name)
   if (_arg_PROPERTIES)
     set_target_properties(${target_name} PROPERTIES ${_arg_PROPERTIES})
   endif()
+
+  if (_arg_SOURCES_PROPERTIES)
+    set_source_files_properties(${_arg_SOURCES} PROPERTIES ${_arg_SOURCES_PROPERTIES})
+  endif()
 endfunction()
+
+function (qtc_env_with_default envName varToSet default)
+  if(DEFINED ENV{${envName}})
+    set(${varToSet} $ENV{${envName}} PARENT_SCOPE)
+  else()
+    set(${varToSet} ${default} PARENT_SCOPE)
+  endif()
+endfunction()
+

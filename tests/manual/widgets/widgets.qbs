@@ -1,9 +1,5 @@
-import qbs
-
 Project {
     name: "Widgets manualtests"
-
-    condition: project.withAutotests
 
     references: [
         "crumblepath/crumblepath.qbs",
@@ -11,5 +7,6 @@ Project {
         "layoutbuilder/layoutbuilder.qbs",
         "manhattanstyle/manhattanstyle.qbs",
         "tracing/tracing.qbs",
+        "uifonts/uifonts.qbs",
     ]
 }

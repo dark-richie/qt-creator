@@ -12,14 +12,12 @@ QT_BEGIN_NAMESPACE
 class QQuickItem;
 class QQmlEngine;
 class QQuickDesignerSupport;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 class QQuickRenderControl;
 class QRhi;
 class QRhiTexture;
 class QRhiRenderBuffer;
 class QRhiTextureRenderTarget;
 class QRhiRenderPassDescriptor;
-#endif
 QT_END_NAMESPACE
 
 namespace QmlDesigner {
@@ -59,12 +57,13 @@ protected:
     void setupScene(const CreateSceneCommand &command) override;
     const QList<QQuickItem*> allItems() const;
     bool rootIsRenderable3DObject() const;
+    void savePipelineCacheData();
+    void setPipelineCacheConfig(QQuickWindow *w);
 
     struct RenderViewData {
         QPointer<QQuickWindow> window = nullptr;
         QQuickItem *rootItem = nullptr;
         QQuickItem *contentItem = nullptr;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         bool bufferDirty = true;
         QQuickRenderControl *renderControl = nullptr;
         QRhi *rhi = nullptr;
@@ -72,7 +71,6 @@ protected:
         QRhiRenderBuffer *buffer = nullptr;
         QRhiTextureRenderTarget *texTarget = nullptr;
         QRhiRenderPassDescriptor *rpDesc = nullptr;
-#endif
     };
 
     virtual bool initRhi(RenderViewData &viewData);
@@ -80,6 +78,10 @@ protected:
 
 private:
     RenderViewData m_viewData;
+    QByteArray m_pipelineCacheData;
+    QString m_pipelineCacheLocation;
+    QString m_pipelineCacheFile;
+    QString m_shaderCacheFile;
     std::unique_ptr<QQuickDesignerSupport> m_designerSupport;
     QQmlEngine *m_qmlEngine = nullptr;
 };

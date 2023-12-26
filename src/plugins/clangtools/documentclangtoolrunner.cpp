@@ -21,11 +21,12 @@
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
+#include <solutions/tasking/tasktree.h>
+
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
 
 #include <utils/qtcassert.h>
-#include <utils/tasktree.h>
 
 #include <QLoggingCategory>
 #include <QScopeGuard>
@@ -35,6 +36,7 @@ static Q_LOGGING_CATEGORY(LOG, "qtc.clangtools.cftr", QtWarningMsg)
 using namespace Core;
 using namespace CppEditor;
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
 
 namespace ClangTools {
@@ -81,9 +83,7 @@ static void removeClangToolRefactorMarkers(TextEditor::TextEditorWidget *editor)
 {
     if (!editor)
         return;
-    editor->setRefactorMarkers(
-        TextEditor::RefactorMarker::filterOutType(editor->refactorMarkers(),
-                                                  Constants::CLANG_TOOL_FIXIT_AVAILABLE_MARKER_ID));
+    editor->clearRefactorMarkers(Constants::CLANG_TOOL_FIXIT_AVAILABLE_MARKER_ID);
 }
 
 void DocumentClangToolRunner::scheduleRun()
@@ -109,7 +109,7 @@ static VirtualFileSystemOverlay &vfso()
 
 static FileInfo getFileInfo(const FilePath &file, Project *project)
 {
-    const ProjectInfo::ConstPtr projectInfo = CppModelManager::instance()->projectInfo(project);
+    const ProjectInfo::ConstPtr projectInfo = CppModelManager::projectInfo(project);
     if (!projectInfo)
         return {};
 
@@ -156,7 +156,7 @@ void DocumentClangToolRunner::run()
     if (m_projectSettingsUpdate)
         disconnect(m_projectSettingsUpdate);
     m_taskTree.reset();
-    QScopeGuard guard([this] { finalize(); });
+    QScopeGuard cleanup([this] { finalize(); });
 
     auto isEditorForCurrentDocument = [this](const IEditor *editor) {
         return editor->document() == m_document;
@@ -188,35 +188,43 @@ void DocumentClangToolRunner::run()
     vfso().update();
     const ClangDiagnosticConfig config = diagnosticConfig(runSettings.diagnosticConfigId());
     const Environment env = projectBuildEnvironment(project);
-    using namespace Tasking;
-    QList<TaskItem> tasks{parallel};
+    QList<GroupItem> tasks{parallel};
     const auto addClangTool = [this, &runSettings, &config, &env, &tasks](ClangToolType tool) {
         if (!toolEnabled(tool, config, runSettings))
             return;
         if (!config.isEnabled(tool) && !runSettings.hasConfigFileForSourceFile(m_fileInfo.file))
             return;
         const FilePath executable = toolExecutable(tool);
+        if (executable.isEmpty() || !executable.isExecutableFile())
+            return;
         const auto [includeDir, clangVersion] = getClangIncludeDirAndVersion(executable);
-        if (!executable.isExecutableFile() || includeDir.isEmpty() || clangVersion.isEmpty())
+        if (includeDir.isEmpty() || clangVersion.isEmpty())
             return;
         const AnalyzeUnit unit(m_fileInfo, includeDir, clangVersion);
-        const AnalyzeInputData input{tool, runSettings, config, m_temporaryDir.path(), env, unit,
-                                     vfso().overlayFilePath().toString()};
+        auto diagnosticFilter = [mappedPath = vfso().autoSavedFilePath(m_document)](
+                                    const FilePath &path) { return path == mappedPath; };
+        const AnalyzeInputData input{tool,
+                                     runSettings,
+                                     config,
+                                     m_temporaryDir.path(),
+                                     env,
+                                     unit,
+                                     vfso().overlayFilePath().toString(),
+                                     diagnosticFilter};
         const auto setupHandler = [this, executable] {
             return !m_document->isModified() || isVFSOverlaySupported(executable);
         };
         const auto outputHandler = [this](const AnalyzeOutputData &output) { onDone(output); };
-        tasks.append(Group{optional, clangToolTask(input, setupHandler, outputHandler)});
+        tasks.append(Group{finishAllAndSuccess, clangToolTask(input, setupHandler, outputHandler)});
     };
     addClangTool(ClangToolType::Tidy);
     addClangTool(ClangToolType::Clazy);
     if (tasks.isEmpty())
         return;
 
-    guard.dismiss();
+    cleanup.dismiss();
     m_taskTree.reset(new TaskTree(tasks));
     connect(m_taskTree.get(), &TaskTree::done, this, &DocumentClangToolRunner::finalize);
-    connect(m_taskTree.get(), &TaskTree::errorOccurred, this, &DocumentClangToolRunner::finalize);
     m_taskTree->start();
 }
 
@@ -233,11 +241,7 @@ void DocumentClangToolRunner::onDone(const AnalyzeOutputData &output)
         return;
     }
 
-    const FilePath mappedPath = vfso().autoSavedFilePath(m_document);
-    Diagnostics diagnostics = readExportedDiagnostics(
-        output.outputFilePath,
-        [&](const FilePath &path) { return path == mappedPath; });
-
+    Diagnostics diagnostics = output.diagnostics;
     for (Diagnostic &diag : diagnostics) {
         updateLocation(diag.location);
         for (ExplainingStep &explainingStep : diag.explainingSteps) {
@@ -263,7 +267,7 @@ void DocumentClangToolRunner::onDone(const AnalyzeOutputData &output)
         if (isSuppressed(diagnostic))
             continue;
 
-        auto mark = new DiagnosticMark(diagnostic);
+        auto mark = new DiagnosticMark(diagnostic, doc);
         mark->toolType = toolType;
 
         if (doc && Utils::anyOf(diagnostic.explainingSteps, &ExplainingStep::isFixIt)) {
@@ -288,7 +292,7 @@ void DocumentClangToolRunner::onDone(const AnalyzeOutputData &output)
 
     for (auto editor : TextEditor::BaseTextEditor::textEditorsForDocument(doc)) {
         if (TextEditor::TextEditorWidget *widget = editor->editorWidget()) {
-            widget->setRefactorMarkers(markers + widget->refactorMarkers());
+            widget->setRefactorMarkers(markers, Constants::CLANG_TOOL_FIXIT_AVAILABLE_MARKER_ID);
             if (!m_editorsWithMarkers.contains(widget))
                 m_editorsWithMarkers << widget;
         }

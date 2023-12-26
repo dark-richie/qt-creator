@@ -30,6 +30,15 @@ CMakeInputsNode::CMakeInputsNode(const FilePath &cmakeLists) :
     setListInProject(false);
 }
 
+CMakePresetsNode::CMakePresetsNode(const FilePath &projectPath) :
+    ProjectExplorer::ProjectNode(projectPath)
+{
+    setPriority(Node::DefaultPriority - 9);
+    setDisplayName(Tr::tr("CMake Presets"));
+    setIcon(DirectoryIcon(ProjectExplorer::Constants::FILEOVERLAY_PRODUCT));
+    setListInProject(false);
+}
+
 CMakeListsNode::CMakeListsNode(const FilePath &cmakeListPath) :
     ProjectExplorer::ProjectNode(cmakeListPath)
 {
@@ -164,6 +173,9 @@ QVariant CMakeTargetNode::data(Id role) const
 
     if (role == Ios::Constants::IosCmakeGenerator)
         return value("CMAKE_GENERATOR");
+
+    if (role == ProjectExplorer::Constants::QT_KEYWORDS_ENABLED) // FIXME handle correctly
+        return value(role.toString().toUtf8());
 
     QTC_ASSERT(false, qDebug() << "Unknown role" << role.toString());
     // Better guess than "not present".

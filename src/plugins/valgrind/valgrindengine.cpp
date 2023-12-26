@@ -6,25 +6,19 @@
 #include "valgrindsettings.h"
 #include "valgrindtr.h"
 
-#include <debugger/analyzer/analyzermanager.h>
-
 #include <coreplugin/icore.h>
 #include <coreplugin/ioutputpane.h>
-#include <coreplugin/progressmanager/progressmanager.h>
 #include <coreplugin/progressmanager/futureprogress.h>
+#include <coreplugin/progressmanager/progressmanager.h>
+
 #include <extensionsystem/pluginmanager.h>
 
 #include <projectexplorer/devicesupport/idevice.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorericons.h>
-#include <projectexplorer/runconfiguration.h>
-#include <projectexplorer/runconfigurationaspects.h>
 
 #include <QApplication>
 
-#define VALGRIND_DEBUG_OUTPUT 0
-
-using namespace Debugger;
 using namespace Core;
 using namespace Utils;
 using namespace ProjectExplorer;
@@ -39,20 +33,29 @@ ValgrindToolRunner::ValgrindToolRunner(RunControl *runControl)
 
     m_settings.fromMap(runControl->settingsData(ANALYZER_VALGRIND_SETTINGS));
 
-    connect(&m_runner, &ValgrindRunner::appendMessage,
-            this, &ValgrindToolRunner::appendMessage);
-    connect(&m_runner, &ValgrindRunner::valgrindExecuted,
-            this, [this](const QString &commandLine) {
-        appendMessage(commandLine, NormalMessageFormat);
-    });
-    connect(&m_runner, &ValgrindRunner::processErrorReceived,
+    connect(&m_runner, &ValgrindProcess::appendMessage, this,
+            [this](const QString &msg, Utils::OutputFormat format) { appendMessage(msg, format); });
+    connect(&m_runner, &ValgrindProcess::processErrorReceived,
             this, &ValgrindToolRunner::receiveProcessError);
-    connect(&m_runner, &ValgrindRunner::finished,
+    connect(&m_runner, &ValgrindProcess::done,
             this, &ValgrindToolRunner::runnerFinished);
 }
 
 void ValgrindToolRunner::start()
 {
+    FilePath valgrindExecutable = m_settings.valgrindExecutable();
+    if (IDevice::ConstPtr dev = DeviceKitAspect::device(runControl()->kit()))
+        valgrindExecutable = dev->filePath(valgrindExecutable.path());
+
+    const FilePath found = valgrindExecutable.searchInPath();
+
+    if (!found.isExecutableFile()) {
+        reportFailure(Tr::tr("Valgrind executable \"%1\" not found or not executable.\n"
+                             "Check settings or ensure Valgrind is installed and available in PATH.")
+                      .arg(valgrindExecutable.toUserOutput()));
+        return;
+    }
+
     FutureProgress *fp = ProgressManager::addTimedTask(m_progress, progressTitle(), "valgrind", 100);
     connect(fp, &FutureProgress::canceled,
             this, &ValgrindToolRunner::handleProgressCanceled);
@@ -60,21 +63,10 @@ void ValgrindToolRunner::start()
             this, &ValgrindToolRunner::handleProgressFinished);
     m_progress.reportStarted();
 
-#if VALGRIND_DEBUG_OUTPUT
-    emit outputReceived(Tr::tr("Valgrind options: %1").arg(toolArguments().join(' ')), LogMessageFormat);
-    emit outputReceived(Tr::tr("Working directory: %1").arg(runnable().workingDirectory), LogMessageFormat);
-    emit outputReceived(Tr::tr("Command line arguments: %1").arg(runnable().debuggeeArgs), LogMessageFormat);
-#endif
-
-
-    FilePath valgrindExecutable = m_settings.valgrindExecutable.filePath();
-    if (IDevice::ConstPtr dev = DeviceKitAspect::device(runControl()->kit()))
-        valgrindExecutable = dev->filePath(valgrindExecutable.path());
-
     CommandLine valgrind{valgrindExecutable};
-    valgrind.addArgs(m_settings.valgrindArguments.value(), CommandLine::Raw);
+    valgrind.addArgs(m_settings.valgrindArguments(), CommandLine::Raw);
     valgrind.addArgs(genericToolArguments());
-    valgrind.addArgs(toolArguments());
+    addToolArguments(valgrind);
 
     m_runner.setValgrindCommand(valgrind);
     m_runner.setDebuggee(runControl()->runnable());
@@ -95,23 +87,26 @@ void ValgrindToolRunner::stop()
 {
     m_isStopping = true;
     m_runner.stop();
+    appendMessage(Tr::tr("Process terminated."), ErrorMessageFormat);
+    m_progress.reportFinished();
+    reportStopped();
 }
 
 QStringList ValgrindToolRunner::genericToolArguments() const
 {
     QString smcCheckValue;
 
-    switch (m_settings.selfModifyingCodeDetection.value()) {
-    case ValgrindBaseSettings::DetectSmcNo:
+    switch (m_settings.selfModifyingCodeDetection()) {
+    case ValgrindSettings::DetectSmcNo:
         smcCheckValue = "none";
         break;
-    case ValgrindBaseSettings::DetectSmcEverywhere:
+    case ValgrindSettings::DetectSmcEverywhere:
         smcCheckValue = "all";
         break;
-    case ValgrindBaseSettings::DetectSmcEverywhereButFile:
+    case ValgrindSettings::DetectSmcEverywhereButFile:
         smcCheckValue = "all-non-file";
         break;
-    case ValgrindBaseSettings::DetectSmcStackOnly:
+    case ValgrindSettings::DetectSmcStackOnly:
     default:
         smcCheckValue = "stack";
         break;
@@ -142,11 +137,13 @@ void ValgrindToolRunner::runnerFinished()
 void ValgrindToolRunner::receiveProcessError(const QString &message, QProcess::ProcessError error)
 {
     if (error == QProcess::FailedToStart) {
-        const QString valgrind = m_settings.valgrindExecutable.value();
-        if (!valgrind.isEmpty())
-            appendMessage(Tr::tr("Error: \"%1\" could not be started: %2").arg(valgrind, message), ErrorMessageFormat);
-        else
+        const FilePath valgrind = m_settings.valgrindExecutable();
+        if (!valgrind.isEmpty()) {
+            appendMessage(Tr::tr("Error: \"%1\" could not be started: %2")
+                .arg(valgrind.toUserOutput(), message), ErrorMessageFormat);
+        } else {
             appendMessage(Tr::tr("Error: no Valgrind executable set."), ErrorMessageFormat);
+        }
     } else if (m_isStopping && error == QProcess::Crashed) { // process gets killed on stop
         appendMessage(Tr::tr("Process terminated."), ErrorMessageFormat);
     } else {

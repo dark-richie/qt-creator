@@ -14,8 +14,6 @@
 
 #include <coreplugin/icore.h>
 
-#include <utils/json.h>
-
 namespace QmlJSEditor {
 namespace Internal {
 
@@ -97,14 +95,14 @@ QmlJSTools::SemanticInfo SemanticInfoUpdater::makeNewSemanticInfo(const QmlJS::D
     semanticInfo.setRootScopeChain(QSharedPointer<const ScopeChain>(scopeChain));
 
     if (doc->language() == Dialect::Json) {
-        Utils::JsonSchema *schema = QmlJSEditorPlugin::jsonManager()->schemaForFile(
+        JsonSchema *schema = QmlJSEditorPlugin::jsonManager()->schemaForFile(
             doc->fileName().toString());
         if (schema) {
             JsonCheck jsonChecker(doc);
             semanticInfo.staticAnalysisMessages = jsonChecker(schema);
         }
     } else {
-        Check checker(doc, semanticInfo.context);
+        Check checker(doc, semanticInfo.context, Core::ICore::settings());
         semanticInfo.staticAnalysisMessages = checker();
     }
 

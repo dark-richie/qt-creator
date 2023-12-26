@@ -18,8 +18,8 @@
 #include <utils/environment.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <cppeditor/clangdiagnosticconfigsmodel.h>
 
@@ -138,12 +138,10 @@ QString hintAboutBuildBeforeAnalysis()
 
 void showHintAboutBuildBeforeAnalysis()
 {
-    Utils::CheckableMessageBox::doNotShowAgainInformation(
-        Core::ICore::dialogParent(),
-        Tr::tr("Info About Build the Project Before Analysis"),
-        hintAboutBuildBeforeAnalysis(),
-        Core::ICore::settings(),
-        "ClangToolsDisablingBuildBeforeAnalysisHint");
+    Utils::CheckableMessageBox::information(Core::ICore::dialogParent(),
+                                            Tr::tr("Info About Build the Project Before Analysis"),
+                                            hintAboutBuildBeforeAnalysis(),
+                                            Key("ClangToolsDisablingBuildBeforeAnalysisHint"));
 }
 
 FilePath fullPath(const FilePath &executable)
@@ -211,7 +209,7 @@ bool isVFSOverlaySupported(const FilePath &executable)
     static QMap<FilePath, bool> vfsCapabilities;
     auto it = vfsCapabilities.find(executable);
     if (it == vfsCapabilities.end()) {
-        QtcProcess p;
+        Process p;
         p.setCommand({executable, {"--help"}});
         p.runBlocking();
         it = vfsCapabilities.insert(executable, p.allOutput().contains("vfsoverlay"));
@@ -282,7 +280,7 @@ ClangDiagnosticConfig diagnosticConfig(const Utils::Id &diagConfigId)
 static QStringList extraOptions(const QString &envVar)
 {
     if (!qtcEnvironmentVariableIsSet(envVar))
-        return QStringList();
+        return {};
     QString arguments = qtcEnvironmentVariable(envVar);
     return ProcessArgs::splitArgs(arguments, HostOsInfo::hostOs());
 }
@@ -309,12 +307,25 @@ QStringList extraClangToolsAppendOptions()
     return options;
 }
 
+static QVersionNumber fixupVersion(const VersionAndSuffix &versionAndSuffix)
+{
+    // llvm.org only does document releases for the first released version
+    QVersionNumber version = QVersionNumber(versionAndSuffix.first.majorVersion(), 0, 0);
+
+    if (version == QVersionNumber(0))
+        version = QVersionNumber(12);
+
+    // Version 17.0.0 was never released due to a git issue
+    if (version.majorVersion() == 17)
+        version = QVersionNumber(17, 0, 1);
+
+    return version;
+}
+
 QString clangTidyDocUrl(const QString &check)
 {
     VersionAndSuffix version = ClangToolsSettings::clangTidyVersion();
-    version.first = QVersionNumber(version.first.majorVersion(), 0, 0);
-    if (version.first == QVersionNumber(0))
-        version.first = QVersionNumber(12);
+    version.first = fixupVersion(version);
     static const char versionedUrlPrefix[]
             = "https://releases.llvm.org/%1/tools/clang/tools/extra/docs/";
     static const char unversionedUrlPrefix[] = "https://clang.llvm.org/extra/";

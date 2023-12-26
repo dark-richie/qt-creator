@@ -4,20 +4,20 @@
 
 #pragma once
 
+#include <utils/filepath.h>
+
 #include <QGraphicsView>
 
-QT_FORWARD_DECLARE_CLASS(QImage)
-
-namespace Utils {
-class QtcSettings;
-}
+QT_BEGIN_NAMESPACE
+class QImage;
+QT_END_NAMESPACE
 
 namespace ImageViewer::Internal {
 
 class ImageViewerFile;
 
 struct ExportData {
-    QString fileName;
+    Utils::FilePath filePath;
     QSize size;
 };
 
@@ -49,8 +49,8 @@ public:
     void resetToOriginalSize();
     void setFitToScreen(bool fit);
 
-    void readSettings(Utils::QtcSettings *settings);
-    void writeSettings(Utils::QtcSettings *settings) const;
+    void readSettings();
+    void writeSettings() const;
     Settings settings() const;
 
 signals:

@@ -8,21 +8,24 @@
 
 #include <coreplugin/coreplugintr.h>
 #include <coreplugin/icontext.h>
-#include <cppeditor/cppprojectupdater.h>
+
 #include <cppeditor/projectinfo.h>
+
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/gcctoolchain.h>
 #include <projectexplorer/headerpath.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/namedwidget.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectnodes.h>
+#include <projectexplorer/projectupdater.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchainmanager.h>
+
 #include <texteditor/textdocument.h>
 
 #include <utils/algorithm.h>
@@ -42,7 +45,6 @@ namespace CompilationDatabaseProjectManager {
 namespace Internal {
 
 namespace {
-
 
 bool isGccCompiler(const QString &compilerName)
 {
@@ -73,9 +75,9 @@ Utils::Id getCompilerId(QString compilerName)
     return ProjectExplorer::Constants::CLANG_TOOLCHAIN_TYPEID;
 }
 
-ToolChain *toolchainFromCompilerId(const Utils::Id &compilerId, const Utils::Id &language)
+Toolchain *toolchainFromCompilerId(const Utils::Id &compilerId, const Utils::Id &language)
 {
-    return ToolChainManager::toolChain([&compilerId, &language](const ToolChain *tc) {
+    return ToolchainManager::toolchain([&compilerId, &language](const Toolchain *tc) {
         if (!tc->isValid() || tc->language() != language)
             return false;
         return tc->typeId() == compilerId;
@@ -103,14 +105,14 @@ QString compilerPath(QString pathFlag)
     return QDir::fromNativeSeparators(pathFlag);
 }
 
-ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Utils::Id &language)
+Toolchain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Utils::Id &language)
 {
     if (flags.empty())
-        return ToolChainKitAspect::toolChain(kit, language);
+        return ToolchainKitAspect::toolchain(kit, language);
 
     // Try exact compiler match.
     const Utils::FilePath compiler = Utils::FilePath::fromUserInput(compilerPath(flags.front()));
-    ToolChain *toolchain = ToolChainManager::toolChain([&compiler, &language](const ToolChain *tc) {
+    Toolchain *toolchain = ToolchainManager::toolchain([&compiler, &language](const Toolchain *tc) {
         return tc->isValid() && tc->language() == language && tc->compilerCommand() == compiler;
     });
     if (toolchain)
@@ -129,12 +131,12 @@ ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Ut
             return toolchain;
     }
 
-    toolchain = ToolChainKitAspect::toolChain(kit, language);
+    toolchain = ToolchainKitAspect::toolchain(kit, language);
     qWarning() << "No matching toolchain found, use the default.";
     return toolchain;
 }
 
-void addDriverModeFlagIfNeeded(const ToolChain *toolchain,
+void addDriverModeFlagIfNeeded(const Toolchain *toolchain,
                                QStringList &flags,
                                const QStringList &originalFlags)
 {
@@ -177,21 +179,21 @@ RawProjectPart makeRawProjectPart(const Utils::FilePath &projectFile,
 
     if (fileKind == CppEditor::ProjectFile::Kind::CHeader
             || fileKind == CppEditor::ProjectFile::Kind::CSource) {
-        if (!kitInfo.cToolChain) {
-            kitInfo.cToolChain = toolchainFromFlags(kit,
+        if (!kitInfo.cToolchain) {
+            kitInfo.cToolchain = toolchainFromFlags(kit,
                                                     originalFlags,
                                                     ProjectExplorer::Constants::C_LANGUAGE_ID);
         }
-        addDriverModeFlagIfNeeded(kitInfo.cToolChain, flags, originalFlags);
-        rpp.setFlagsForC({kitInfo.cToolChain, flags, workingDir});
+        addDriverModeFlagIfNeeded(kitInfo.cToolchain, flags, originalFlags);
+        rpp.setFlagsForC({kitInfo.cToolchain, flags, workingDir});
     } else {
-        if (!kitInfo.cxxToolChain) {
-            kitInfo.cxxToolChain = toolchainFromFlags(kit,
+        if (!kitInfo.cxxToolchain) {
+            kitInfo.cxxToolchain = toolchainFromFlags(kit,
                                                       originalFlags,
                                                       ProjectExplorer::Constants::CXX_LANGUAGE_ID);
         }
-        addDriverModeFlagIfNeeded(kitInfo.cxxToolChain, flags, originalFlags);
-        rpp.setFlagsForCxx({kitInfo.cxxToolChain, flags, workingDir});
+        addDriverModeFlagIfNeeded(kitInfo.cxxToolchain, flags, originalFlags);
+        rpp.setFlagsForCxx({kitInfo.cxxToolchain, flags, workingDir});
     }
 
     return rpp;
@@ -312,7 +314,7 @@ void createTree(std::unique_ptr<ProjectNode> &root,
 
 CompilationDatabaseBuildSystem::CompilationDatabaseBuildSystem(Target *target)
     : BuildSystem(target)
-    , m_cppCodeModelUpdater(std::make_unique<CppEditor::CppProjectUpdater>())
+    , m_cppCodeModelUpdater(ProjectUpdaterFactory::createCppProjectUpdater())
     , m_deployFileWatcher(new FileSystemWatcher(this))
 {
     connect(target->project(), &CompilationDatabaseProject::rootProjectDirectoryChanged,
@@ -348,8 +350,8 @@ void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
     ProjectExplorer::KitInfo kitInfo(k);
     QTC_ASSERT(kitInfo.isValid(), return);
     // Reset toolchains to pick them based on the database entries.
-    kitInfo.cToolChain = nullptr;
-    kitInfo.cxxToolChain = nullptr;
+    kitInfo.cToolchain = nullptr;
+    kitInfo.cxxToolchain = nullptr;
     RawProjectParts rpps;
 
     QTC_ASSERT(m_parser, return);
@@ -391,7 +393,7 @@ void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
 
     root->addNode(std::make_unique<FileNode>(projectFilePath(), FileType::Project));
 
-    if (QFile::exists(dbContents.extraFileName))
+    if (QFileInfo::exists(dbContents.extraFileName))
         root->addNode(std::make_unique<FileNode>(Utils::FilePath::fromString(dbContents.extraFileName),
                                                  FileType::Project));
 

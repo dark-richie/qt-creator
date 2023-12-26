@@ -12,12 +12,17 @@
     \if defined(qtdesignstudio)
     \previouspage studio-developer-topics.html
     \nextpage studio-porting-projects.html
-    \else
-    \previouspage creator-vcs-fossil.html
-    \nextpage creator-vcs-gitlab.html
-    \endif
 
     \title Using Git
+    \else
+    \previouspage creator-reference.html
+
+    \ingroup creator-reference-vcs
+
+    \title Git
+
+    \brief Additional Git functions.
+    \endif
 
     \l{http://git-scm.com/}{Git} is a fast decentralized version control system.
     Git is available for Windows, Linux, and \macos.
@@ -29,6 +34,7 @@
     \include creator-vcs-options.qdocinc vcs options
     \endif
 
+    \if defined(qtcreator)
     \section1 Using Git for Windows
 
     If you configure Git for use with \c {git bash}, only, and use SSH
@@ -39,14 +45,23 @@
     you run Git from a Windows command prompt, it looks for the SSH keys in its
     installation directory, and therefore, the authorization fails.
 
-    You can set the \c HOME environment variable from \QC. Select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Version Control} >
-    \uicontrol Git, and then select the
+    You can set the \c HOME environment variable from \QC. Select \preferences >
+    \uicontrol {Version Control} > \uicontrol Git, and then select the
     \uicontrol {Set "HOME" environment variable} check box. \c HOME is
     set to \c %HOMEDRIVE%%HOMEPATH% when the Git executable is run and
     authorization works as it would with \c {git bash}.
 
     \image qtcreator-preferences-vcs-git.webp {Git preferences}
+    \endif
+
+    \section1 Initializing Git Repositories
+
+    To start controlling a project directory that is currently not under
+    version control, select \uicontrol Tools > \uicontrol Git >
+    \uicontrol {Create Repository}. \QC creates a new subdirectory named .git
+    that has all the necessary repository files. However, Git does not track
+    anything in the project yet, so you will need to create an initial commit to
+    start tracking the project files.
 
     \section1 Working with the Current File
 
@@ -77,9 +92,8 @@
     The log output has the date, the commit message, and a commit
     identifier.
 
-    You can set the maximum number of log entries to show in \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Version Control} > \uicontrol Git >
-    \uicontrol {Log count}.
+    You can set the maximum number of log entries to show in \preferences >
+    \uicontrol {Version Control} > \uicontrol Git > \uicontrol {Log count}.
 
     Click on the commit identifier to view commit details.
 
@@ -128,11 +142,15 @@
     \image qtcreator-git-blame.webp {Git Blame view}
 
     By default, each line is annotated in the editor when you scroll through
-    the file. To disable this feature, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Version Control} > \uicontrol Git, and
-    deselect \uicontrol {Add instant blame annotations to editor}. To view
-    annotations for the current line, select \uicontrol Tools > \uicontrol Git >
-    \uicontrol {Current File} > \uicontrol {Instant Blame}.
+    the file. To disable this feature, select \preferences >
+    \uicontrol {Version Control} > \uicontrol Git, and
+    deselect \uicontrol {Instant Blame}. To find the commit that introduced
+    the last real code change, select \uicontrol {Ignore whitespace changes}.
+    To find the commit that introduced a line before it was moved, select
+    \uicontrol {Ignore line moves}.
+
+    To view annotations for the current line, select \uicontrol Tools >
+    \uicontrol Git > \uicontrol {Current File} > \uicontrol {Instant Blame}.
 
     Click the commit identifier to show a detailed description of the change.
 
@@ -182,7 +200,7 @@
 
     \section2 Cleaning Projects
 
-    To clean the working directory, select \uicontrol {Build Project} > \uicontrol {Clean}.
+    To clean the working directory, select \uicontrol {Clean Project}.
     All files that are not under version control are displayed in
     the \uicontrol {Clean Repository} dialog. Ignored files are deselected by
     default. Select the files to delete, and then select \uicontrol Delete.
@@ -464,15 +482,6 @@
             \li Show the commit in the diff editor.
     \endtable
 
-    \section1 Initializing Git Repositories
-
-    To start controlling a project directory that is currently not under
-    version control, select \uicontrol Tools > \uicontrol Git >
-    \uicontrol {Create Repository}. \QC creates a new subdirectory named .git
-    that has all the necessary repository files. However, Git does not track
-    anything in the project yet, so you will need to create an initial commit to
-    start tracking the project files.
-
     \section1 Working with Remote Repositories
 
     To work with remote repositories, select the commands in \uicontrol Tools >
@@ -483,7 +492,7 @@
 
     To pull changes from the remote repository, select \uicontrol Pull. If there
     are locally modified files, you are prompted to stash the changes. Select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Version Control} >
+    \preferences > \uicontrol {Version Control} >
     \uicontrol Git and then select the \uicontrol {Pull with rebase} check box
     to perform a rebase operation while pulling.
 
@@ -572,8 +581,8 @@
     To refresh the list of changes, select \uicontrol Refresh.
 
     The \uicontrol Remote field lists the remotes of the current repository that
-    are detected as Gerrit servers. Select \uicontrol Edit > \uicontrol Preferences
-    > \uicontrol {Version Control} > \uicontrol Gerrit to specify a fallback
+    are detected as Gerrit servers. Select \preferences >
+    \uicontrol {Version Control} > \uicontrol Gerrit to specify a fallback
     connection to a Gerrit server over SSH. The Gerrit REST interface and the
     \l{https://curl.haxx.se/}{curl} tool are used for HTTP connections.
 
@@ -589,7 +598,7 @@
 
     \note On \macos, the default Git installation does not have Git Gui. To
     use Git Gui, install it separately. To start Git Gui from \QC, select
-    \uicontrol Preferences > \uicontrol {Version Control} > \uicontrol Git, and
+    \preferences > \uicontrol {Version Control} > \uicontrol Git, and
     set the path to the environment that has Git Gui in the
     \uicontrol {Prepend to PATH} field.
 
@@ -597,12 +606,11 @@
     \uicontrol Git > \uicontrol {Git Tools} > \uicontrol Gitk. You can also
     start the tool to view commits in the current document or in the folder that
     has the current document. To specify arguments for running Gitk, select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Version Control} >
-    \uicontrol Git.
+    \preferences > \uicontrol {Version Control} > \uicontrol Git.
 
     To use some other application for viewing Git history, such as GitX or
-    QGit viewer, select \uicontrol Edit > \uicontrol Preferences >
-    \uicontrol {Version Control} > \uicontrol Git and specify the path to the
+    QGit viewer, select \preferences > \uicontrol {Version Control} >
+    \uicontrol Git and specify the path to the
     application executable in the \uicontrol {Command} field. To start the
     application, select \uicontrol Tools > \uicontrol Git
     > \uicontrol {Git Tools} > \uicontrol {Repository Browser}.
@@ -613,4 +621,8 @@
     To resolve merge conflicts, select \uicontrol Tools > \uicontrol Git >
     \uicontrol {Git Tools} > \uicontrol {Merge Tool}. This menu item is
     visible only when you have merge conflicts to resolve.
+
+    \if defined(qtcreator)
+    \sa {Set up version control systems}, {Version Control Systems}
+    \endif
 */

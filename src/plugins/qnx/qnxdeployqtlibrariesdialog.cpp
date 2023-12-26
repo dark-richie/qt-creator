@@ -16,9 +16,9 @@
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
+#include <utils/process.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QComboBox>
 #include <QDir>
@@ -31,12 +31,10 @@
 
 using namespace ProjectExplorer;
 using namespace QtSupport;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace Qnx::Internal {
-
-const int MaxConcurrentStatCalls = 10;
 
 class QnxDeployQtLibrariesDialogPrivate : public QObject
 {
@@ -90,11 +88,9 @@ public:
 
 private:
     Group deployRecipe();
-    TaskItem checkDirTask();
-    TaskItem removeDirTask();
-    TaskItem uploadTask();
-    TaskItem chmodTask(const DeployableFile &file);
-    TaskItem chmodTree();
+    GroupItem checkDirTask();
+    GroupItem removeDirTask();
+    GroupItem uploadTask();
 
     enum class CheckResult { RemoveDir, SkipRemoveDir, Abort };
     CheckResult m_checkResult = CheckResult::Abort;
@@ -117,15 +113,24 @@ QList<DeployableFile> collectFilesToUpload(const DeployableFile &deployable)
     return collected;
 }
 
-TaskItem QnxDeployQtLibrariesDialogPrivate::checkDirTask()
+GroupItem QnxDeployQtLibrariesDialogPrivate::checkDirTask()
 {
-    const auto setupHandler = [this](QtcProcess &process) {
+    const auto onSetup = [this](Process &process) {
         m_deployLogWindow->appendPlainText(Tr::tr("Checking existence of \"%1\"")
                                            .arg(fullRemoteDirectory()));
         process.setCommand({m_device->filePath("test"), {"-d", fullRemoteDirectory()}});
     };
-    const auto doneHandler = [this](const QtcProcess &process) {
-        Q_UNUSED(process)
+    const auto onDone = [this](const Process &process, DoneWith result) {
+        if (result != DoneWith::Success) {
+            if (process.result() != ProcessResult::FinishedWithError) {
+                m_deployLogWindow->appendPlainText(Tr::tr("Connection failed: %1")
+                                                       .arg(process.errorString()));
+                m_checkResult = CheckResult::Abort;
+                return;
+            }
+            m_checkResult = CheckResult::SkipRemoveDir;
+            return;
+        }
         const int answer = QMessageBox::question(q, q->windowTitle(),
                 Tr::tr("The remote directory \"%1\" already exists.\n"
                        "Deploying to that directory will remove any files already present.\n\n"
@@ -133,41 +138,32 @@ TaskItem QnxDeployQtLibrariesDialogPrivate::checkDirTask()
                        QMessageBox::Yes | QMessageBox::No);
         m_checkResult = answer == QMessageBox::Yes ? CheckResult::RemoveDir : CheckResult::Abort;
     };
-    const auto errorHandler = [this](const QtcProcess &process) {
-        if (process.result() != ProcessResult::FinishedWithError) {
-            m_deployLogWindow->appendPlainText(Tr::tr("Connection failed: %1")
-                                               .arg(process.errorString()));
-            m_checkResult = CheckResult::Abort;
-            return;
-        }
-        m_checkResult = CheckResult::SkipRemoveDir;
-    };
-    return Process(setupHandler, doneHandler, errorHandler);
+    return ProcessTask(onSetup, onDone);
 }
 
-TaskItem QnxDeployQtLibrariesDialogPrivate::removeDirTask()
+GroupItem QnxDeployQtLibrariesDialogPrivate::removeDirTask()
 {
-    const auto setupHandler = [this](QtcProcess &process) {
+    const auto onSetup = [this](Process &process) {
         if (m_checkResult != CheckResult::RemoveDir)
-            return TaskAction::StopWithDone;
+            return SetupResult::StopWithSuccess;
         m_deployLogWindow->appendPlainText(Tr::tr("Removing \"%1\"").arg(fullRemoteDirectory()));
         process.setCommand({m_device->filePath("rm"), {"-rf", fullRemoteDirectory()}});
-        return TaskAction::Continue;
+        return SetupResult::Continue;
     };
-    const auto errorHandler = [this](const QtcProcess &process) {
+    const auto onError = [this](const Process &process) {
         QTC_ASSERT(process.exitCode() == 0, return);
         m_deployLogWindow->appendPlainText(Tr::tr("Connection failed: %1")
                                            .arg(process.errorString()));
     };
-    return Process(setupHandler, {}, errorHandler);
+    return ProcessTask(onSetup, onError, CallDoneIf::Error);
 }
 
-TaskItem QnxDeployQtLibrariesDialogPrivate::uploadTask()
+GroupItem QnxDeployQtLibrariesDialogPrivate::uploadTask()
 {
-    const auto setupHandler = [this](FileTransfer &transfer) {
+    const auto onSetup = [this](FileTransfer &transfer) {
         if (m_deployableFiles.isEmpty()) {
             emitProgressMessage(Tr::tr("No files need to be uploaded."));
-            return TaskAction::StopWithDone;
+            return SetupResult::StopWithSuccess;
         }
         emitProgressMessage(Tr::tr("%n file(s) need to be uploaded.", "",
                                    m_deployableFiles.size()));
@@ -177,60 +173,26 @@ TaskItem QnxDeployQtLibrariesDialogPrivate::uploadTask()
                 const QString message = Tr::tr("Local file \"%1\" does not exist.")
                                               .arg(file.localFilePath().toUserOutput());
                 emitErrorMessage(message);
-                return TaskAction::StopWithError;
+                return SetupResult::StopWithError;
             }
-            files.append({file.localFilePath(), m_device->filePath(file.remoteFilePath())});
+            const FilePermissions permissions = file.isExecutable()
+                ? FilePermissions::ForceExecutable : FilePermissions::Default;
+            files.append({file.localFilePath(), m_device->filePath(file.remoteFilePath()),
+                          permissions});
         }
         if (files.isEmpty()) {
             emitProgressMessage(Tr::tr("No files need to be uploaded."));
-            return TaskAction::StopWithDone;
+            return SetupResult::StopWithSuccess;
         }
         transfer.setFilesToTransfer(files);
         QObject::connect(&transfer, &FileTransfer::progress,
                          this, &QnxDeployQtLibrariesDialogPrivate::emitProgressMessage);
-        return TaskAction::Continue;
+        return SetupResult::Continue;
     };
-    const auto errorHandler = [this](const FileTransfer &transfer) {
+    const auto onError = [this](const FileTransfer &transfer) {
         emitErrorMessage(transfer.resultData().m_errorString);
     };
-    return Transfer(setupHandler, {}, errorHandler);
-}
-
-TaskItem QnxDeployQtLibrariesDialogPrivate::chmodTask(const DeployableFile &file)
-{
-    const auto setupHandler = [=](QtcProcess &process) {
-        process.setCommand({m_device->filePath("chmod"),
-                {"a+x", Utils::ProcessArgs::quoteArgUnix(file.remoteFilePath())}});
-    };
-    const auto errorHandler = [=](const QtcProcess &process) {
-        const QString error = process.errorString();
-        if (!error.isEmpty()) {
-            emitWarningMessage(Tr::tr("Remote chmod failed for file \"%1\": %2")
-                                   .arg(file.remoteFilePath(), error));
-        } else if (process.exitCode() != 0) {
-            emitWarningMessage(Tr::tr("Remote chmod failed for file \"%1\": %2")
-                                   .arg(file.remoteFilePath(), process.cleanedStdErr()));
-        }
-    };
-    return Process(setupHandler, {}, errorHandler);
-}
-
-TaskItem QnxDeployQtLibrariesDialogPrivate::chmodTree()
-{
-    const auto setupChmodHandler = [=](TaskTree &tree) {
-        QList<DeployableFile> filesToChmod;
-        for (const DeployableFile &file : std::as_const(m_deployableFiles)) {
-            if (file.isExecutable())
-                filesToChmod << file;
-        }
-        QList<TaskItem> chmodList{optional, ParallelLimit(MaxConcurrentStatCalls)};
-        for (const DeployableFile &file : std::as_const(filesToChmod)) {
-            QTC_ASSERT(file.isValid(), continue);
-            chmodList.append(chmodTask(file));
-        }
-        tree.setupRoot(chmodList);
-    };
-    return Tree{setupChmodHandler};
+    return FileTransferTask(onSetup, onError, CallDoneIf::Error);
 }
 
 Group QnxDeployQtLibrariesDialogPrivate::deployRecipe()
@@ -238,7 +200,7 @@ Group QnxDeployQtLibrariesDialogPrivate::deployRecipe()
     const auto setupHandler = [this] {
         if (!m_device) {
             emitErrorMessage(Tr::tr("No device configuration set."));
-            return TaskAction::StopWithError;
+            return SetupResult::StopWithError;
         }
         QList<DeployableFile> collected;
         for (int i = 0; i < m_deployableFiles.count(); ++i)
@@ -247,32 +209,31 @@ Group QnxDeployQtLibrariesDialogPrivate::deployRecipe()
         QTC_CHECK(collected.size() >= m_deployableFiles.size());
         m_deployableFiles = collected;
         if (!m_deployableFiles.isEmpty())
-            return TaskAction::Continue;
+            return SetupResult::Continue;
 
         emitProgressMessage(Tr::tr("No deployment action necessary. Skipping."));
-        return TaskAction::StopWithDone;
+        return SetupResult::StopWithSuccess;
     };
     const auto doneHandler = [this] {
         emitProgressMessage(Tr::tr("All files successfully deployed."));
     };
     const auto subGroupSetupHandler = [this] {
         if (m_checkResult == CheckResult::Abort)
-            return TaskAction::StopWithError;
-        return TaskAction::Continue;
+            return SetupResult::StopWithError;
+        return SetupResult::Continue;
     };
     const Group root {
-        OnGroupSetup(setupHandler),
+        onGroupSetup(setupHandler),
         Group {
-            optional,
+            finishAllAndSuccess,
             checkDirTask()
         },
         Group {
-            OnGroupSetup(subGroupSetupHandler),
+            onGroupSetup(subGroupSetupHandler),
             removeDirTask(),
-            uploadTask(),
-            chmodTree()
+            uploadTask()
         },
-        OnGroupDone(doneHandler)
+        onGroupDone(doneHandler, CallDoneIf::Success)
     };
     return root;
 }
@@ -300,12 +261,10 @@ void QnxDeployQtLibrariesDialogPrivate::start()
     m_deployProgress->setRange(0, m_deployableFiles.count());
 
     m_taskTree.reset(new TaskTree(deployRecipe()));
-    const auto endHandler = [this] {
+    connect(m_taskTree.get(), &TaskTree::done, this, [this] {
         m_taskTree.release()->deleteLater();
         handleUploadFinished();
-    };
-    connect(m_taskTree.get(), &TaskTree::done, this, endHandler);
-    connect(m_taskTree.get(), &TaskTree::errorOccurred, this, endHandler);
+    });
     m_taskTree->start();
 }
 

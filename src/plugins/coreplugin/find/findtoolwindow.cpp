@@ -22,7 +22,6 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
-#include <QSettings>
 #include <QStringListModel>
 
 using namespace Utils;
@@ -65,6 +64,7 @@ FindToolWindow::FindToolWindow(QWidget *parent)
 
     m_searchTerm = new FancyLineEdit(this);
     m_searchTerm->setFiltering(true);
+    m_searchTerm->setPlaceholderText({});
 
     m_searchLabel = new QLabel(this);
     m_searchLabel->setText(Tr::tr("Search f&or:", nullptr));
@@ -109,7 +109,8 @@ FindToolWindow::FindToolWindow(QWidget *parent)
         m_wholeWords,
         m_regExp,
         st,
-    }.attachTo(m_optionsWidget, WithoutMargins);
+        noMargin
+    }.attachTo(m_optionsWidget);
 
     Grid {
         label, m_filterList, br,
@@ -358,9 +359,9 @@ void FindToolWindow::writeSettings()
 
 void FindToolWindow::readSettings()
 {
-    QSettings *settings = ICore::settings();
-    settings->beginGroup(QLatin1String("Find"));
-    const QString currentFilter = settings->value(QLatin1String("CurrentFilter")).toString();
+    QtcSettings *settings = ICore::settings();
+    settings->beginGroup("Find");
+    const QString currentFilter = settings->value("CurrentFilter").toString();
     for (int i = 0; i < m_filters.size(); ++i) {
         IFindFilter *filter = m_filters.at(i);
         filter->readSettings(settings);

@@ -57,7 +57,7 @@ QList<MimeType> allMimeTypes()
 void setMimeStartupPhase(MimeStartupPhase phase)
 {
     auto d = MimeDatabasePrivate::instance();
-    QMutexLocker locker(&d->mutex);
+    QWriteLocker locker(&d->m_initMutex);
     if (int(phase) != d->m_startupPhase + 1) {
         qWarning("Unexpected jump in MimedDatabase lifetime from %d to %d",
                  d->m_startupPhase,
@@ -70,11 +70,6 @@ void addMimeTypes(const QString &id, const QByteArray &data)
 {
     auto d = MimeDatabasePrivate::instance();
     QMutexLocker locker(&d->mutex);
-
-    if (d->m_startupPhase >= int(MimeStartupPhase::PluginsDelayedInitializing)) {
-        qWarning("Adding items for ID \"%s\" to MimeDatabase after initialization time",
-                 qPrintable(id));
-    }
 
     d->addMimeData(id, data);
 }
@@ -128,6 +123,16 @@ void visitMimeParents(const MimeType &mimeType,
             }
         }
     }
+}
+
+/*!
+    The \a init function will be executed once after the MIME database is first initialized.
+    It must be thread safe.
+*/
+void addMimeInitializer(const std::function<void()> &init)
+{
+    auto d = MimeDatabasePrivate::instance();
+    d->addInitializer(init);
 }
 
 } // namespace Utils

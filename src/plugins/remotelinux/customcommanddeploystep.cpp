@@ -11,11 +11,11 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfigurationaspects.h>
 
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
-using namespace Utils::Tasking;
 
 namespace RemoteLinux::Internal {
 
@@ -25,55 +25,50 @@ public:
     CustomCommandDeployStep(BuildStepList *bsl, Id id)
         : AbstractRemoteLinuxDeployStep(bsl, id)
     {
-        auto commandLine = addAspect<StringAspect>();
-        commandLine->setSettingsKey("RemoteLinuxCustomCommandDeploymentStep.CommandLine");
-        commandLine->setLabelText(Tr::tr("Command line:"));
-        commandLine->setDisplayStyle(StringAspect::LineEditDisplay);
-        commandLine->setHistoryCompleter("RemoteLinuxCustomCommandDeploymentStep.History");
+        commandLine.setSettingsKey("RemoteLinuxCustomCommandDeploymentStep.CommandLine");
+        commandLine.setLabelText(Tr::tr("Command line:"));
+        commandLine.setDisplayStyle(StringAspect::LineEditDisplay);
+        commandLine.setHistoryCompleter("RemoteLinuxCustomCommandDeploymentStep.History");
 
-        setInternalInitializer([this, commandLine] {
-            m_commandLine = commandLine->value().trimmed();
-            return isDeploymentPossible();
-        });
+        setInternalInitializer([this] { return isDeploymentPossible(); });
 
         addMacroExpander();
     }
 
-    CheckResult isDeploymentPossible() const final;
+    expected_str<void> isDeploymentPossible() const final;
 
 private:
-    Group deployRecipe() final;
+    GroupItem deployRecipe() final;
 
-    QString m_commandLine;
+    StringAspect commandLine{this};
 };
 
-CheckResult CustomCommandDeployStep::isDeploymentPossible() const
+expected_str<void> CustomCommandDeployStep::isDeploymentPossible() const
 {
-    if (m_commandLine.isEmpty())
-        return CheckResult::failure(Tr::tr("No command line given."));
+    if (commandLine().isEmpty())
+        return make_unexpected(Tr::tr("No command line given."));
 
     return AbstractRemoteLinuxDeployStep::isDeploymentPossible();
 }
 
-Group CustomCommandDeployStep::deployRecipe()
+GroupItem CustomCommandDeployStep::deployRecipe()
 {
-    const auto setupHandler = [this](QtcProcess &process) {
-        addProgressMessage(Tr::tr("Starting remote command \"%1\"...").arg(m_commandLine));
+    const auto onSetup = [this](Process &process) {
+        addProgressMessage(Tr::tr("Starting remote command \"%1\"...").arg(commandLine()));
         process.setCommand({deviceConfiguration()->filePath("/bin/sh"),
-                                 {"-c", m_commandLine}});
-        QtcProcess *proc = &process;
-        connect(proc, &QtcProcess::readyReadStandardOutput, this, [this, proc] {
+                                 {"-c", commandLine()}});
+        Process *proc = &process;
+        connect(proc, &Process::readyReadStandardOutput, this, [this, proc] {
             handleStdOutData(proc->readAllStandardOutput());
         });
-        connect(proc, &QtcProcess::readyReadStandardError, this, [this, proc] {
+        connect(proc, &Process::readyReadStandardError, this, [this, proc] {
             handleStdErrData(proc->readAllStandardError());
         });
     };
-    const auto doneHandler = [this](const QtcProcess &) {
-        addProgressMessage(Tr::tr("Remote command finished successfully."));
-    };
-    const auto errorHandler = [this](const QtcProcess &process) {
-        if (process.error() != QProcess::UnknownError
+    const auto onDone = [this](const Process &process, DoneWith result) {
+        if (result == DoneWith::Success) {
+            addProgressMessage(Tr::tr("Remote command finished successfully."));
+        } else if (process.error() != QProcess::UnknownError
                 || process.exitStatus() != QProcess::NormalExit) {
             addErrorMessage(Tr::tr("Remote process failed: %1").arg(process.errorString()));
         } else if (process.exitCode() != 0) {
@@ -81,18 +76,27 @@ Group CustomCommandDeployStep::deployRecipe()
                 .arg(process.exitCode()));
         }
     };
-    return Group { Process(setupHandler, doneHandler, errorHandler) };
+    return ProcessTask(onSetup, onDone);
 }
 
 
 // CustomCommandDeployStepFactory
 
-CustomCommandDeployStepFactory::CustomCommandDeployStepFactory()
+class CustomCommandDeployStepFactory final : public BuildStepFactory
 {
-    registerStep<CustomCommandDeployStep>(Constants::CustomCommandDeployStepId);
-    setDisplayName(Tr::tr("Run custom remote command"));
-    setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
-    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+public:
+    CustomCommandDeployStepFactory()
+    {
+        registerStep<CustomCommandDeployStep>(Constants::CustomCommandDeployStepId);
+        setDisplayName(Tr::tr("Run custom remote command"));
+        setSupportedConfiguration(RemoteLinux::Constants::DeployToGenericLinux);
+        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+    }
+};
+
+void setupCustomCommandDeployStep()
+{
+    static CustomCommandDeployStepFactory theCustomCommandDeployStepFactory;
 }
 
 } // RemoteLinux::Internal

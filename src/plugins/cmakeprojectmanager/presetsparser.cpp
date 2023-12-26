@@ -44,7 +44,7 @@ std::optional<QStringList> parseInclude(const QJsonValue &jsonValue)
         if (jsonValue.isArray()) {
             includes = QStringList();
             const QJsonArray includeArray = jsonValue.toArray();
-            for (const QJsonValue &includeValue : includeArray)
+            for (const auto &includeValue : includeArray)
                 includes.value() << includeValue.toString();
         }
     }
@@ -82,7 +82,7 @@ std::optional<PresetsDetails::Condition> parseCondition(const QJsonValue &jsonVa
 
     if (type == "const") {
         condition->type = type;
-        condition->constValue = object.value("const").toBool();
+        condition->constValue = object.value("value").toBool();
         return condition;
     }
 
@@ -103,7 +103,7 @@ std::optional<PresetsDetails::Condition> parseCondition(const QJsonValue &jsonVa
             if (object.value("list").isArray()) {
                 condition->list = QStringList();
                 const QJsonArray listArray = object.value("list").toArray();
-                for (const QJsonValue &listValue : listArray)
+                for (const auto &listValue : listArray)
                     condition->list.value() << listValue.toString();
             }
         }
@@ -127,7 +127,7 @@ std::optional<PresetsDetails::Condition> parseCondition(const QJsonValue &jsonVa
             if (object.value("conditions").isArray()) {
                 condition->conditions = std::vector<PresetsDetails::Condition::ConditionPtr>();
                 const QJsonArray conditionsArray = object.value("conditions").toArray();
-                for (const QJsonValue &conditionsValue : conditionsArray) {
+                for (const auto &conditionsValue : conditionsArray) {
                     condition->conditions.value().emplace_back(
                         std::make_shared<PresetsDetails::Condition>(
                             parseCondition(conditionsValue).value()));
@@ -160,7 +160,7 @@ bool parseConfigurePresets(const QJsonValue &jsonValue,
         return false;
 
     const QJsonArray configurePresetsArray = jsonValue.toArray();
-    for (const QJsonValue &presetJson : configurePresetsArray) {
+    for (const auto &presetJson : configurePresetsArray) {
         if (!presetJson.isObject())
             continue;
 
@@ -176,7 +176,7 @@ bool parseConfigurePresets(const QJsonValue &jsonValue,
             preset.inherits = QStringList();
             if (inherits.isArray()) {
                 const QJsonArray inheritsArray = inherits.toArray();
-                for (const QJsonValue &inheritsValue : inheritsArray)
+                for (const auto &inheritsValue : inheritsArray)
                     preset.inherits.value() << inheritsValue.toString();
             } else {
                 QString inheritsValue = inherits.toString();
@@ -215,12 +215,24 @@ bool parseConfigurePresets(const QJsonValue &jsonValue,
                 item.key = cacheKey.toUtf8();
                 item.type = CMakeConfigItem::typeStringToType(
                     cacheVariableObj.value("type").toString().toUtf8());
-                item.value = cacheVariableObj.value("type").toString().toUtf8();
+                item.value = cacheVariableObj.value("value").toString().toUtf8();
                 preset.cacheVariables.value() << item;
 
             } else {
-                preset.cacheVariables.value()
-                    << CMakeConfigItem(cacheKey.toUtf8(), cacheValue.toString().toUtf8());
+                if (cacheValue.isBool()) {
+                    preset.cacheVariables.value()
+                        << CMakeConfigItem(cacheKey.toUtf8(),
+                                           CMakeConfigItem::BOOL,
+                                           cacheValue.toBool() ? "ON" : "OFF");
+                } else if (CMakeConfigItem::toBool(cacheValue.toString()).has_value()) {
+                    preset.cacheVariables.value()
+                        << CMakeConfigItem(cacheKey.toUtf8(),
+                                           CMakeConfigItem::BOOL,
+                                           cacheValue.toString().toUtf8());
+                } else {
+                    preset.cacheVariables.value()
+                        << CMakeConfigItem(cacheKey.toUtf8(), cacheValue.toString().toUtf8());
+                }
             }
         }
 
@@ -284,6 +296,15 @@ bool parseConfigurePresets(const QJsonValue &jsonValue,
                 if (strategy == "external")
                     preset.architecture->strategy
                         = PresetsDetails::ValueStrategyPair::Strategy::external;
+            } else {
+                preset.architecture->strategy = PresetsDetails::ValueStrategyPair::Strategy::set;
+            }
+        } else {
+            const QString value = object.value("architecture").toString();
+            if (!value.isEmpty()) {
+                preset.architecture = PresetsDetails::ValueStrategyPair();
+                preset.architecture->value = value;
+                preset.architecture->strategy = PresetsDetails::ValueStrategyPair::Strategy::set;
             }
         }
 
@@ -299,6 +320,15 @@ bool parseConfigurePresets(const QJsonValue &jsonValue,
                     preset.toolset->strategy = PresetsDetails::ValueStrategyPair::Strategy::set;
                 if (strategy == "external")
                     preset.toolset->strategy = PresetsDetails::ValueStrategyPair::Strategy::external;
+            } else {
+                preset.toolset->strategy = PresetsDetails::ValueStrategyPair::Strategy::set;
+            }
+        } else {
+            const QString value = object.value("toolset").toString();
+            if (!value.isEmpty()) {
+                preset.toolset = PresetsDetails::ValueStrategyPair();
+                preset.toolset->value = value;
+                preset.toolset->strategy = PresetsDetails::ValueStrategyPair::Strategy::set;
             }
         }
 
@@ -320,7 +350,7 @@ bool parseBuildPresets(const QJsonValue &jsonValue,
         return false;
 
     const QJsonArray buildPresetsArray = jsonValue.toArray();
-    for (const QJsonValue &presetJson : buildPresetsArray) {
+    for (const auto &presetJson : buildPresetsArray) {
         if (!presetJson.isObject())
             continue;
 
@@ -336,7 +366,7 @@ bool parseBuildPresets(const QJsonValue &jsonValue,
             preset.inherits = QStringList();
             if (inherits.isArray()) {
                 const QJsonArray inheritsArray = inherits.toArray();
-                for (const QJsonValue &inheritsValue : inheritsArray)
+                for (const auto &inheritsValue : inheritsArray)
                     preset.inherits.value() << inheritsValue.toString();
             } else {
                 QString inheritsValue = inherits.toString();
@@ -374,7 +404,7 @@ bool parseBuildPresets(const QJsonValue &jsonValue,
             preset.targets = QStringList();
             if (targets.isArray()) {
                 const QJsonArray targetsArray = targets.toArray();
-                for (const QJsonValue &targetsValue : targetsArray)
+                for (const auto &targetsValue : targetsArray)
                     preset.targets.value() << targetsValue.toString();
             } else {
                 QString targetsValue = targets.toString();
@@ -394,7 +424,7 @@ bool parseBuildPresets(const QJsonValue &jsonValue,
             if (nativeToolOptions.isArray()) {
                 preset.nativeToolOptions = QStringList();
                 const QJsonArray toolOptionsArray = nativeToolOptions.toArray();
-                for (const QJsonValue &toolOptionsValue : toolOptionsArray)
+                for (const auto &toolOptionsValue : toolOptionsArray)
                     preset.nativeToolOptions.value() << toolOptionsValue.toString();
             }
         }
@@ -414,7 +444,8 @@ bool PresetsParser::parse(const Utils::FilePath &jsonFile, QString &errorMessage
 {
     const Utils::expected_str<QByteArray> jsonContents = jsonFile.fileContents();
     if (!jsonContents) {
-        errorMessage = Tr::tr("Failed to read file \"%1\".").arg(jsonFile.fileName());
+        errorMessage
+            = ::CMakeProjectManager::Tr::tr("Failed to read file \"%1\".").arg(jsonFile.fileName());
         return false;
     }
 
@@ -430,7 +461,8 @@ bool PresetsParser::parse(const Utils::FilePath &jsonFile, QString &errorMessage
     }
 
     if (!jsonDoc.isObject()) {
-        errorMessage = Tr::tr("Invalid file \"%1\".").arg(jsonFile.fileName());
+        errorMessage
+            = ::CMakeProjectManager::Tr::tr("Invalid file \"%1\".").arg(jsonFile.fileName());
         return false;
     }
 
@@ -439,7 +471,8 @@ bool PresetsParser::parse(const Utils::FilePath &jsonFile, QString &errorMessage
     m_presetsData.fileDir = jsonFile.parentDir();
 
     if (!parseVersion(root.value("version"), m_presetsData.version)) {
-        errorMessage = Tr::tr("Invalid \"version\" in file \"%1\".").arg(jsonFile.fileName());
+        errorMessage = ::CMakeProjectManager::Tr::tr("Invalid \"version\" in file \"%1\".")
+                           .arg(jsonFile.fileName());
         return false;
     }
 
@@ -454,8 +487,9 @@ bool PresetsParser::parse(const Utils::FilePath &jsonFile, QString &errorMessage
     if (!parseConfigurePresets(root.value("configurePresets"),
                                m_presetsData.configurePresets,
                                jsonFile.parentDir())) {
-        errorMessage
-            = Tr::tr("Invalid \"configurePresets\" section in %1 file").arg(jsonFile.fileName());
+        errorMessage = ::CMakeProjectManager::Tr::tr(
+                           "Invalid \"configurePresets\" section in %1 file")
+                           .arg(jsonFile.fileName());
         return false;
     }
 
@@ -463,8 +497,8 @@ bool PresetsParser::parse(const Utils::FilePath &jsonFile, QString &errorMessage
     if (!parseBuildPresets(root.value("buildPresets"),
                            m_presetsData.buildPresets,
                            jsonFile.parentDir())) {
-        errorMessage
-            = Tr::tr("Invalid \"buildPresets\" section in %1 file").arg(jsonFile.fileName());
+        errorMessage = ::CMakeProjectManager::Tr::tr("Invalid \"buildPresets\" section in %1 file")
+                           .arg(jsonFile.fileName());
         return false;
     }
 

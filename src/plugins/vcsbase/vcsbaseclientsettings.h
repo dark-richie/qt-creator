@@ -15,17 +15,14 @@ public:
     VcsBaseSettings();
     ~VcsBaseSettings();
 
-    Utils::StringAspect binaryPath;
-    Utils::StringAspect userName;
-    Utils::StringAspect userEmail;
-    Utils::IntegerAspect logCount;
-    Utils::IntegerAspect timeout; // Seconds
-    Utils::StringAspect path;
+    Utils::FilePathAspect binaryPath{this};
+    Utils::StringAspect userName{this};
+    Utils::StringAspect userEmail{this};
+    Utils::IntegerAspect logCount{this};
+    Utils::IntegerAspect timeout{this}; // Seconds
+    Utils::StringAspect path{this};
 
     Utils::FilePaths searchPathList() const;
-
-private:
-    QString m_settingsGroup;
 };
 
 } // namespace VcsBase

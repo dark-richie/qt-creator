@@ -204,7 +204,7 @@ DocSettingsPageWidget::DocSettingsPageWidget()
             &QSortFilterProxyModel::setFilterFixedString);
 
     connect(addButton, &QAbstractButton::clicked, this, &DocSettingsPageWidget::addDocumentation);
-    connect(removeButton, &QAbstractButton::clicked, this, [this]() {
+    connect(removeButton, &QAbstractButton::clicked, this, [this] {
         removeDocumentation(currentSelection());
     });
 
@@ -289,7 +289,7 @@ void DocSettingsPageWidget::addDocumentation()
 
 void DocSettingsPageWidget::apply()
 {
-    HelpManager::unregisterNamespaces(m_filesToUnregister.keys());
+    HelpManager::instance()->unregisterDocumentation(m_filesToUnregister.values());
     QStringList files;
     auto it = m_filesToRegisterUserManaged.constBegin();
     while (it != m_filesToRegisterUserManaged.constEnd()) {

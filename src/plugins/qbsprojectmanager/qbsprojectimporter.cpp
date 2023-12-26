@@ -10,17 +10,19 @@
 #include <coreplugin/documentmanager.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildinfo.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/toolchain.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
+#include <utils/algorithm.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
 
 #include <QFileInfo>
+#include <QJsonArray>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -39,6 +41,7 @@ struct BuildGraphData
     FilePath qtBinPath;
     FilePath sysroot;
     QString buildVariant;
+    QStringList targetOS;
 };
 static BuildGraphData extractBgData(const QbsSession::BuildGraphInfo &bgInfo)
 {
@@ -49,7 +52,8 @@ static BuildGraphData extractBgData(const QbsSession::BuildGraphInfo &bgInfo)
     const QVariantMap prjCompilerPathByLanguage
             = moduleProps.value("cpp.compilerPathByLanguage").toMap();
     const QString prjCompilerPath = moduleProps.value("cpp.compilerPath").toString();
-    const QStringList prjToolchain = moduleProps.value("qbs.toolchain").toStringList();
+    const QStringList prjToolchain = arrayToStringList(
+        moduleProps.value("qbs.toolchain").toJsonArray());
     const bool prjIsMsvc = prjToolchain.contains("msvc");
     bgData.cCompilerPath = FilePath::fromString(
                 prjIsMsvc ? prjCompilerPath : prjCompilerPathByLanguage.value("c").toString());
@@ -58,6 +62,7 @@ static BuildGraphData extractBgData(const QbsSession::BuildGraphInfo &bgInfo)
     bgData.qtBinPath = FilePath::fromString(moduleProps.value("Qt.core.binPath").toString());
     bgData.sysroot = FilePath::fromString(moduleProps.value("qbs.sysroot").toString());
     bgData.buildVariant = moduleProps.value("qbs.buildVariant").toString();
+    bgData.targetOS = arrayToStringList(moduleProps.value("qbs.targetOS").toJsonArray());
     return bgData;
 }
 
@@ -100,10 +105,8 @@ FilePaths QbsProjectImporter::importCandidates()
     for (Kit * const k : kits) {
         FilePath bdir = buildDir(projectFilePath(), k);
         const FilePath candidate = bdir.absolutePath();
-        if (!seenCandidates.contains(candidate)) {
-            seenCandidates.insert(candidate);
+        if (Utils::insert(seenCandidates, candidate))
             candidates << candidatesForDirectory(candidate);
-        }
     }
     qCDebug(qbsPmLog) << "build directory candidates:" << candidates;
     return candidates;
@@ -117,7 +120,7 @@ QList<void *> QbsProjectImporter::examineDirectory(const FilePath &importPath,
     QList<void *> data;
     const FilePath bgFilePath = importPath.pathAppended(importPath.fileName() + ".bg");
     const QStringList relevantProperties({
-            "qbs.buildVariant", "qbs.sysroot", "qbs.toolchain",
+            "qbs.buildVariant", "qbs.sysroot", "qbs.targetOS", "qbs.toolchain",
             "cpp.compilerPath", "cpp.compilerPathByLanguage",
             "Qt.core.binPath"
     });
@@ -138,12 +141,12 @@ bool QbsProjectImporter::matchKit(void *directoryData, const Kit *k) const
     const auto * const bgData = static_cast<BuildGraphData *>(directoryData);
     qCDebug(qbsPmLog) << "matching kit" << k->displayName() << "against imported build"
                       << bgData->bgFilePath.toUserOutput();
-    if (ToolChainKitAspect::toolChains(k).isEmpty() && bgData->cCompilerPath.isEmpty()
+    if (ToolchainKitAspect::toolChains(k).isEmpty() && bgData->cCompilerPath.isEmpty()
             && bgData->cxxCompilerPath.isEmpty()) {
         return true;
     }
-    const ToolChain * const cToolchain = ToolChainKitAspect::cToolChain(k);
-    const ToolChain * const cxxToolchain = ToolChainKitAspect::cxxToolChain(k);
+    const Toolchain * const cToolchain = ToolchainKitAspect::cToolchain(k);
+    const Toolchain * const cxxToolchain = ToolchainKitAspect::cxxToolchain(k);
     if (!bgData->cCompilerPath.isEmpty()) {
         if (!cToolchain)
             return false;
@@ -163,7 +166,7 @@ bool QbsProjectImporter::matchKit(void *directoryData, const Kit *k) const
         if (bgData->qtBinPath != qtVersion->hostBinPath())
             return false;
     }
-    if (bgData->sysroot != SysRootKitAspect::sysRoot(k))
+    if (!bgData->targetOS.contains("macos") && bgData->sysroot != SysRootKitAspect::sysRoot(k))
         return false;
 
     qCDebug(qbsPmLog) << "Kit matches";
@@ -180,14 +183,14 @@ Kit *QbsProjectImporter::createKit(void *directoryData) const
         qtVersionData = findOrCreateQtVersion(qmakeFilePath);
     }
     return createTemporaryKit(qtVersionData,[this, bgData](Kit *k) -> void {
-        QList<ToolChainData> tcData;
+        QList<ToolchainData> tcData;
         if (!bgData->cxxCompilerPath.isEmpty())
             tcData << findOrCreateToolChains({bgData->cxxCompilerPath, PEConstants::CXX_LANGUAGE_ID});
         if (!bgData->cCompilerPath.isEmpty())
             tcData << findOrCreateToolChains({bgData->cCompilerPath, PEConstants::C_LANGUAGE_ID});
-        for (const ToolChainData &tc : std::as_const(tcData)) {
+        for (const ToolchainData &tc : std::as_const(tcData)) {
             if (!tc.tcs.isEmpty())
-                ToolChainKitAspect::setToolChain(k, tc.tcs.first());
+                ToolchainKitAspect::setToolchain(k, tc.tcs.first());
         }
         SysRootKitAspect::setSysRoot(k, bgData->sysroot);
     });

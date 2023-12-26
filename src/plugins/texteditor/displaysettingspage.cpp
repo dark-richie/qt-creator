@@ -4,6 +4,7 @@
 #include "displaysettingspage.h"
 
 #include "displaysettings.h"
+#include "fontsettings.h"
 #include "marginsettings.h"
 #include "texteditorconstants.h"
 #include "texteditorsettings.h"
@@ -43,30 +44,23 @@ public:
     DisplaySettingsWidget(DisplaySettingsPagePrivate *data)
         : m_data(data)
     {
-        resize(452, 458);
-
         enableTextWrapping = new QCheckBox(Tr::tr("Enable text &wrapping"));
 
         enableTextWrappingHintLabel = new QLabel(Tr::tr("<i>Set <a href=\"font zoom\">font line spacing</a> "
                                                     "to 100% to enable text wrapping option.</i>"));
 
-        fontSettingsPageLineSpacing = fontSettingsPageLineSpacingLink();
-
-        if (fontSettingsPageLineSpacing) {
-            connect(fontSettingsPageLineSpacing, &QSpinBox::valueChanged,
-                    this, [this](const int &value) {
-                if (value != 100)
-                    enableTextWrapping->setChecked(false);
-                enableTextWrapping->setEnabled(value == 100);
-                enableTextWrappingHintLabel->setVisible(value != 100);
-            });
-
-            if (fontSettingsPageLineSpacing->value() != 100)
+        auto updateWrapping = [this] {
+            const bool normalLineSpacing = TextEditorSettings::fontSettings().relativeLineSpacing() == 100;
+            if (!normalLineSpacing)
                 enableTextWrapping->setChecked(false);
+            enableTextWrapping->setEnabled(normalLineSpacing);
+            enableTextWrappingHintLabel->setVisible(!normalLineSpacing);
+        };
 
-            enableTextWrapping->setEnabled(fontSettingsPageLineSpacing->value() == 100);
-            enableTextWrappingHintLabel->setVisible(fontSettingsPageLineSpacing->value() != 100);
-        }
+        updateWrapping();
+
+        connect(TextEditorSettings::instance(), &TextEditorSettings::fontSettingsChanged,
+                this, updateWrapping);
 
         connect(enableTextWrappingHintLabel, &QLabel::linkActivated, [] {
             Core::ICore::showOptionsDialog(Constants::TEXT_EDITOR_FONT_SETTINGS); } );
@@ -104,6 +98,10 @@ public:
         visualizeWhitespace = new QCheckBox(Tr::tr("&Visualize whitespace"));
         visualizeWhitespace->setToolTip(Tr::tr("Shows tabs and spaces."));
 
+        highlightSelection = new QCheckBox(Tr::tr("&Highlight Selection"));
+        highlightSelection->setToolTip(Tr::tr("Adds a colored background and a marker to the "
+                                              "scrollbar to occurrences of the selected text."));
+
         leftAligned = new QRadioButton(Tr::tr("Next to editor content"));
         atMargin = new QRadioButton(Tr::tr("Next to right margin"));
         rightAligned = new QRadioButton(Tr::tr("Aligned at right side"));
@@ -113,7 +111,7 @@ public:
         displayAnnotations = new QGroupBox(Tr::tr("Line annotations")),
         displayAnnotations->setCheckable(true);
 
-        using namespace Utils::Layouting;
+        using namespace Layouting;
 
         Column {
             leftAligned,
@@ -149,6 +147,7 @@ public:
                         autoFoldFirstComment,
                         scrollBarHighlights,
                         animateNavigationWithinFile,
+                        highlightSelection,
                     },
                     Column {
                         highlightCurrentLine,
@@ -177,8 +176,6 @@ public:
     void settingsToUI();
     void setDisplaySettings(const DisplaySettings &, const MarginSettings &newMarginSettings);
 
-    QSpinBox *fontSettingsPageLineSpacingLink();
-
     DisplaySettingsPagePrivate *m_data = nullptr;
 
     QCheckBox *enableTextWrapping;
@@ -203,13 +200,12 @@ public:
     QCheckBox *openLinksInNextSplit;
     QCheckBox *highlightMatchingParentheses;
     QCheckBox *visualizeWhitespace;
+    QCheckBox *highlightSelection;
     QGroupBox *displayAnnotations;
     QRadioButton *leftAligned;
     QRadioButton *atMargin;
     QRadioButton *rightAligned;
     QRadioButton *betweenLines;
-
-    QSpinBox *fontSettingsPageLineSpacing = nullptr;
 };
 
 void DisplaySettingsWidget::apply()
@@ -226,10 +222,8 @@ void DisplaySettingsWidget::settingsFromUI(DisplaySettings &displaySettings,
 {
     displaySettings.m_displayLineNumbers = displayLineNumbers->isChecked();
     displaySettings.m_textWrapping = enableTextWrapping->isChecked();
-    if (fontSettingsPageLineSpacing) {
-        if (fontSettingsPageLineSpacing->value() != 100)
-            displaySettings.m_textWrapping = false;
-    }
+    if (TextEditorSettings::fontSettings().relativeLineSpacing() != 100)
+        displaySettings.m_textWrapping = false;
     marginSettings.m_showMargin = showWrapColumn->isChecked();
     marginSettings.m_tintMarginArea = tintMarginArea->isChecked();
     marginSettings.m_useIndenter = useIndenter->isChecked();
@@ -250,6 +244,7 @@ void DisplaySettingsWidget::settingsFromUI(DisplaySettings &displaySettings,
     displaySettings.m_scrollBarHighlights = scrollBarHighlights->isChecked();
     displaySettings.m_animateNavigationWithinFile = animateNavigationWithinFile->isChecked();
     displaySettings.m_displayAnnotations = displayAnnotations->isChecked();
+    displaySettings.m_highlightSelection = highlightSelection->isChecked();
     if (leftAligned->isChecked())
         displaySettings.m_annotationAlignment = AnnotationAlignment::NextToContent;
     else if (atMargin->isChecked())
@@ -268,8 +263,10 @@ void DisplaySettingsWidget::settingsToUI()
     enableTextWrapping->setChecked(displaySettings.m_textWrapping);
     showWrapColumn->setChecked(marginSettings.m_showMargin);
     tintMarginArea->setChecked(marginSettings.m_tintMarginArea);
+    tintMarginArea->setEnabled(marginSettings.m_showMargin);
     useIndenter->setChecked(marginSettings.m_useIndenter);
     wrapColumn->setValue(marginSettings.m_marginColumn);
+    wrapColumn->setEnabled(marginSettings.m_showMargin);
     visualizeWhitespace->setChecked(displaySettings.m_visualizeWhitespace);
     visualizeIndent->setChecked(displaySettings.m_visualizeIndent);
     displayFoldingMarkers->setChecked(displaySettings.m_displayFoldingMarkers);
@@ -286,6 +283,7 @@ void DisplaySettingsWidget::settingsToUI()
     scrollBarHighlights->setChecked(displaySettings.m_scrollBarHighlights);
     animateNavigationWithinFile->setChecked(displaySettings.m_animateNavigationWithinFile);
     displayAnnotations->setChecked(displaySettings.m_displayAnnotations);
+    highlightSelection->setChecked(displaySettings.m_highlightSelection);
     switch (displaySettings.m_annotationAlignment) {
     case AnnotationAlignment::NextToContent: leftAligned->setChecked(true); break;
     case AnnotationAlignment::NextToMargin: atMargin->setChecked(true); break;
@@ -321,23 +319,6 @@ void DisplaySettingsWidget::setDisplaySettings(const DisplaySettings &newDisplay
         emit TextEditorSettings::instance()->marginSettingsChanged(newMarginSettings);
     }
 }
-
- QSpinBox *DisplaySettingsWidget::fontSettingsPageLineSpacingLink()
- {
-     for (const auto &page : Core::IOptionsPage::allOptionsPages()) {
-         QWidget *widget = page->widget();
-
-         if (!widget)
-             continue;
-
-         for (QSpinBox *spinBox : widget->findChildren<QSpinBox *>()) {
-             if (spinBox->objectName() == QLatin1String("FontSettingsPage.LineSpacingSpinBox"))
-                return spinBox;
-         }
-     }
-
-     return nullptr;
- }
 
 DisplaySettingsPage::DisplaySettingsPage()
   : d(new DisplaySettingsPagePrivate)

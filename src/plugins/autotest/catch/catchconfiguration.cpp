@@ -3,11 +3,9 @@
 
 #include "catchconfiguration.h"
 
+#include "catchtestframework.h"
 #include "catchoutputreader.h"
-#include "catchtestsettings.h"
 
-#include "../autotestplugin.h"
-#include "../itestframework.h"
 #include "../testsettings.h"
 
 using namespace Utils;
@@ -15,7 +13,7 @@ using namespace Utils;
 namespace Autotest {
 namespace Internal {
 
-TestOutputReader *CatchConfiguration::createOutputReader(QtcProcess *app) const
+TestOutputReader *CatchConfiguration::createOutputReader(Process *app) const
 {
     return new CatchOutputReader(app, buildDirectory(), projectFile());
 }
@@ -80,37 +78,35 @@ QStringList CatchConfiguration::argumentsForTestRunner(QStringList *omitted) con
         arguments << "\"" + testCases().join("\", \"") + "\"";
     arguments << "--reporter" << "xml";
 
-    if (AutotestPlugin::settings()->processArgs) {
+    if (testSettings().processArgs()) {
         arguments << filterInterfering(runnable().command.arguments().split(
                                            ' ', Qt::SkipEmptyParts), omitted);
     }
 
-    auto settings = static_cast<CatchTestSettings *>(framework()->testSettings());
-    if (!settings)
-        return arguments;
+    CatchFramework &settings = theCatchFramework();
 
-    if (settings->abortAfterChecked.value())
-        arguments << "-x" << QString::number(settings->abortAfter.value());
-    if (settings->samplesChecked.value())
-        arguments << "--benchmark-samples" << QString::number(settings->benchmarkSamples.value());
-    if (settings->resamplesChecked.value())
-        arguments << "--benchmark-resamples" << QString::number(settings->benchmarkResamples.value());
-    if (settings->warmupChecked.value())
-        arguments << "--benchmark-warmup-time" << QString::number(settings->benchmarkWarmupTime.value());
-    if (settings->confidenceIntervalChecked.value())
-        arguments << "--benchmark-confidence-interval" << QString::number(settings->confidenceInterval.value());
-    if (settings->noAnalysis.value())
+    if (settings.abortAfterChecked())
+        arguments << "-x" << QString::number(settings.abortAfter());
+    if (settings.samplesChecked())
+        arguments << "--benchmark-samples" << QString::number(settings.benchmarkSamples());
+    if (settings.resamplesChecked())
+        arguments << "--benchmark-resamples" << QString::number(settings.benchmarkResamples());
+    if (settings.warmupChecked())
+        arguments << "--benchmark-warmup-time" << QString::number(settings.benchmarkWarmupTime());
+    if (settings.confidenceIntervalChecked())
+        arguments << "--benchmark-confidence-interval" << QString::number(settings.confidenceInterval());
+    if (settings.noAnalysis())
         arguments << "--benchmark-no-analysis";
-    if (settings->showSuccess.value())
+    if (settings.showSuccess())
         arguments << "-s";
-    if (settings->noThrow.value())
+    if (settings.noThrow())
         arguments << "-e";
-    if (settings->visibleWhitespace.value())
+    if (settings.visibleWhitespace())
         arguments << "-i";
-    if (settings->warnOnEmpty.value())
+    if (settings.warnOnEmpty())
         arguments << "-w" << "NoAssertions";
 
-    if (isDebugRunMode() && settings->breakOnFailure.value())
+    if (isDebugRunMode() && settings.breakOnFailure())
         arguments << "-b";
     return arguments;
 }

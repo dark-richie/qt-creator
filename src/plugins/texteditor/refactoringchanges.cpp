@@ -3,9 +3,12 @@
 
 #include "refactoringchanges.h"
 
+#include "icodestylepreferencesfactory.h"
 #include "textdocument.h"
 #include "texteditor.h"
 #include "texteditortr.h"
+#include "texteditorsettings.h"
+#include "textindenter.h"
 
 #include <coreplugin/dialogs/readonlyfilesdialog.h>
 #include <coreplugin/documentmanager.h>
@@ -21,113 +24,12 @@
 #include <QTextDocument>
 #include <QDebug>
 
+#include <memory>
+
 using namespace Core;
 using namespace Utils;
 
 namespace TextEditor {
-
-RefactoringChanges::RefactoringChanges(RefactoringChangesData *data)
-    : m_data(data ? data : new RefactoringChangesData)
-{}
-
-RefactoringChanges::~RefactoringChanges() = default;
-
-RefactoringSelections RefactoringChanges::rangesToSelections(QTextDocument *document,
-                                                             const QList<Range> &ranges)
-{
-    RefactoringSelections selections;
-
-    for (const Range &range : ranges) {
-        QTextCursor start(document);
-        start.setPosition(range.start);
-        start.setKeepPositionOnInsert(true);
-        QTextCursor end(document);
-        end.setPosition(qMin(range.end, document->characterCount() - 1));
-        selections.push_back({start, end});
-    }
-
-    return selections;
-}
-
-bool RefactoringChanges::createFile(const FilePath &filePath,
-                                    const QString &contents,
-                                    bool reindent,
-                                    bool openEditor) const
-{
-    if (filePath.exists())
-        return false;
-
-    // Create a text document for the new file:
-    auto document = new QTextDocument;
-    QTextCursor cursor(document);
-    cursor.beginEditBlock();
-    cursor.insertText(contents);
-
-    // Reindent the contents:
-    if (reindent) {
-        cursor.select(QTextCursor::Document);
-        m_data->indentSelection(cursor, filePath, nullptr);
-    }
-    cursor.endEditBlock();
-
-    // Write the file to disk:
-    TextFileFormat format;
-    format.codec = EditorManager::defaultTextCodec();
-    QString error;
-    bool saveOk = format.writeFile(filePath, document->toPlainText(), &error);
-    delete document;
-    if (!saveOk)
-        return false;
-
-    m_data->fileChanged(filePath);
-
-    if (openEditor)
-        RefactoringChanges::openEditor(filePath, /*bool activate =*/ false, -1, -1);
-
-    return true;
-}
-
-bool RefactoringChanges::removeFile(const FilePath &filePath) const
-{
-    if (!filePath.exists())
-        return false;
-
-    // ### implement!
-    qWarning() << "RefactoringChanges::removeFile is not implemented";
-    return true;
-}
-
-TextEditorWidget *RefactoringChanges::openEditor(const FilePath &filePath,
-                                                 bool activate,
-                                                 int line,
-                                                 int column)
-{
-    EditorManager::OpenEditorFlags flags = EditorManager::IgnoreNavigationHistory;
-    if (activate)
-        flags |= EditorManager::SwitchSplitIfAlreadyVisible;
-    else
-        flags |= EditorManager::DoNotChangeCurrentEditor;
-    if (line != -1) {
-        // openEditorAt uses a 1-based line and a 0-based column!
-        column -= 1;
-    }
-    IEditor *editor = EditorManager::openEditorAt(Link{filePath, line, column}, Id(), flags);
-
-    if (editor)
-        return TextEditorWidget::fromEditor(editor);
-    else
-        return nullptr;
-}
-
-RefactoringFilePtr RefactoringChanges::file(TextEditorWidget *editor)
-{
-    return RefactoringFilePtr(new RefactoringFile(editor));
-}
-
-RefactoringFilePtr RefactoringChanges::file(const FilePath &filePath) const
-{
-    return RefactoringFilePtr(new RefactoringFile(filePath, m_data));
-}
 
 RefactoringFile::RefactoringFile(QTextDocument *document, const FilePath &filePath)
     : m_filePath(filePath)
@@ -139,10 +41,7 @@ RefactoringFile::RefactoringFile(TextEditorWidget *editor)
     , m_editor(editor)
 { }
 
-RefactoringFile::RefactoringFile(const FilePath &filePath,
-                                 const QSharedPointer<RefactoringChangesData> &data)
-    : m_filePath(filePath)
-    , m_data(data)
+RefactoringFile::RefactoringFile(const FilePath &filePath) : m_filePath(filePath)
 {
     QList<IEditor *> editors = DocumentModel::editorsForFilePath(filePath);
     if (!editors.isEmpty()) {
@@ -150,6 +49,42 @@ RefactoringFile::RefactoringFile(const FilePath &filePath,
         if (editorWidget && !editorWidget->isReadOnly())
             m_editor = editorWidget;
     }
+}
+
+bool RefactoringFile::create(const QString &contents, bool reindent, bool openInEditor)
+{
+    if (m_filePath.isEmpty() || m_filePath.exists() || m_editor)
+        return false;
+
+    // Create a text document for the new file:
+    auto document = new QTextDocument;
+    QTextCursor cursor(document);
+    cursor.beginEditBlock();
+    cursor.insertText(contents);
+
+    // Reindent the contents:
+    if (reindent) {
+        cursor.select(QTextCursor::Document);
+        m_formattingCursors = {cursor};
+        doFormatting();
+    }
+    cursor.endEditBlock();
+
+    // Write the file to disk:
+    TextFileFormat format;
+    format.codec = EditorManager::defaultTextCodec();
+    QString error;
+    bool saveOk = format.writeFile(m_filePath, document->toPlainText(), &error);
+    delete document;
+    if (!saveOk)
+        return false;
+
+    fileChanged();
+
+    if (openInEditor)
+        openEditor(/*bool activate =*/ false, -1, -1);
+
+    return true;
 }
 
 RefactoringFile::~RefactoringFile()
@@ -269,22 +204,6 @@ void RefactoringFile::setChangeSet(const ChangeSet &changeSet)
     m_changes = changeSet;
 }
 
-void RefactoringFile::appendIndentRange(const Range &range)
-{
-    if (m_filePath.isEmpty())
-        return;
-
-    m_indentRanges.append(range);
-}
-
-void RefactoringFile::appendReindentRange(const Range &range)
-{
-    if (m_filePath.isEmpty())
-        return;
-
-    m_reindentRanges.append(range);
-}
-
 void RefactoringFile::setOpenEditor(bool activate, int pos)
 {
     m_openEditor = true;
@@ -310,7 +229,7 @@ bool RefactoringFile::apply()
             lineAndColumn(m_editorCursorPosition, &line, &column);
             ensureCursorVisible = true;
         }
-        m_editor = RefactoringChanges::openEditor(m_filePath, m_activateEditor, line, column);
+        m_editor = openEditor(m_activateEditor, line, column);
         m_openEditor = false;
         m_activateEditor = false;
         m_editorCursorPosition = -1;
@@ -320,7 +239,7 @@ bool RefactoringFile::apply()
     bool result = true;
 
     // apply changes, if any
-    if (m_data && !(m_indentRanges.isEmpty() && m_changes.isEmpty())) {
+    if (!m_changes.isEmpty()) {
         QTextDocument *doc = mutableDocument();
         if (doc) {
             QTextCursor c = cursor();
@@ -329,23 +248,13 @@ bool RefactoringFile::apply()
             else
                 c.beginEditBlock();
 
-            sort(m_indentRanges);
-            sort(m_reindentRanges);
-
-            // build indent selections now, applying the changeset will change locations
-            const RefactoringSelections &indentSelections =
-                    RefactoringChanges::rangesToSelections(doc, m_indentRanges);
-            m_indentRanges.clear();
-            const RefactoringSelections &reindentSelections =
-                    RefactoringChanges::rangesToSelections(doc, m_reindentRanges);
-            m_reindentRanges.clear();
-
-            // apply changes and reindent
+            // apply changes
+            setupFormattingRanges(m_changes.operationList());
             m_changes.apply(&c);
             m_changes.clear();
 
-            indentOrReindent(indentSelections, Indent);
-            indentOrReindent(reindentSelections, Reindent);
+            // Do indentation and formatting.
+            doFormatting();
 
             c.endEditBlock();
 
@@ -355,9 +264,9 @@ bool RefactoringFile::apply()
                 QString error;
                 // suppress "file has changed" warnings if the file is open in a read-only editor
                 Core::FileChangeBlocker block(m_filePath);
-                if (!m_textFileFormat.writeFile(m_filePath,
-                                                doc->toPlainText(),
-                                                &error)) {
+                if (m_textFileFormat.writeFile(m_filePath, doc->toPlainText(), &error)) {
+                    Core::DocumentManager::notifyFilesChangedInternally({m_filePath});
+                } else {
                     qWarning() << "Could not apply changes to" << m_filePath
                                << ". Error: " << error;
                     result = false;
@@ -377,44 +286,124 @@ bool RefactoringFile::apply()
     return result;
 }
 
-void RefactoringFile::indentOrReindent(const RefactoringSelections &ranges,
-                                       RefactoringFile::IndentType indent)
+void RefactoringFile::setupFormattingRanges(const QList<ChangeSet::EditOp> &replaceList)
 {
-    TextDocument * document = m_editor ? m_editor->textDocument() : nullptr;
-    for (const auto &[position, anchor]: ranges) {
-        QTextCursor selection(anchor);
-        selection.setPosition(position.position(), QTextCursor::KeepAnchor);
-        if (indent == Indent)
-            m_data->indentSelection(selection, m_filePath, document);
-        else
-            m_data->reindentSelection(selection, m_filePath, document);
+    QTextDocument * const doc = m_editor ? m_editor->document() : m_document;
+    QTC_ASSERT(doc, return);
+
+    for (const ChangeSet::EditOp &op : replaceList) {
+        if (!op.format1())
+            continue;
+        QTextCursor cursor(doc);
+        switch (op.type()) {
+        case ChangeSet::EditOp::Replace:
+        case ChangeSet::EditOp::Insert:
+        case ChangeSet::EditOp::Remove:
+            cursor.setKeepPositionOnInsert(true);
+            cursor.setPosition(op.pos1 + op.length1);
+            cursor.setPosition(op.pos1, QTextCursor::KeepAnchor);
+            m_formattingCursors << cursor;
+            break;
+        case ChangeSet::EditOp::Flip:
+        case ChangeSet::EditOp::Move:
+            cursor.setKeepPositionOnInsert(true);
+            cursor.setPosition(op.pos1 + op.length1);
+            cursor.setPosition(op.pos1, QTextCursor::KeepAnchor);
+            m_formattingCursors << cursor;
+            cursor.setPosition(op.pos2 + op.length2);
+            cursor.setPosition(op.pos2, QTextCursor::KeepAnchor);
+            m_formattingCursors << cursor;
+            break;
+        case ChangeSet::EditOp::Copy:
+            cursor.setKeepPositionOnInsert(true);
+            cursor.setPosition(op.pos2, QTextCursor::KeepAnchor);
+            m_formattingCursors << cursor;
+            break;
+        }
     }
 }
 
-void RefactoringFile::fileChanged()
+void RefactoringFile::doFormatting()
 {
-    if (!m_filePath.isEmpty())
-        m_data->fileChanged(m_filePath);
+    if (m_formattingCursors.empty())
+        return;
+
+    QTextDocument *document = nullptr;
+    Indenter *indenter = nullptr;
+    std::unique_ptr<Indenter> indenterOwner;
+    TabSettings tabSettings;
+    if (m_editor) {
+        document = m_editor->document();
+        indenter = m_editor->textDocument()->indenter();
+        tabSettings = m_editor->textDocument()->tabSettings();
+    } else {
+        document = m_document;
+        ICodeStylePreferencesFactory * const factory
+            = TextEditorSettings::codeStyleFactory(indenterId());
+        indenterOwner.reset(factory ? factory->createIndenter(document)
+                                    : new TextIndenter(document));
+        indenter = indenterOwner.get();
+        tabSettings = TabSettings::settingsForFile(filePath());
+    }
+    QTC_ASSERT(document, return);
+    QTC_ASSERT(indenter, return);
+
+    Utils::sort(m_formattingCursors, [](const QTextCursor &tc1, const QTextCursor &tc2) {
+        return tc1.selectionStart() < tc2.selectionStart();
+    });
+    const int firstSelectedBlock = document->findBlock(m_formattingCursors.first().selectionStart())
+                                       .blockNumber();
+    static const QString clangFormatLineRemovalBlocker("// QTC_TEMP");
+    for (const QTextCursor &formattingCursor : std::as_const(m_formattingCursors)) {
+        const QTextBlock firstBlock = document->findBlock(formattingCursor.selectionStart());
+        const QTextBlock lastBlock = document->findBlock(formattingCursor.selectionEnd());
+        QTextBlock b = firstBlock;
+        while (true) {
+            QTC_ASSERT(b.isValid(), break);
+            if (b.text().simplified().isEmpty())
+                QTextCursor(b).insertText(clangFormatLineRemovalBlocker);
+            if (b == lastBlock)
+                break;
+            b = b.next();
+        }
+    }
+
+    for (const QTextCursor &tc : std::as_const(m_formattingCursors))
+        indenter->autoIndent(tc, tabSettings);
+
+    for (QTextBlock b = document->findBlockByNumber(firstSelectedBlock);
+         b.isValid(); b = b.next()) {
+        QString blockText = b.text();
+        if (blockText.remove(clangFormatLineRemovalBlocker) == b.text())
+            continue;
+        QTextCursor c(b);
+        c.select(QTextCursor::LineUnderCursor);
+        c.removeSelectedText();
+        c.insertText(blockText);
+    }
 }
 
-RefactoringChangesData::~RefactoringChangesData() = default;
-
-void RefactoringChangesData::indentSelection(const QTextCursor &,
-                                             const FilePath &,
-                                             const TextDocument *) const
+TextEditorWidget *RefactoringFile::openEditor(bool activate, int line, int column)
 {
-    qWarning() << Q_FUNC_INFO << "not implemented";
+    EditorManager::OpenEditorFlags flags = EditorManager::IgnoreNavigationHistory;
+    if (activate)
+        flags |= EditorManager::SwitchSplitIfAlreadyVisible;
+    else
+        flags |= EditorManager::DoNotChangeCurrentEditor;
+    if (line != -1) {
+        // openEditorAt uses a 1-based line and a 0-based column!
+        column -= 1;
+    }
+    IEditor *editor = EditorManager::openEditorAt(Link{m_filePath, line, column}, Id(), flags);
+
+    return TextEditorWidget::fromEditor(editor);
 }
 
-void RefactoringChangesData::reindentSelection(const QTextCursor &,
-                                               const FilePath &,
-                                               const TextDocument *) const
-{
-    qWarning() << Q_FUNC_INFO << "not implemented";
-}
+RefactoringFileFactory::~RefactoringFileFactory() = default;
 
-void RefactoringChangesData::fileChanged(const FilePath &)
+RefactoringFilePtr PlainRefactoringFileFactory::file(const Utils::FilePath &filePath) const
 {
+    return RefactoringFilePtr(new RefactoringFile(filePath));
 }
 
 } // namespace TextEditor

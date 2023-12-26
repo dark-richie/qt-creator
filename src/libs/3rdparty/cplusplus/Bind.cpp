@@ -1528,6 +1528,8 @@ bool Bind::visit(IfStatementAST *ast)
     ast->symbol = block;
 
     Scope *previousScope = switchScope(block);
+    if (ast->initStmt)
+        this->statement(ast->initStmt);
     /*ExpressionTy condition =*/ this->expression(ast->condition);
     this->statement(ast->statement);
     this->statement(ast->else_statement);

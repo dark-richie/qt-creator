@@ -2,9 +2,6 @@
 // Copyright (C) 2016 Vasiliy Sorokin
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "todoplugin.h"
-
-#include "optionsdialog.h"
 #include "todooutputpane.h"
 #include "todoitemsprovider.h"
 #include "todoprojectsettingswidget.h"
@@ -14,13 +11,11 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 
-#include <projectexplorer/projectpanelfactory.h>
+#include <extensionsystem/iplugin.h>
+
 #include <utils/link.h>
 
-#include <QSettings>
-
-namespace Todo {
-namespace Internal {
+namespace Todo::Internal {
 
 class TodoPluginPrivate : public QObject
 {
@@ -35,7 +30,6 @@ public:
 
     Settings m_settings;
     TodoOutputPane *m_todoOutputPane = nullptr;
-    TodoOptionsPage m_optionsPage{&m_settings, [this] { settingsChanged(m_settings); }};
     TodoItemsProvider *m_todoItemsProvider = nullptr;
 };
 
@@ -46,16 +40,10 @@ TodoPluginPrivate::TodoPluginPrivate()
     createItemsProvider();
     createTodoOutputPane();
 
-    auto panelFactory = new ProjectExplorer::ProjectPanelFactory;
-    panelFactory->setPriority(100);
-    panelFactory->setDisplayName(Tr::tr("To-Do"));
-    panelFactory->setCreateWidgetFunction([this](ProjectExplorer::Project *project) {
-        auto widget = new TodoProjectSettingsWidget(project);
-        connect(widget, &TodoProjectSettingsWidget::projectSettingsChanged,
-                m_todoItemsProvider, [this, project] { m_todoItemsProvider->projectSettingsChanged(project); });
-        return widget;
-    });
-    ProjectExplorer::ProjectPanelFactory::registerFactory(panelFactory);
+    setupTodoSettingsPage(&m_settings, [this] { settingsChanged(m_settings); });
+
+    setupTodoSettingsProjectPanel(m_todoItemsProvider);
+
     connect(Core::ICore::instance(), &Core::ICore::saveSettingsRequested,
             this, [this] { m_settings.save(Core::ICore::settings()); });
 }
@@ -97,20 +85,31 @@ void TodoPluginPrivate::createTodoOutputPane()
             this, &TodoPluginPrivate::todoItemClicked);
 }
 
-TodoPlugin::TodoPlugin()
+class TodoPlugin final : public ExtensionSystem::IPlugin
 {
-    qRegisterMetaType<TodoItem>("TodoItem");
-}
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Todo.json")
 
-TodoPlugin::~TodoPlugin()
-{
-    delete d;
-}
+public:
+    TodoPlugin()
+    {
+        qRegisterMetaType<TodoItem>("TodoItem");
+    }
 
-void TodoPlugin::initialize()
-{
-    d = new TodoPluginPrivate;
-}
+    ~TodoPlugin() final
+    {
+        delete d;
+    }
 
-} // namespace Internal
-} // namespace Todo
+    void initialize() final
+    {
+        d = new TodoPluginPrivate;
+    }
+
+private:
+    TodoPluginPrivate *d = nullptr;
+};
+
+} // Todo::Internal
+
+#include "todoplugin.moc"

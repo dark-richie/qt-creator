@@ -6,14 +6,16 @@
 #include "debuggerprotocol.h"
 #include "debuggertr.h"
 
+#include <coreplugin/icore.h>
+
 #include <projectexplorer/abi.h>
 
 #include <utils/algorithm.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
 #include <utils/macroexpander.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 #include <utils/utilsicons.h>
 #include <utils/winutils.h>
@@ -43,7 +45,7 @@ const char DEBUGGER_INFORMATION_WORKINGDIRECTORY[] = "WorkingDirectory";
 static QString getGdbConfiguration(const FilePath &command, const Environment &sysEnv)
 {
     // run gdb with the --configuration opion
-    QtcProcess proc;
+    Process proc;
     proc.setEnvironment(sysEnv);
     proc.setCommand({command, {"--configuration"}});
     proc.runBlocking();
@@ -78,7 +80,7 @@ DebuggerItem::DebuggerItem(const QVariant &id)
     m_id = id;
 }
 
-DebuggerItem::DebuggerItem(const QVariantMap &data)
+DebuggerItem::DebuggerItem(const Store &data)
 {
     m_id = data.value(DEBUGGER_INFORMATION_ID).toString();
     m_command = FilePath::fromSettings(data.value(DEBUGGER_INFORMATION_COMMAND));
@@ -104,7 +106,10 @@ DebuggerItem::DebuggerItem(const QVariantMap &data)
             && m_abis[0].osFlavor() == Abi::UnknownFlavor
             && m_abis[0].binaryFormat() == Abi::UnknownFormat;
 
-    if (m_version.isEmpty() || mightBeAPreQnxSeparateOSQnxDebugger)
+    bool needsReinitialization = m_version.isEmpty() && m_abis.isEmpty()
+                                 && m_engineType == NoEngineType;
+
+    if (needsReinitialization || mightBeAPreQnxSeparateOSQnxDebugger)
         reinitializeFromFile();
 }
 
@@ -145,8 +150,9 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
     // Prevent calling lldb on Windows because the lldb from the llvm package is linked against
     // python but does not contain a python dll.
     const bool isAndroidNdkLldb = DebuggerItem::addAndroidLldbPythonEnv(m_command, env);
-    if (HostOsInfo::isWindowsHost() && m_command.fileName().startsWith("lldb")
-            && !isAndroidNdkLldb) {
+    const FilePath qtcreatorLldb = Core::ICore::lldbExecutable(CLANG_BINDIR);
+    if (HostOsInfo::isWindowsHost() && m_command.fileName().startsWith("lldb") && !isAndroidNdkLldb
+        && qtcreatorLldb != m_command) {
         QString errorMessage;
         m_version = winGetDLLVersion(WinDLLFileVersion,
                                      m_command.absoluteFilePath().path(),
@@ -162,7 +168,7 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
     // hack below tricks it into giving us the information we want.
     env.set("QNX_TARGET", QString());
 
-    QtcProcess proc;
+    Process proc;
     proc.setEnvironment(env);
     proc.setCommand({m_command, {version}});
     proc.runBlocking();
@@ -177,9 +183,6 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
 
     if (output.contains("gdb")) {
         m_engineType = GdbEngineType;
-        // FIXME: HACK while introducing DAP support
-        if (m_command.fileName().endsWith("-dap"))
-            m_engineType = DapEngineType;
 
         // Version
         bool isMacGdb, isQnxGdb;
@@ -240,10 +243,6 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         m_version = output.section(' ', 2);
         return;
     }
-    if (output.startsWith("Python")) {
-        m_engineType = PdbEngineType;
-        return;
-    }
     if (error)
         *error = output;
     m_engineType = NoEngineType;
@@ -283,8 +282,6 @@ QString DebuggerItem::engineTypeName() const
         return QLatin1String("CDB");
     case LldbEngineType:
         return QLatin1String("LLDB");
-    case DapEngineType:
-        return QLatin1String("DAP");
     case UvscEngineType:
         return QLatin1String("UVSC");
     default:
@@ -345,9 +342,9 @@ bool DebuggerItem::operator==(const DebuggerItem &other) const
             && m_workingDirectory == other.m_workingDirectory;
 }
 
-QVariantMap DebuggerItem::toMap() const
+Store DebuggerItem::toMap() const
 {
-    QVariantMap data;
+    Store data;
     data.insert(DEBUGGER_INFORMATION_DISPLAYNAME, m_unexpandedDisplayName);
     data.insert(DEBUGGER_INFORMATION_ID, m_id);
     data.insert(DEBUGGER_INFORMATION_COMMAND, m_command.toSettings());

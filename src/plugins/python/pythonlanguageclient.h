@@ -53,8 +53,6 @@ class PyLSConfigureAssistant : public QObject
 public:
     static PyLSConfigureAssistant *instance();
 
-    static void updateEditorInfoBars(const Utils::FilePath &python,
-                                     LanguageClient::Client *client);
     static void openDocumentWithPython(const Utils::FilePath &python,
                                        TextEditor::TextDocument *document);
 
@@ -66,9 +64,12 @@ private:
                          TextEditor::TextDocument *document);
     void resetEditorInfoBar(TextEditor::TextDocument *document);
     void installPythonLanguageServer(const Utils::FilePath &python,
-                                     QPointer<TextEditor::TextDocument> document);
+                                     QPointer<TextEditor::TextDocument> document,
+                                     const Utils::FilePath &pylsPath);
 
     QHash<Utils::FilePath, QList<TextEditor::TextDocument *>> m_infoBarEntries;
+    QHash<TextEditor::TextDocument *, QPointer<QFutureWatcher<PythonLanguageServerState>>>
+        m_runningChecks;
 };
 
 } // Python::Internal

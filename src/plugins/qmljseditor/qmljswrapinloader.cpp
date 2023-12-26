@@ -90,7 +90,8 @@ public:
     }
 
     void performChanges(QmlJSRefactoringFilePtr currentFile,
-                        const QmlJSRefactoringChanges &) override
+                        const QmlJSRefactoringChanges &,
+                        const QString &) override
     {
         UiScriptBinding *idBinding;
         const QString id = idOfObject(m_objDef, &idBinding);
@@ -146,7 +147,6 @@ public:
                                                       "    sourceComponent: %1\n"
                                                       "}\n").arg(componentId, loaderId));
         currentFile->setChangeSet(changes);
-        currentFile->appendIndentRange(Range(objDefStart, objDefEnd));
         currentFile->apply();
     }
 };

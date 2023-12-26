@@ -9,7 +9,7 @@
 #include <QVersionNumber>
 
 namespace ProjectExplorer {
-class ToolChain;
+class Toolchain;
 }
 
 namespace Utils {
@@ -54,7 +54,13 @@ public:
     int colorDepth() const;
     bool isValid() const;
     QString desktopCompilerId() const;
-    void printPackageProblems() const;
+    void handlePackageProblems(MessagesList &messages) const;
+
+    // Used when updating to new version of QtMCUs
+    // Paths that is not valid in the new version,
+    // and were valid in the old version. have the possibility be valid if
+    // reset to the default value without user intervention
+    void resetInvalidPathsToDefault();
 
 private:
     const QVersionNumber m_qulVersion;

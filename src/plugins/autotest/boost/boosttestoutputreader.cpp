@@ -3,14 +3,14 @@
 
 #include "boosttestoutputreader.h"
 
-#include "boosttestsettings.h"
+#include "boosttestframework.h"
 #include "boosttestresult.h"
 
 #include "../autotesttr.h"
 #include "../testtreeitem.h"
 
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QLoggingCategory>
 #include <QRegularExpression>
@@ -22,7 +22,7 @@ namespace Internal {
 
 static Q_LOGGING_CATEGORY(orLog, "qtc.autotest.boost.outputreader", QtWarningMsg)
 
-BoostTestOutputReader::BoostTestOutputReader(QtcProcess *testApplication,
+BoostTestOutputReader::BoostTestOutputReader(Process *testApplication,
                                              const FilePath &buildDirectory,
                                              const FilePath &projectFile,
                                              LogLevel log, ReportLevel report)
@@ -31,12 +31,6 @@ BoostTestOutputReader::BoostTestOutputReader(QtcProcess *testApplication,
     , m_logLevel(log)
     , m_reportLevel(report)
 {
-    if (!testApplication)
-        return;
-
-    connect(testApplication, &QtcProcess::done, this, [this, testApplication] {
-        onDone(testApplication->exitCode());
-    });
 }
 
 // content of "error:..." / "info:..." / ... messages
@@ -68,7 +62,7 @@ static QString caseFromContent(const QString &content)
     }
 
     QString result = content.mid(index + 5);
-    static QRegularExpression functionName("\"(.+)\":.*");
+    static const QRegularExpression functionName("\"(.+)\":.*");
     const QRegularExpressionMatch matcher = functionName.match(result);
     if (!matcher.hasMatch()) {
         qCDebug(orLog) << "got no match";
@@ -147,7 +141,7 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
             if (m_currentTest != match.captured(11) && m_currentTest.isEmpty())
                 m_currentTest = match.captured(11);
             m_result = ResultType::TestEnd;
-            m_description = Tr::tr("Test execution took %1").arg(match.captured(12));
+            m_description = Tr::tr("Test execution took %1.").arg(match.captured(12));
         } else if (type == "suite") {
             if (!m_currentSuite.isEmpty()) {
                 int index = m_currentSuite.lastIndexOf('/');
@@ -163,7 +157,7 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
             }
             m_currentTest.clear();
             m_result = ResultType::TestEnd;
-            m_description = Tr::tr("Test suite execution took %1").arg(match.captured(12));
+            m_description = Tr::tr("Test suite execution took %1.").arg(match.captured(12));
         }
     } else if (content.startsWith("Test case ")) {
         m_currentTest = match.captured(4);
@@ -179,29 +173,29 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
 
 void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
 {
-    static QRegularExpression newTestStart("^Running (\\d+) test cases?\\.\\.\\.$");
-    static QRegularExpression dependency("^Including test case (.+) as a dependency of "
-                                         "test case (.+)$");
-    static QRegularExpression messages("^(.+)\\((\\d+)\\): (info: (.+)|error: (.+)|"
-                                       "fatal error: (.+)|last checkpoint: (.+)"
-                                       "|Entering test (case|suite) \"(.+)\""
-                                       "|Leaving test (case|suite) \"(.+)\"; testing time: (\\d+.+)"
-                                       "|Test case \"(.+)\" is skipped because .+$)$");
-    static QRegularExpression moduleMssg("^(Entering test module \"(.+)\"|"
-                                         "Leaving test module \"(.+)\"; testing time: (\\d+.+))$");
-    static QRegularExpression noAssertion("^Test case (.*) did not check any assertions$");
+    static const QRegularExpression newTestStart("^Running (\\d+) test cases?\\.\\.\\.$");
+    static const QRegularExpression dependency("^Including test case (.+) as a dependency of "
+                                               "test case (.+)$");
+    static const QRegularExpression messages("^(.+)\\((\\d+)\\): (info: (.+)|error: (.+)|"
+                                             "fatal error: (.+)|last checkpoint: (.+)"
+                                             "|Entering test (case|suite) \"(.+)\""
+                                             "|Leaving test (case|suite) \"(.+)\"; testing time: (\\d+.+)"
+                                             "|Test case \"(.+)\" is skipped because .+$)$");
+    static const QRegularExpression moduleMssg("^(Entering test module \"(.+)\"|"
+                                               "Leaving test module \"(.+)\"; testing time: (\\d+.+))$");
+    static const QRegularExpression noAssertion("^Test case (.*) did not check any assertions$");
 
-    static QRegularExpression summaryPreamble("^\\s*Test (module|suite|case) \"(.*)\" has "
-                                              "(failed|passed)( with:)?$");
-    static QRegularExpression summarySkip("^\\s+Test case \"(.*)\" was skipped$");
-    static QRegularExpression summaryDetail("^\\s+(\\d+) test cases? out of (\\d+) "
-                                            "(failed|passed|skipped)$");
-    static QRegularExpression summaryAssertion("^\\s+(\\d+) assertions? out of (\\d+) "
-                                               "(failed|passed)$");
+    static const QRegularExpression summaryPreamble("^\\s*Test (module|suite|case) \"(.*)\" has "
+                                                    "(failed|passed)( with:)?$");
+    static const QRegularExpression summarySkip("^\\s+Test case \"(.*)\" was skipped$");
+    static const QRegularExpression summaryDetail("^\\s+(\\d+) test cases? out of (\\d+) "
+                                                  "(failed|passed|skipped)$");
+    static const QRegularExpression summaryAssertion("^\\s+(\\d+) assertions? out of (\\d+) "
+                                                     "(failed|passed)$");
 
-    static QRegularExpression finish("^\\*{3} (\\d+) failure(s are| is) detected in the "
-                                     "test module \"(.*)\"$");
-    QString noErrors("*** No errors detected");
+    static const QRegularExpression finish("^\\*{3} (\\d+) failure(s are| is) detected in the "
+                                           "test module \"(.*)\"$");
+    const QString noErrors("*** No errors detected");
 
     const QString line = removeCommandlineColors(QString::fromUtf8(outputLine));
     if (line.trimmed().isEmpty())
@@ -247,7 +241,7 @@ void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
         } else {
             QTC_CHECK(m_currentModule == match.captured(3));
             BoostTestResult result(id(), m_currentModule, m_projectFile);
-            result.setDescription(Tr::tr("Test module execution took %1").arg(match.captured(4)));
+            result.setDescription(Tr::tr("Test module execution took %1.").arg(match.captured(4)));
             result.setResult(ResultType::TestEnd);
             reportResult(result);
 
@@ -333,7 +327,8 @@ void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
         BoostTestResult result(id(), {}, m_projectFile);
         const int failed = match.captured(1).toInt();
         const int fatals = m_summary.value(ResultType::MessageFatal);
-        QString txt = Tr::tr("%1 failures detected in %2.").arg(failed).arg(match.captured(3));
+        QString txt
+            = Tr::tr("%n failure(s) detected in %1.", nullptr, failed).arg(match.captured(3));
         const int passed = qMax(0, m_testCaseCount - failed);
         if (m_testCaseCount != -1)
             txt.append(' ').append(Tr::tr("%1 tests passed.").arg(passed));
@@ -394,17 +389,17 @@ void BoostTestOutputReader::onDone(int exitCode)
     if (m_logLevel == LogLevel::Nothing && m_reportLevel == ReportLevel::No) {
         switch (exitCode) {
         case 0:
-            reportNoOutputFinish(Tr::tr("Running tests exited with %1").arg("boost::exit_success."),
+            reportNoOutputFinish(Tr::tr("Running tests exited with %1.").arg("boost::exit_success"),
                                  ResultType::Pass);
             break;
         case 200:
             reportNoOutputFinish(
-                        Tr::tr("Running tests exited with %1").arg("boost::exit_test_exception."),
+                        Tr::tr("Running tests exited with %1.").arg("boost::exit_test_exception"),
                         ResultType::MessageFatal);
             break;
         case 201:
-            reportNoOutputFinish(Tr::tr("Running tests exited with %1")
-                                 .arg("boost::exit_test_failure."), ResultType::Fail);
+            reportNoOutputFinish(Tr::tr("Running tests exited with %1.")
+                                 .arg("boost::exit_test_failure"), ResultType::Fail);
             break;
         }
     } else if (exitCode != 0 && exitCode != 201 && !m_description.isEmpty()) {

@@ -24,7 +24,8 @@
 
 #include <QAction>
 #include <QEvent>
-#include <QHBoxLayout>
+#include <QFuture>
+#include <QFutureInterfaceBase>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPropertyAnimation>
@@ -42,6 +43,38 @@ using namespace Core::Internal;
 using namespace Utils;
 
 namespace Core {
+
+class ProgressTimer : public QObject
+{
+public:
+    ProgressTimer(const QFutureInterfaceBase &futureInterface, int expectedSeconds, QObject *parent)
+        : QObject(parent),
+        m_futureInterface(futureInterface),
+        m_expectedTime(expectedSeconds)
+    {
+        m_futureInterface.setProgressRange(0, 100);
+        m_futureInterface.setProgressValue(0);
+
+        m_timer.setInterval(TimerInterval);
+        connect(&m_timer, &QTimer::timeout, this, &ProgressTimer::handleTimeout);
+        m_timer.start();
+    }
+
+private:
+    void handleTimeout()
+    {
+        ++m_currentTime;
+        const int halfLife = qRound(1000.0 * m_expectedTime / TimerInterval);
+        const int progress = MathUtils::interpolateTangential(m_currentTime, halfLife, 0, 100);
+        m_futureInterface.setProgressValue(progress);
+    }
+
+    QFutureInterfaceBase m_futureInterface;
+    int m_expectedTime;
+    int m_currentTime = 0;
+    QTimer m_timer;
+};
+
 /*!
     \class Core::ProgressManager
     \inheaderfile coreplugin/progressmanager/progressmanager.h
@@ -109,7 +142,7 @@ namespace Core {
     start a task concurrently in a different thread.
     QtConcurrent has several different functions to run e.g.
     a class function in a different thread. Qt Creator itself
-    adds a few more in \c{src/libs/utils/asynctask.h}.
+    adds a few more in \c{src/libs/utils/async.h}.
     The QtConcurrent functions to run a concurrent task return a
     \c QFuture object. This is what you want to give the
     ProgressManager in the addTask() function.
@@ -250,7 +283,7 @@ ProgressManagerPrivate::~ProgressManagerPrivate()
 
 void ProgressManagerPrivate::readSettings()
 {
-    QSettings *settings = ICore::settings();
+    QtcSettings *settings = ICore::settings();
     settings->beginGroup(kSettingsGroup);
     m_progressViewPinned = settings->value(kDetailsPinned, kDetailsPinnedDefault).toBool();
     settings->endGroup();
@@ -628,9 +661,7 @@ void ProgressManagerPrivate::updateStatusDetailsWidget()
         } else if (progress->isSubtitleVisibleInStatusBar() && !progress->subtitle().isEmpty()) {
             if (!m_statusDetailsLabel) {
                 m_statusDetailsLabel = new QLabel(m_summaryProgressWidget);
-                QFont font(m_statusDetailsLabel->font());
-                font.setPointSizeF(StyleHelper::sidebarFontSize());
-                font.setBold(true);
+                const QFont font = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
                 m_statusDetailsLabel->setFont(font);
             }
             m_statusDetailsLabel->setText(progress->subtitle());
@@ -787,31 +818,6 @@ void ProgressManager::cancelTasks(Id type)
 {
     if (m_instance)
         m_instance->doCancelTasks(type);
-}
-
-
-ProgressTimer::ProgressTimer(const QFutureInterfaceBase &futureInterface,
-                             int expectedSeconds,
-                             QObject *parent)
-    : QObject(parent),
-      m_futureInterface(futureInterface),
-      m_expectedTime(expectedSeconds)
-{
-    m_futureInterface.setProgressRange(0, 100);
-    m_futureInterface.setProgressValue(0);
-
-    m_timer = new QTimer(this);
-    m_timer->setInterval(TimerInterval);
-    connect(m_timer, &QTimer::timeout, this, &ProgressTimer::handleTimeout);
-    m_timer->start();
-}
-
-void ProgressTimer::handleTimeout()
-{
-    ++m_currentTime;
-    const int halfLife = qRound(1000.0 * m_expectedTime / TimerInterval);
-    const int progress = MathUtils::interpolateTangential(m_currentTime, halfLife, 0, 100);
-    m_futureInterface.setProgressValue(progress);
 }
 
 } // Core

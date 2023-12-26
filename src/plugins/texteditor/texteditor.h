@@ -5,7 +5,6 @@
 
 #include "texteditor_global.h"
 
-#include "blockrange.h"
 #include "codeassist/assistenums.h"
 #include "indenter.h"
 #include "refactoroverlay.h"
@@ -23,6 +22,7 @@
 
 #include <QPlainTextEdit>
 #include <QSharedPointer>
+#include <QToolButton>
 
 #include <functional>
 #include <memory>
@@ -57,6 +57,7 @@ using TextMarks = QList<TextMark *>;
 
 namespace Internal {
 class BaseTextEditorPrivate;
+class LineColumnButtonPrivate;
 class TextEditorFactoryPrivate;
 class TextEditorWidgetPrivate;
 class TextEditorOverlay;
@@ -111,7 +112,7 @@ public:
     // IEditor
     Core::IDocument *document() const override;
 
-    IEditor *duplicate() override;
+    BaseTextEditor *duplicate() override;
 
     QByteArray saveState() const override;
     void restoreState(const QByteArray &state) override;
@@ -154,7 +155,6 @@ private:
     friend class Internal::TextEditorFactoryPrivate;
     Internal::BaseTextEditorPrivate *d;
 };
-
 
 class TEXTEDITOR_EXPORT TextEditorWidget : public QPlainTextEdit
 {
@@ -277,6 +277,7 @@ public:
     virtual void extraAreaContextMenuEvent(QContextMenuEvent *);
     virtual void extraAreaMouseEvent(QMouseEvent *);
     void updateFoldingHighlight(const QPoint &pos);
+    void updateFoldingHighlight(const QTextCursor &cursor);
 
     void setLanguageSettingsId(Utils::Id settingsId);
     Utils::Id languageSettingsId() const;
@@ -310,6 +311,8 @@ public:
 
     RefactorMarkers refactorMarkers() const;
     void setRefactorMarkers(const RefactorMarkers &markers);
+    void setRefactorMarkers(const RefactorMarkers &markers, const Utils::Id &type);
+    void clearRefactorMarkers(const Utils::Id &type);
 
     enum Side { Left, Right };
     QAction *insertExtraToolBarWidget(Side side, QWidget *widget);
@@ -361,11 +364,13 @@ public:
     void deleteStartOfWord();
     void deleteStartOfWordCamelCase();
     void unfoldAll();
-    void fold();
-    void unfold();
+    void fold(const QTextBlock &block);
+    void foldCurrentBlock();
+    void unfold(const QTextBlock &block);
+    void unfoldCurrentBlock();
     void selectEncoding();
     void updateTextCodecLabel();
-    void selectLineEnding(int index);
+    void selectLineEnding(Utils::TextFileFormat::LineTerminationMode lineEnding);
     void updateTextLineEndingLabel();
     void addSelectionNextFindMatch();
     void addCursorsToLineEnds();
@@ -423,18 +428,20 @@ public:
     void uppercaseSelection();
     void lowercaseSelection();
 
-    void sortSelectedLines();
+    void sortLines();
 
     void cleanWhitespace();
 
     void indent();
     void unindent();
 
-    void undo();
-    void redo();
+    virtual void undo();
+    virtual void redo();
 
     void openLinkUnderCursor();
     void openLinkUnderCursorInNextSplit();
+    void openTypeUnderCursor();
+    void openTypeUnderCursorInNextSplit();
 
     virtual void findUsages();
     virtual void renameSymbolUnderCursor();
@@ -448,6 +455,9 @@ public:
     void configureGenericHighlighter();
     /// Overwrite the current highlighter with a new generic highlighter based on the given mimetype
     void configureGenericHighlighter(const Utils::MimeType &mimeType);
+
+    /// Overwrite the current highlighter with a new generic highlighter based on the given definition
+    Utils::expected_str<void> configureGenericHighlighter(const QString &definitionName);
 
     Q_INVOKABLE void inSnippetMode(bool *active); // Used by FakeVim.
 
@@ -475,6 +485,11 @@ public:
     void clearSuggestion();
     TextSuggestion *currentSuggestion() const;
     bool suggestionVisible() const;
+    bool suggestionsBlocked() const;
+
+    using SuggestionBlocker = std::shared_ptr<void>;
+    // Returns an object that blocks suggestions until it is destroyed.
+    SuggestionBlocker blockSuggestions();
 
 #ifdef WITH_TESTS
     void processTooltipRequest(const QTextCursor &c);
@@ -487,6 +502,8 @@ signals:
     void requestBlockUpdate(const QTextBlock &);
 
     void requestLinkAt(const QTextCursor &cursor, const Utils::LinkHandler &callback,
+                       bool resolveTarget, bool inNextSplit);
+    void requestTypeAt(const QTextCursor &cursor, const Utils::LinkHandler &callback,
                        bool resolveTarget, bool inNextSplit);
     void requestUsages(const QTextCursor &cursor);
     void requestRename(const QTextCursor &cursor);
@@ -576,6 +593,11 @@ protected:
        (it isn't until the link is used).
      */
     virtual void findLinkAt(const QTextCursor &,
+                            const Utils::LinkHandler &processLinkCallback,
+                            bool resolveTarget = true,
+                            bool inNextSplit = false);
+
+    virtual void findTypeAt(const QTextCursor &,
                             const Utils::LinkHandler &processLinkCallback,
                             bool resolveTarget = true,
                             bool inNextSplit = false);
@@ -678,6 +700,21 @@ private:
     friend class BaseTextEditor;
     friend class PlainTextEditorFactory;
     Internal::TextEditorFactoryPrivate *d;
+};
+
+class TEXTEDITOR_EXPORT LineColumnButton : public QToolButton
+{
+public:
+    LineColumnButton(TextEditorWidget *parent);
+    ~LineColumnButton();
+
+private:
+    void update();
+    bool event(QEvent *event) override;
+    QSize sizeHint() const override;
+
+private:
+    std::unique_ptr<Internal::LineColumnButtonPrivate> m_d;
 };
 
 } // namespace TextEditor

@@ -4,52 +4,28 @@
 #pragma once
 
 #include <projectexplorer/gcctoolchain.h>
-#include <projectexplorer/toolchainconfigwidget.h>
-
-namespace ProjectExplorer { class AbiWidget; }
-namespace Utils { class PathChooser; }
 
 namespace Qnx::Internal {
 
-class QnxToolChain : public ProjectExplorer::GccToolChain
+class QnxToolChain : public ProjectExplorer::GccToolchain
 {
 public:
     QnxToolChain();
 
-    std::unique_ptr<ProjectExplorer::ToolChainConfigWidget> createConfigurationWidget() override;
+    std::unique_ptr<ProjectExplorer::ToolchainConfigWidget> createConfigurationWidget() override;
 
     void addToEnvironment(Utils::Environment &env) const override;
     QStringList suggestedMkspecList() const override;
 
-    QVariantMap toMap() const override;
-    bool fromMap(const QVariantMap &data) override;
+    Utils::FilePathAspect sdpPath{this};
+    Utils::StringAspect cpuDir{this};
 
-    Utils::FilePath sdpPath() const;
-    void setSdpPath(const Utils::FilePath &sdpPath);
-    QString cpuDir() const;
-    void setCpuDir(const QString &cpuDir);
-
-    bool operator ==(const ToolChain &) const override;
+    bool operator ==(const Toolchain &) const override;
 
 protected:
     DetectedAbisResult detectSupportedAbis() const override;
-
-private:
-    Utils::FilePath m_sdpPath;
-    QString m_cpuDir;
 };
 
-// --------------------------------------------------------------------------
-// QnxToolChainFactory
-// --------------------------------------------------------------------------
-
-class QnxToolChainFactory : public ProjectExplorer::ToolChainFactory
-{
-public:
-    QnxToolChainFactory();
-
-    ProjectExplorer::Toolchains autoDetect(
-            const ProjectExplorer::ToolchainDetector &detector) const final;
-};
+void setupQnxToolChain();
 
 } // Qnx::Internal

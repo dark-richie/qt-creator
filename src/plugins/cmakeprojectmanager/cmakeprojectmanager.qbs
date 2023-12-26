@@ -12,7 +12,6 @@ QtcPlugin {
     Depends { name: "ProjectExplorer" }
     Depends { name: "TextEditor" }
     Depends { name: "QtSupport" }
-    Depends { name: "app_version_header" }
 
     files: [
         "builddirparameters.cpp",
@@ -35,14 +34,10 @@ QtcPlugin {
         "cmakefilecompletionassist.h",
         "cmakeformatter.cpp",
         "cmakeformatter.h",
-        "cmakeformatteroptionspage.cpp",
-        "cmakeformatteroptionspage.h",
-        "cmakeformattersettings.cpp",
-        "cmakeformattersettings.h",
         "cmakeinstallstep.cpp",
         "cmakeinstallstep.h",
-        "cmakekitinformation.h",
-        "cmakekitinformation.cpp",
+        "cmakekitaspect.h",
+        "cmakekitaspect.cpp",
         "cmakelocatorfilter.cpp",
         "cmakelocatorfilter.h",
         "cmakeparser.cpp",
@@ -93,4 +88,20 @@ QtcPlugin {
         "projecttreehelper.cpp",
         "projecttreehelper.h"
     ]
+
+    Group {
+        name: "3rdparty"
+        cpp.includePaths: base.concat("3rdparty/cmake")
+
+        prefix: "3rdparty/"
+        files: [
+            "cmake/cmListFileCache.cxx",
+            "cmake/cmListFileCache.h",
+            "cmake/cmListFileLexer.cxx",
+            "cmake/cmListFileLexer.h",
+            "cmake/cmStandardLexer.h",
+            "rstparser/rstparser.cc",
+            "rstparser/rstparser.h"
+        ]
+    }
 }

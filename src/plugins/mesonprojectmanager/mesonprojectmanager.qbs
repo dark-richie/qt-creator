@@ -12,10 +12,8 @@ Project {
         Depends { name: "Utils" }
 
         Depends { name: "Core" }
-        Depends { name: "CppEditor" }
         Depends { name: "ProjectExplorer" }
         Depends { name: "QtSupport" }
-        Depends { name: "app_version_header" }
 
         cpp.includePaths: "."
 
@@ -28,11 +26,6 @@ Project {
             "toolwrapper.cpp",
             "toolwrapper.h",
             "kitdata.h",
-            "kithelper.h",
-            "machinefilemanager.cpp",
-            "machinefilemanager.h",
-            "nativefilegenerator.cpp",
-            "nativefilegenerator.h",
             "mesonactionsmanager.cpp",
             "mesonactionsmanager.h",
             "buildoptions.h",
@@ -46,9 +39,6 @@ Project {
             "target.h",
             "mesonpluginconstants.h",
             "mesonprojectplugin.cpp",
-            "mesonprojectplugin.h",
-            "mesonbuildsettingswidget.cpp",
-            "mesonbuildsettingswidget.h",
             "arrayoptionlineedit.cpp",
             "arrayoptionlineedit.h",
             "buildoptionsmodel.cpp",
@@ -57,8 +47,6 @@ Project {
             "mesonbuildconfiguration.h",
             "mesonbuildsystem.cpp",
             "mesonbuildsystem.h",
-            "mesonprocess.cpp",
-            "mesonprocess.h",
             "mesonproject.cpp",
             "mesonproject.h",
             "mesonprojectimporter.cpp",
@@ -95,8 +83,6 @@ Project {
             "toolssettingsaccessor.h",
             "toolssettingspage.cpp",
             "toolssettingspage.h",
-            "toolssettingswidget.cpp",
-            "toolssettingswidget.h",
             "tooltreeitem.cpp",
             "tooltreeitem.h",
             "versionhelper.h",
@@ -105,7 +91,6 @@ Project {
 
     QtcAutotest {
         name: "mesonwrapper"
-        condition: project.withAutotests
 
         Depends { name: "Core" }
         Depends { name: "Utils" }
@@ -126,7 +111,6 @@ Project {
 
     QtcAutotest {
         name: "mesoninfoparser"
-        condition: project.withAutotests
 
         Depends { name: "Core" }
         Depends { name: "Utils" }
@@ -148,7 +132,6 @@ Project {
 
     QtcAutotest {
         name: "ninjaparser"
-        condition: project.withAutotests
 
         Depends { name: "Core" }
         Depends { name: "ProjectExplorer" }
@@ -166,7 +149,6 @@ Project {
 
     QtcAutotest {
         name: "mesonparser"
-        condition: project.withAutotests
 
         Depends { name: "Core" }
         Depends { name: "ProjectExplorer" }

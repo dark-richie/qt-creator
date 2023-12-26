@@ -307,6 +307,8 @@ QVariant DocumentModelPrivate::data(const QModelIndex &index, int role) const
         return QVariant();
     case Qt::ToolTipRole:
         return entry->filePath().isEmpty() ? entry->displayName() : entry->filePath().toUserOutput();
+    case DocumentModel::FilePathRole:
+        return entry->filePath().toVariant();
     default:
         break;
     }
@@ -470,10 +472,8 @@ void DocumentModelPrivate::removeAllSuspendedEntries(PinnedFileRemovalPolicy pin
     QSet<QString> displayNames;
     for (DocumentModel::Entry *entry : std::as_const(d->m_entries)) {
         const QString displayName = entry->plainDisplayName();
-        if (displayNames.contains(displayName))
-            continue;
-        displayNames.insert(displayName);
-        d->disambiguateDisplayNames(entry);
+        if (Utils::insert(displayNames, displayName))
+            d->disambiguateDisplayNames(entry);
     }
 }
 
@@ -592,7 +592,7 @@ QList<IEditor *> DocumentModel::editorsForFilePath(const Utils::FilePath &filePa
     IDocument *document = documentForFilePath(filePath);
     if (document)
         return editorsForDocument(document);
-    return QList<IEditor *>();
+    return {};
 }
 
 DocumentModel::Entry *DocumentModel::entryAtRow(int row)

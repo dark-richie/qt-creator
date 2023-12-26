@@ -7,13 +7,11 @@ QtcTool {
     Depends { name: "Qt.network" }
 
     cpp.defines: base.concat("UTILS_STATIC_LIBRARY")
-    cpp.includePaths: base.concat(pathToUtils)
+    cpp.includePaths: base.concat(pathToLibs)
 
     Properties {
         condition: qbs.targetOS.contains("windows")
-        cpp.dynamicLibraries: {
-            return qbs.toolchainType === "msvc" ? ["user32", "dbghelp"] : ["user32"];
-        }
+        cpp.dynamicLibraries: qbs.toolchain.contains("msvc") ? ["user32", "dbghelp"] : ["user32"]
     }
 
     files: [
@@ -24,6 +22,7 @@ QtcTool {
         "processlauncher-main.cpp",
     ]
 
+    property string pathToLibs: sourceDirectory + "/../../libs"
     property string pathToUtils: sourceDirectory + "/../../libs/utils"
     Group {
         name: "protocol sources"

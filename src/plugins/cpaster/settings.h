@@ -3,28 +3,22 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
 #include <utils/aspects.h>
 
 namespace CodePaster {
 
-class Settings : public Utils::AspectContainer
+class Settings final : public Utils::AspectContainer
 {
 public:
     Settings();
 
-    Utils::StringAspect username;
-    Utils::SelectionAspect protocols;
-    Utils::IntegerAspect expiryDays;
-    Utils::BoolAspect copyToClipboard;
-    Utils::BoolAspect displayOutput;
+    Utils::StringAspect username{this};
+    Utils::SelectionAspect protocols{this};
+    Utils::IntegerAspect expiryDays{this};
+    Utils::BoolAspect copyToClipboard{this};
+    Utils::BoolAspect displayOutput{this};
 };
 
-class SettingsPage final : public Core::IOptionsPage
-{
-public:
-    SettingsPage(Settings *settings);
-};
+Settings &settings();
 
 } // CodePaster

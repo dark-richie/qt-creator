@@ -10,7 +10,6 @@
 #include "projectfilecontenttools.h"
 #include "cmakegen/cmakeprojectconverter.h"
 #include "cmakegen/generatecmakelists.h"
-#include "qmlprojectgen/qmlprojectgenerator.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -41,7 +40,9 @@
 
 #include <utils/fileutils.h>
 #include <utils/fsengine/fileiconprovider.h>
-#include <utils/qtcprocess.h>
+#include <utils/mimeconstants.h>
+#include <utils/process.h>
+#include <utils/qtcsettings.h>
 
 #include <QAction>
 #include <QDesktopServices>
@@ -51,6 +52,7 @@
 #include <QTimer>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace QmlProjectManager::Internal {
 
@@ -116,10 +118,10 @@ void QmlProjectPlugin::openQDS(const Utils::FilePath &fileName)
     qputenv(Constants::enviromentLaunchedQDS, "true");
     //-a and -client arguments help to append project to open design studio application
     if (Utils::HostOsInfo::isMacHost())
-        qdsStarted = Utils::QtcProcess::startDetached(
+        qdsStarted = Utils::Process::startDetached(
             {"/usr/bin/open", {"-a", qdsPath.path(), fileName.toString()}});
     else
-        qdsStarted = Utils::QtcProcess::startDetached({qdsPath, {"-client", fileName.toString()}});
+        qdsStarted = Utils::Process::startDetached({qdsPath, {"-client", fileName.toString()}});
 
     if (!qdsStarted) {
         QMessageBox::warning(Core::ICore::dialogParent(),
@@ -132,8 +134,8 @@ void QmlProjectPlugin::openQDS(const Utils::FilePath &fileName)
 
 Utils::FilePath QmlProjectPlugin::qdsInstallationEntry()
 {
-    QSettings *settings = Core::ICore::settings();
-    const QString qdsInstallationEntry = "QML/Designer/DesignStudioInstallation"; //set in installer
+    QtcSettings *settings = Core::ICore::settings();
+    const Key qdsInstallationEntry = "QML/Designer/DesignStudioInstallation"; //set in installer
 
     return Utils::FilePath::fromUserInput(settings->value(qdsInstallationEntry).toString());
 }
@@ -251,7 +253,7 @@ void QmlProjectPlugin::initialize()
 
         d->landingPageWidget = new QdsLandingPageWidget();
 
-        const QStringList mimeTypes = {QmlJSTools::Constants::QMLUI_MIMETYPE};
+        const QStringList mimeTypes = {Utils::Constants::QMLUI_MIMETYPE};
         auto context = new Internal::DesignModeContext(d->landingPageWidget);
         Core::ICore::addContextObject(context);
 
@@ -261,11 +263,11 @@ void QmlProjectPlugin::initialize()
                 this, &QmlProjectPlugin::editorModeChanged);
     }
 
-    ProjectManager::registerProjectType<QmlProject>(QmlJSTools::Constants::QMLPROJECT_MIMETYPE);
+    ProjectManager::registerProjectType<QmlProject>(Utils::Constants::QMLPROJECT_MIMETYPE);
     Utils::FileIconProvider::registerIconOverlayForSuffix(":/qmlproject/images/qmlproject.png",
                                                          "qmlproject");
 
-    if (QmlProject::isQtDesignStudio()) {
+    if (Core::ICore::isQtDesignStudio()) {
         Core::ActionContainer *menu = Core::ActionManager::actionContainer(
             ProjectExplorer::Constants::M_FILECONTEXT);
         QAction *mainfileAction = new QAction(Tr::tr("Set as Main .qml File"), this);
@@ -354,7 +356,7 @@ void QmlProjectPlugin::initialize()
     }
 
     GenerateCmake::generateMenuEntry(this);
-    if (QmlProject::isQtDesignStudio())
+    if (Core::ICore::isQtDesignStudio())
         GenerateCmake::CmakeProjectConverter::generateMenuEntry(this);
 }
 

@@ -6,14 +6,11 @@
 #include "algorithm.h"
 #include "environment.h"
 #include "hostosinfo.h"
-
-#include <QCoreApplication>
-#include <QFileInfo>
-#include <QSettings>
+#include "qtcsettings.h"
 
 namespace Utils {
 
-static QSettings *s_settings = nullptr;
+static QtcSettings *s_settings = nullptr;
 
 TerminalCommand::TerminalCommand(const FilePath &command, const QString &openArgs,
                                  const QString &executeArgs, bool needsQuotes)
@@ -40,12 +37,12 @@ bool TerminalCommand::operator<(const TerminalCommand &other) const
     return command < other.command;
 }
 
-void TerminalCommand::setSettings(QSettings *settings)
+void TerminalCommand::setSettings(QtcSettings *settings)
 {
     s_settings = settings;
 }
 
-Q_GLOBAL_STATIC_WITH_ARGS(const QVector<TerminalCommand>, knownTerminals, (
+Q_GLOBAL_STATIC_WITH_ARGS(const QList<TerminalCommand>, knownTerminals, (
 {
     {"x-terminal-emulator", "", "-e"},
     {"xdg-terminal", "", "", true},
@@ -82,9 +79,9 @@ TerminalCommand TerminalCommand::defaultTerminalEmulator()
     return defaultTerm;
 }
 
-QVector<TerminalCommand> TerminalCommand::availableTerminalEmulators()
+QList<TerminalCommand> TerminalCommand::availableTerminalEmulators()
 {
-    QVector<TerminalCommand> result;
+    QList<TerminalCommand> result;
 
     if (HostOsInfo::isAnyUnixHost()) {
         const Environment env = Environment::systemEnvironment();
@@ -112,7 +109,14 @@ const char kTerminalExecuteOptionsKey[] = "General/Terminal/ExecuteOptions";
 TerminalCommand TerminalCommand::terminalEmulator()
 {
     if (s_settings && HostOsInfo::isAnyUnixHost() && s_settings->contains(kTerminalCommandKey)) {
-        return {FilePath::fromSettings(s_settings->value(kTerminalCommandKey)),
+        FilePath command = FilePath::fromSettings(s_settings->value(kTerminalCommandKey));
+
+        // TODO Remove some time after Qt Creator 11
+        // Work around Qt Creator <= 10 writing the default terminal to the settings.
+        if (HostOsInfo::isMacHost() && command.endsWith("openTerminal.py"))
+            command = FilePath::fromString("Terminal.app");
+
+        return {command,
                 s_settings->value(kTerminalOpenOptionsKey).toString(),
                 s_settings->value(kTerminalExecuteOptionsKey).toString()};
     }

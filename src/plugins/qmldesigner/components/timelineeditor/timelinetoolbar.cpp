@@ -22,6 +22,7 @@
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
+#include <utils/stylehelper.h>
 
 #include <QApplication>
 #include <QIntValidator>
@@ -184,6 +185,15 @@ void TimelineToolBar::setScaleFactor(int factor)
 void TimelineToolBar::setPlayState(bool state)
 {
     m_playing->setChecked(state);
+}
+
+void TimelineToolBar::setIsMcu(bool isMcu)
+{
+    m_curvePicker->setDisabled(isMcu);
+    if (isMcu)
+        m_curvePicker->setText(tr("Not Supported for MCUs"));
+    else
+        m_curvePicker->setText(tr(m_curveEditorName));
 }
 
 void TimelineToolBar::setActionEnabled(const QString &name, bool enabled)
@@ -349,7 +359,7 @@ void TimelineToolBar::createCenterControls()
     m_currentFrame = createToolBarLineEdit(this);
     addWidget(m_currentFrame);
 
-    auto emitCurrentChanged = [this]() { emit currentFrameChanged(m_currentFrame->text().toInt()); };
+    auto emitCurrentChanged = [this] { emit currentFrameChanged(m_currentFrame->text().toInt()); };
     connect(m_currentFrame, &QLineEdit::editingFinished, emitCurrentChanged);
 
     addSeparator();
@@ -377,14 +387,14 @@ void TimelineToolBar::createCenterControls()
 
     addSpacing(10);
 
-    auto *curvePicker = createAction(TimelineConstants::C_CURVE_PICKER,
+    m_curvePicker = createAction(TimelineConstants::C_CURVE_PICKER,
                                      Theme::iconFromName(Theme::Icon::curveDesigner_medium),
-                                     tr("Easing Curve Editor"),
+                                     tr(m_curveEditorName),
                                      QKeySequence(Qt::Key_C));
 
-    curvePicker->setObjectName("Easing Curve Editor");
-    connect(curvePicker, &QAction::triggered, this, &TimelineToolBar::openEasingCurveEditor);
-    addAction(curvePicker);
+    m_curvePicker->setObjectName("Easing Curve Editor");
+    connect(m_curvePicker, &QAction::triggered, this, &TimelineToolBar::openEasingCurveEditor);
+    addAction(m_curvePicker);
 
     addSpacing(10);
 
@@ -393,7 +403,7 @@ void TimelineToolBar::createCenterControls()
 
     addSpacing(10);
 
-    auto *curveEditor = new QAction(TimelineIcons::CURVE_PICKER.icon(), tr("Curve Editor"));
+    auto *curveEditor = new QAction(TimelineIcons::CURVE_PICKER.icon(), tr(m_curveEditorName));
     addAction(curveEditor);
 #endif
 }
@@ -409,7 +419,7 @@ void TimelineToolBar::createRightControls()
     m_firstFrame = createToolBarLineEdit(this);
     addWidget(m_firstFrame);
 
-    auto emitStartChanged = [this]() { emit startFrameChanged(m_firstFrame->text().toInt()); };
+    auto emitStartChanged = [this] { emit startFrameChanged(m_firstFrame->text().toInt()); };
     connect(m_firstFrame, &QLineEdit::editingFinished, emitStartChanged);
 
     addSeparator();
@@ -421,7 +431,7 @@ void TimelineToolBar::createRightControls()
                                  tr("Zoom Out"),
                                  QKeySequence(QKeySequence::ZoomOut));
 
-    connect(zoomOut, &QAction::triggered, [this]() {
+    connect(zoomOut, &QAction::triggered, [this] {
         m_scale->setValue(m_scale->value() - m_scale->pageStep());
     });
     addAction(zoomOut);
@@ -430,8 +440,8 @@ void TimelineToolBar::createRightControls()
 
     m_scale = new QSlider(this);
     m_scale->setOrientation(Qt::Horizontal);
-    m_scale->setProperty("panelwidget", true);
-    m_scale->setProperty("panelwidget_singlerow", true);
+    Utils::StyleHelper::setPanelWidget(m_scale);
+    Utils::StyleHelper::setPanelWidgetSingleRow(m_scale);
     m_scale->setMaximumWidth(200);
     m_scale->setMinimumWidth(100);
     m_scale->setMinimum(0);
@@ -448,7 +458,7 @@ void TimelineToolBar::createRightControls()
                                 tr("Zoom In"),
                                 QKeySequence(QKeySequence::ZoomIn));
 
-    connect(zoomIn, &QAction::triggered, [this]() {
+    connect(zoomIn, &QAction::triggered, [this] {
         m_scale->setValue(m_scale->value() + m_scale->pageStep());
     });
     addAction(zoomIn);
@@ -460,7 +470,7 @@ void TimelineToolBar::createRightControls()
     m_lastFrame = createToolBarLineEdit(this);
     addWidget(m_lastFrame);
 
-    auto emitEndChanged = [this]() { emit endFrameChanged(m_lastFrame->text().toInt()); };
+    auto emitEndChanged = [this] { emit endFrameChanged(m_lastFrame->text().toInt()); };
     connect(m_lastFrame, &QLineEdit::editingFinished, emitEndChanged);
 
     addSeparator();

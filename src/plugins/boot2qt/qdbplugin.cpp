@@ -1,11 +1,8 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "qdbplugin.h"
-
 #include "device-detection/devicedetector.h"
 #include "qdbconstants.h"
-#include "qdbdeployconfigurationfactory.h"
 #include "qdbdevice.h"
 #include "qdbstopapplicationstep.h"
 #include "qdbmakedefaultappstep.h"
@@ -19,9 +16,11 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/icore.h>
 
+#include <extensionsystem/iplugin.h>
+
+#include <projectexplorer/deployconfiguration.h>
 #include <projectexplorer/devicesupport/devicemanager.h>
-#include <projectexplorer/kitinformation.h>
-#include <projectexplorer/kitmanager.h>
+#include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
@@ -30,11 +29,9 @@
 #include <remotelinux/remotelinux_constants.h>
 
 #include <utils/hostosinfo.h>
-#include <utils/fileutils.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
-#include <QAction>
-
+using namespace Core;
 using namespace ProjectExplorer;
 using namespace Utils;
 
@@ -49,9 +46,9 @@ static void startFlashingWizard()
 {
     const FilePath filePath = flashWizardFilePath();
     if (HostOsInfo::isWindowsHost()) {
-        if (QtcProcess::startDetached({"explorer.exe", {filePath.toUserOutput()}}))
+        if (Process::startDetached({"explorer.exe", {filePath.toUserOutput()}}))
             return;
-    } else if (QtcProcess::startDetached({filePath, {}})) {
+    } else if (Process::startDetached({filePath, {}})) {
         return;
     }
     const QString message = Tr::tr("Flash wizard \"%1\" failed to start.");
@@ -60,7 +57,7 @@ static void startFlashingWizard()
 
 static bool isFlashActionDisabled()
 {
-    QSettings * const settings = Core::ICore::settings();
+    QtcSettings * const settings = Core::ICore::settings();
     settings->beginGroup(settingsGroupKey());
     bool disabled = settings->value("flashActionDisabled", false).toBool();
     settings->endGroup();
@@ -79,21 +76,16 @@ void registerFlashAction(QObject *parentForAction)
     }
 
     const char flashActionId[] = "Qdb.FlashAction";
-    if (Core::ActionManager::command(flashActionId))
+    if (ActionManager::command(flashActionId))
         return; // The action has already been registered.
 
-    Core::ActionContainer *toolsContainer =
-        Core::ActionManager::actionContainer(Core::Constants::M_TOOLS);
+    ActionContainer *toolsContainer = ActionManager::actionContainer(Core::Constants::M_TOOLS);
     toolsContainer->insertGroup(Core::Constants::G_TOOLS_DEBUG, flashActionId);
 
-    Core::Context globalContext(Core::Constants::C_GLOBAL);
-
-    QAction *flashAction = new QAction(Tr::tr("Flash Boot to Qt Device"), parentForAction);
-    Core::Command *flashCommand = Core::ActionManager::registerAction(flashAction,
-                                                                      flashActionId,
-                                                                      globalContext);
-    QObject::connect(flashAction, &QAction::triggered, startFlashingWizard);
-    toolsContainer->addAction(flashCommand, flashActionId);
+    ActionBuilder flashAction(parentForAction, flashActionId);
+    flashAction.setText(Tr::tr("Flash Boot to Qt Device"));
+    flashAction.addToContainer(Core::Constants::M_TOOLS, flashActionId);
+    flashAction.addOnTriggered(&startFlashingWizard);
 }
 
 class QdbDeployStepFactory : public BuildStepFactory
@@ -107,10 +99,34 @@ public:
     }
 };
 
-class QdbPluginPrivate : public QObject
+class QdbDeployConfigurationFactory final : public DeployConfigurationFactory
 {
 public:
-    void setupDeviceDetection();
+    QdbDeployConfigurationFactory()
+    {
+        setConfigBaseId(Constants::QdbDeployConfigurationId);
+        addSupportedTargetDeviceType(Constants::QdbLinuxOsType);
+        setDefaultDisplayName(Tr::tr("Deploy to Boot2Qt target"));
+        setUseDeploymentDataView();
+
+        addInitialStep(RemoteLinux::Constants::MakeInstallStepId, [](Target *target) {
+            const Project * const prj = target->project();
+            return prj->deploymentKnowledge() == DeploymentKnowledge::Bad
+                   && prj->hasMakeInstallEquivalent();
+        });
+        addInitialStep(Qdb::Constants::QdbStopApplicationStepId);
+#ifdef Q_OS_WIN
+        addInitialStep(RemoteLinux::Constants::DirectUploadStepId);
+#else
+        addInitialStep(RemoteLinux::Constants::GenericDeployStepId);
+#endif
+    }
+};
+
+class QdbPluginPrivate final : public QObject
+{
+public:
+    void setupDeviceDetection() { m_deviceDetector.start(); }
 
     QdbLinuxDeviceFactory m_qdbDeviceFactory;
     QdbQtVersionFactory m_qtVersionFactory;
@@ -120,7 +136,7 @@ public:
     QdbMakeDefaultAppStepFactory m_makeDefaultAppStepFactory;
 
     QdbDeployStepFactory m_directUploadStepFactory{RemoteLinux::Constants::DirectUploadStepId};
-    QdbDeployStepFactory m_rsyncDeployStepFactory{RemoteLinux::Constants::RsyncDeployStepId};
+    QdbDeployStepFactory m_rsyncDeployStepFactory{RemoteLinux::Constants::GenericDeployStepId};
     QdbDeployStepFactory m_makeInstallStepFactory{RemoteLinux::Constants::MakeInstallStepId};
 
     const QList<Id> supportedRunConfigs {
@@ -136,39 +152,43 @@ public:
     DeviceDetector m_deviceDetector;
 };
 
-QdbPlugin::~QdbPlugin()
+class QdbPlugin final : public ExtensionSystem::IPlugin
 {
-    delete d;
-}
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Boot2Qt.json")
 
-void QdbPlugin::initialize()
-{
-    d = new QdbPluginPrivate;
+public:
+    ~QdbPlugin() final { delete d; }
 
-    registerFlashAction(this);
-}
+private:
+    void initialize() final
+    {
+        d = new QdbPluginPrivate;
 
-void QdbPlugin::extensionsInitialized()
-{
-    DeviceManager * const dm = DeviceManager::instance();
-    if (dm->isLoaded()) {
-        d->setupDeviceDetection();
-    } else {
-        connect(dm, &DeviceManager::devicesLoaded,
-                d, &QdbPluginPrivate::setupDeviceDetection);
+        registerFlashAction(this);
     }
-}
 
-ExtensionSystem::IPlugin::ShutdownFlag QdbPlugin::aboutToShutdown()
-{
-    d->m_deviceDetector.stop();
+    void extensionsInitialized() final
+    {
+        DeviceManager * const dm = DeviceManager::instance();
+        if (dm->isLoaded()) {
+            d->setupDeviceDetection();
+        } else {
+            connect(dm, &DeviceManager::devicesLoaded,
+                    d, &QdbPluginPrivate::setupDeviceDetection);
+        }
+    }
 
-    return SynchronousShutdown;
-}
+    ShutdownFlag aboutToShutdown() final
+    {
+        d->m_deviceDetector.stop();
 
-void QdbPluginPrivate::setupDeviceDetection()
-{
-    m_deviceDetector.start();
-}
+        return SynchronousShutdown;
+    }
+
+    class QdbPluginPrivate *d = nullptr;
+};
 
 } // Qdb::Internal
+
+#include "qdbplugin.moc"

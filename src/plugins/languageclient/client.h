@@ -4,6 +4,7 @@
 #pragma once
 
 #include "languageclient_global.h"
+#include "languageclientsymbolsupport.h"
 #include "languageclientutils.h"
 #include "semantichighlightsupport.h"
 
@@ -15,6 +16,8 @@ class IAssistProcessor;
 class TextDocument;
 class TextEditorWidget;
 }
+
+namespace Utils { namespace Text { class Range; } }
 
 QT_BEGIN_NAMESPACE
 class QWidget;
@@ -43,20 +46,15 @@ class LanguageClientOutlineItem;
 class LanguageClientQuickFixProvider;
 class LanguageFilter;
 class ProgressManager;
-class SymbolSupport;
 
 class LANGUAGECLIENT_EXPORT Client : public QObject
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(Client)
 
 public:
     explicit Client(BaseClientInterface *clientInterface, const Utils::Id &id = {}); // takes ownership
      ~Client() override;
-
-    Client(const Client &) = delete;
-    Client(Client &&) = delete;
-    Client &operator=(const Client &) = delete;
-    Client &operator=(Client &&) = delete;
 
     // basic properties
     Utils::Id id() const;
@@ -79,6 +77,7 @@ public:
     enum State {
         Uninitialized,
         InitializeRequested,
+        FailedToInitialize,
         Initialized,
         ShutdownRequested,
         Shutdown,
@@ -87,6 +86,7 @@ public:
     State state() const;
     QString stateString() const;
     bool reachable() const;
+    void resetRestartCounter();
 
     void setClientInfo(const LanguageServerProtocol::ClientInfo &clientInfo);
     // capabilities
@@ -136,6 +136,7 @@ public:
     ProjectExplorer::Project *project() const;
     virtual void projectOpened(ProjectExplorer::Project *project);
     virtual void projectClosed(ProjectExplorer::Project *project);
+    virtual bool canOpenProject(ProjectExplorer::Project *project);
     void updateConfiguration(const QJsonValue &configuration);
 
     // commands
@@ -152,6 +153,14 @@ public:
     void addAssistProcessor(TextEditor::IAssistProcessor *processor);
     void removeAssistProcessor(TextEditor::IAssistProcessor *processor);
     SymbolSupport &symbolSupport();
+    // In contrast to the findLinkAt of symbol support this find link makes sure that there is only
+    // one request running at a time and cancels the running request if the document changes, cursor
+    // moves or another link is requested
+    void findLinkAt(TextEditor::TextDocument *document,
+                    const QTextCursor &cursor,
+                    Utils::LinkHandler callback,
+                    const bool resolveTarget,
+                    LinkTarget target);
     DocumentSymbolCache *documentSymbolCache();
     HoverHandler *hoverHandler();
     QList<LanguageServerProtocol::Diagnostic> diagnosticsAt(const Utils::FilePath &filePath,
@@ -171,6 +180,12 @@ public:
     LanguageServerProtocol::DocumentUri::PathMapper hostPathMapper() const;
     Utils::FilePath serverUriToHostPath(const LanguageServerProtocol::DocumentUri &uri) const;
     LanguageServerProtocol::DocumentUri hostPathToServerUri(const Utils::FilePath &path) const;
+    Utils::OsType osType() const;
+
+    // custom methods
+    using CustomMethodHandler = std::function<void(
+        const LanguageServerProtocol::JsonRpcMessage &message)>;
+    void registerCustomMethod(const QString &method, const CustomMethodHandler &handler);
 
     // logging
     enum class LogTarget { Console, Ui };
@@ -186,7 +201,7 @@ public:
     virtual const CustomInspectorTabs createCustomInspectorTabs() { return {}; }
 
     // Caller takes ownership
-    virtual TextEditor::RefactoringChangesData *createRefactoringChangesBackend() const;
+    virtual TextEditor::RefactoringFilePtr createRefactoringFile(const Utils::FilePath &filePath) const;
 
     void setCompletionResultsLimit(int limit);
     int completionResultsLimit() const;
@@ -216,6 +231,8 @@ private:
                                                       TextEditor::TextDocument *doc);
     virtual bool referencesShadowFile(const TextEditor::TextDocument *doc,
                                       const Utils::FilePath &candidate);
+    virtual QList<Utils::Text::Range> additionalDocumentHighlights(
+        TextEditor::TextEditorWidget *, const QTextCursor &) { return {}; }
 };
 
 } // namespace LanguageClient

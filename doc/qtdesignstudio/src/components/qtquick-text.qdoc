@@ -69,21 +69,13 @@
     \c qsTrId(). Select \uicontrol Edit > \uicontrol Preferences >
     \uicontrol {Qt Quick} > \uicontrol {Qt Quick Designer}, and then select the
     \uicontrol {qsTrId()} radio button in the \uicontrol Internationalization
-    group. For more information about text ID based translations, see
-    \l {Qt Linguist Manual: Text ID Based Translations}.
+    group. For more information, see \l {Text ID based translations}.
 
     To preserve the context when editing the text or to change the context
     by setting a binding on the text property, change the default call to
     \c qsTranslate() by selecting the \uicontrol {qsTranslate()} radio button.
 
-    For more information, see
-    \l {Internationalization and Localization with Qt Quick}.
-
-    \if defined(qtcreator)
-    When you \l{Creating Qt Quick Projects}{create a new project}, you can
-    automatically generate a translation source file (TS) for one language.
-    You can add other languages later by editing the project file.
-    \endif
+    For more information, see \l {Mark Strings for Translation}.
 
     \section1 Character Properties
 
@@ -214,7 +206,7 @@
 
     Text can be either in plain text or rich text format, depending on the
     value you set in the \uicontrol Format field. If you select
-    \uicontrol AutoText and the the first line of text contains an HTML tag,
+    \uicontrol AutoText and the first line of text contains an HTML tag,
     the text is treated as rich text. Rich text supports a subset of HTML 4
     described on the \l {Supported HTML Subset}. Note that plain text offers
     better performance than rich text.

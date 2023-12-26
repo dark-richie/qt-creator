@@ -7,13 +7,11 @@
 #include "customwidgetwizard/customwidgetwizard.h"
 #include "profileeditor.h"
 #include "qmakebuildconfiguration.h"
-#include "qmakekitinformation.h"
 #include "qmakemakestep.h"
 #include "qmakenodes.h"
 #include "qmakeproject.h"
 #include "qmakeprojectmanagerconstants.h"
 #include "qmakeprojectmanagertr.h"
-#include "qmakesettings.h"
 #include "qmakestep.h"
 #include "wizards/subdirsprojectwizard.h"
 
@@ -40,6 +38,7 @@
 #include <texteditor/texteditorconstants.h>
 
 #include <utils/hostosinfo.h>
+#include <utils/mimeconstants.h>
 #include <utils/parameteraction.h>
 #include <utils/utilsicons.h>
 
@@ -80,8 +79,6 @@ public:
 
     ProFileEditorFactory profileEditorFactory;
 
-    QmakeSettingsPage settingsPage;
-
     QmakeProject *m_previousStartupProject = nullptr;
     Target *m_previousTarget = nullptr;
 
@@ -98,8 +95,6 @@ public:
     ParameterAction *m_buildFileAction = nullptr;
     QAction *m_addLibraryAction = nullptr;
     QAction *m_addLibraryActionContextMenu = nullptr;
-
-    QmakeKitAspect qmakeKitAspect;
 
     void addLibrary();
     void addLibraryContextMenu();
@@ -130,7 +125,7 @@ void QmakeProjectManagerPlugin::initialize()
     d = new QmakeProjectManagerPluginPrivate;
 
     //create and register objects
-    ProjectManager::registerProjectType<QmakeProject>(QmakeProjectManager::Constants::PROFILE_MIMETYPE);
+    ProjectManager::registerProjectType<QmakeProject>(Utils::Constants::PROFILE_MIMETYPE);
 
     IWizardFactory::registerFactoryCreator([] { return new SubdirsProjectWizard; });
     IWizardFactory::registerFactoryCreator([] { return new CustomWidgetWizard; });
@@ -357,8 +352,7 @@ void QmakeProjectManagerPluginPrivate::addLibraryImpl(const FilePath &filePath, 
     // add extra \n in case the last line is not empty
     int line, column;
     editor->convertPosition(endOfDoc, &line, &column);
-    const int positionInBlock = column - 1;
-    if (!editor->textAt(endOfDoc - positionInBlock, positionInBlock).simplified().isEmpty())
+    if (!editor->textAt(endOfDoc - column, column).simplified().isEmpty())
         snippet = QLatin1Char('\n') + snippet;
 
     editor->insert(snippet);

@@ -3,9 +3,10 @@
 
 #include "formeditorplugin.h"
 
-#include "formeditorw.h"
+#include "formeditor.h"
 
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/systemsettings.h>
 #include <coreplugin/testdatadir.h>
 #include <cppeditor/builtineditordocumentprocessor.h>
 #include <cppeditor/cppmodelmanager.h>
@@ -147,7 +148,7 @@ public:
         waitForFilesInGlobalSnapshot({cppFile, hFile});
 
         // Execute "Go To Slot"
-        QDesignerIntegrationInterface *integration = FormEditorW::designerEditor()->integration();
+        QDesignerIntegrationInterface *integration = designerEditor()->integration();
         QVERIFY(integration);
         integration->emitNavigateToSlot("pushButton", "clicked()", QStringList());
 
@@ -215,6 +216,21 @@ namespace Internal {
 /// header and source files are correctly updated.
 void FormEditorPlugin::test_gotoslot()
 {
+    class SystemSettingsMgr {
+    public:
+        SystemSettingsMgr()
+            : m_saveAfterRefactor(Core::Internal::systemSettings().autoSaveAfterRefactoring.value())
+        {
+            Core::Internal::systemSettings().autoSaveAfterRefactoring.setValue(false);
+        }
+        ~SystemSettingsMgr()
+        {
+            Core::Internal::systemSettings().autoSaveAfterRefactoring.setValue(m_saveAfterRefactor);
+        }
+    private:
+        const bool m_saveAfterRefactor;
+    } systemSettingsMgr;
+
     QFETCH(QStringList, files);
     (GoToSlotTestCase(Utils::transform(files, FilePath::fromString)));
 }

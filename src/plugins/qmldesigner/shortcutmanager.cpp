@@ -14,11 +14,12 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/idocument.h>
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/coreconstants.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/idocument.h>
+#include <coreplugin/modemanager.h>
 #include <qmljseditor/qmljseditorconstants.h>
 
 #include <qmlprojectmanager/qmlprojectmanagerconstants.h>
@@ -39,24 +40,30 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QMainWindow>
+#include <QStandardPaths>
 
 namespace QmlDesigner {
 
-ShortCutManager::ShortCutManager()
-    : QObject(),
-    m_exportAsImageAction(tr("Export as &Image...")),
-    m_undoAction(tr("&Undo")),
-    m_redoAction(tr("&Redo")),
-    m_deleteAction(tr("Delete")),
-    m_cutAction(tr("Cu&t")),
-    m_copyAction(tr("&Copy")),
-    m_pasteAction(tr("&Paste")),
-    m_duplicateAction(tr("&Duplicate")),
-    m_selectAllAction(tr("Select &All")),
-    m_escapeAction(this)
+static DesignDocument *currentDesignDocument()
 {
-
+    return QmlDesignerPlugin::instance()->currentDesignDocument();
 }
+
+ShortCutManager::ShortCutManager()
+    : QObject()
+    , m_exportAsImageAction(tr("Export as &Image..."))
+    , m_takeScreenshotAction(tr("Take Screenshot"))
+    , m_undoAction(tr("&Undo"))
+    , m_redoAction(tr("&Redo"))
+    , m_deleteAction(tr("Delete"))
+    , m_cutAction(tr("Cu&t"))
+    , m_copyAction(tr("&Copy"))
+    , m_pasteAction(tr("&Paste"))
+    , m_duplicateAction(tr("&Duplicate"))
+    , m_selectAllAction(tr("Select &All"))
+    , m_escapeAction(this)
+{}
 
 void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContext,
                                       const Core::Context &qmlDesignerFormEditorContext,
@@ -106,12 +113,33 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
         QmlDesignerPlugin::instance()->viewManager().exportAsImage();
     });
 
+    // Edit Global Annotations
     QAction *action = new QAction(tr("Edit Global Annotations..."), this);
     command = Core::ActionManager::registerAction(action, "Edit.Annotations", qmlDesignerMainContext);
     Core::ActionManager::actionContainer(Core::Constants::M_EDIT)
         ->addAction(command, Core::Constants::G_EDIT_OTHER);
-
     connect(action, &QAction::triggered, this, [] { ToolBarBackend::launchGlobalAnnotations(); });
+    connect(Core::ModeManager::instance(), &Core::ModeManager::currentModeChanged, this, [action] {
+        action->setEnabled(Core::ModeManager::currentModeId() == Core::Constants::MODE_DESIGN);
+    });
+    action->setEnabled(false);
+
+    command = Core::ActionManager::registerAction(&m_takeScreenshotAction,
+                                                  QmlDesigner::Constants::TAKE_SCREENSHOT);
+    connect(&m_takeScreenshotAction, &QAction::triggered, [] {
+        const auto folder = Utils::FilePath::fromString(
+                                QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+                                .pathAppended("QtDesignStudio/screenshots/");
+        folder.createDir();
+
+        const auto file = folder.pathAppended(QDateTime::currentDateTime().toString("dddd-hh-mm-ss")
+                                              + ".png");
+
+        QPixmap pixmap = Core::ICore::mainWindow()->grab();
+
+        const bool b = pixmap.save(file.toString(), "PNG");
+        qWarning() << "screenshot" << file << b << pixmap;
+    });
 
     Core::ActionContainer *exportMenu = Core::ActionManager::actionContainer(
         QmlProjectManager::Constants::EXPORT_MENU);
@@ -302,16 +330,24 @@ void ShortCutManager::selectAll()
 void ShortCutManager::connectUndoActions(DesignDocument *designDocument)
 {
     if (designDocument) {
-        connect(designDocument, &DesignDocument::undoAvailable, this, &ShortCutManager::undoAvailable);
-        connect(designDocument, &DesignDocument::redoAvailable, this, &ShortCutManager::redoAvailable);
+        connect(designDocument, &DesignDocument::undoAvailable, this,
+                [this, designDocument](bool isAvailable) {
+            if (currentDesignDocument() == designDocument)
+                m_undoAction.setEnabled(isAvailable);
+        });
+        connect(designDocument, &DesignDocument::redoAvailable, this,
+                [this, designDocument](bool isAvailable) {
+            if (currentDesignDocument() == designDocument)
+                m_redoAction.setEnabled(isAvailable);
+        });
     }
 }
 
 void ShortCutManager::disconnectUndoActions(DesignDocument *designDocument)
 {
-    if (currentDesignDocument()) {
-        disconnect(designDocument, &DesignDocument::undoAvailable, this, &ShortCutManager::undoAvailable);
-        disconnect(designDocument, &DesignDocument::redoAvailable, this, &ShortCutManager::redoAvailable);
+    if (designDocument) {
+        disconnect(designDocument, &DesignDocument::undoAvailable, this, nullptr);
+        disconnect(designDocument, &DesignDocument::redoAvailable, this, nullptr);
     }
 }
 
@@ -323,29 +359,6 @@ void ShortCutManager::updateUndoActions(DesignDocument *designDocument)
     } else {
         m_undoAction.setEnabled(false);
         m_redoAction.setEnabled(false);
-    }
-}
-
-DesignDocument *ShortCutManager::currentDesignDocument() const
-{
-    return QmlDesignerPlugin::instance()->currentDesignDocument();
-}
-
-void ShortCutManager::undoAvailable(bool isAvailable)
-{
-    auto documentController = qobject_cast<DesignDocument*>(sender());
-    if (currentDesignDocument() &&
-        currentDesignDocument() == documentController) {
-        m_undoAction.setEnabled(isAvailable);
-    }
-}
-
-void ShortCutManager::redoAvailable(bool isAvailable)
-{
-    auto documentController = qobject_cast<DesignDocument*>(sender());
-    if (currentDesignDocument() &&
-        currentDesignDocument() == documentController) {
-        m_redoAction.setEnabled(isAvailable);
     }
 }
 

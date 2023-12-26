@@ -3,23 +3,26 @@
 
 #include "mcusupportoptions.h"
 
+#include "dialogs/mcukitcreationdialog.h"
 #include "mcuhelpers.h"
 #include "mcukitmanager.h"
 #include "mcupackage.h"
+#include "mcusupport_global.h"
 #include "mcusupportconstants.h"
 #include "mcusupportsdk.h"
 #include "mcusupporttr.h"
 #include "mcutarget.h"
 #include "settingshandler.h"
 
-#include <cmakeprojectmanager/cmakekitinformation.h>
+#include <cmakeprojectmanager/cmakekitaspect.h>
 #include <cmakeprojectmanager/cmaketoolmanager.h>
 #include <coreplugin/helpmanager.h>
 #include <coreplugin/icore.h>
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 #include <utils/algorithm.h>
 #include <utils/filepath.h>
-#include <qtsupport/qtkitinformation.h>
+#include <utils/infobar.h>
+#include <qtsupport/qtkitaspect.h>
 #include <qtsupport/qtversionmanager.h>
 
 #include <QMessageBox>
@@ -250,6 +253,30 @@ McuKitManager::UpgradeOption McuSupportOptions::askForKitUpgrades()
         return McuKitManager::UpgradeOption::Replace;
 
     return McuKitManager::UpgradeOption::Ignore;
+}
+
+void McuSupportOptions::displayKitCreationMessages(const MessagesList &messages,
+                                                   const SettingsHandler::Ptr &settingsHandler,
+                                                   McuPackagePtr qtMCUsPackage)
+{
+    if (messages.isEmpty() || !qtMCUsPackage->isValidStatus())
+        return;
+    static const char mcuKitCreationErrorInfoId[] = "ErrorWhileCreatingMCUKits";
+    if (!Core::ICore::infoBar()->canInfoBeAdded(mcuKitCreationErrorInfoId))
+        return;
+
+    Utils::InfoBarEntry info(mcuKitCreationErrorInfoId,
+                             Tr::tr("Errors while creating Qt for MCUs kits"),
+                             Utils::InfoBarEntry::GlobalSuppression::Enabled);
+
+    info.addCustomButton(Tr::tr("Details"), [=] {
+        auto popup = new McuKitCreationDialog(messages, settingsHandler, qtMCUsPackage);
+        popup->exec();
+        delete popup;
+        Core::ICore::infoBar()->removeInfo(mcuKitCreationErrorInfoId);
+    });
+
+    Core::ICore::infoBar()->addInfo(info);
 }
 
 void McuSupportOptions::checkUpgradeableKits()

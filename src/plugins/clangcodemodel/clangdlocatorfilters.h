@@ -5,52 +5,42 @@
 
 #include <coreplugin/locator/ilocatorfilter.h>
 
-namespace LanguageClient { class WorkspaceLocatorFilter; }
+namespace ClangCodeModel::Internal {
 
-namespace ClangCodeModel {
-namespace Internal {
-
-class ClangGlobalSymbolFilter : public Core::ILocatorFilter
+class ClangdAllSymbolsFilter : public Core::ILocatorFilter
 {
 public:
-    ClangGlobalSymbolFilter();
-    ClangGlobalSymbolFilter(Core::ILocatorFilter *cppFilter,
-                            Core::ILocatorFilter *lspFilter);
-    ~ClangGlobalSymbolFilter() override;
+    ClangdAllSymbolsFilter();
 
 private:
-    void prepareSearch(const QString &entry) override;
-    QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
-                                               const QString &entry) override;
-    Core::ILocatorFilter * const m_cppFilter;
-    Core::ILocatorFilter * const m_lspFilter;
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-class ClangClassesFilter : public ClangGlobalSymbolFilter
+class ClangdClassesFilter : public Core::ILocatorFilter
 {
 public:
-    ClangClassesFilter();
+    ClangdClassesFilter();
+
+private:
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-class ClangFunctionsFilter : public ClangGlobalSymbolFilter
+class ClangdFunctionsFilter : public Core::ILocatorFilter
 {
 public:
-    ClangFunctionsFilter();
+    ClangdFunctionsFilter();
+
+private:
+    Core::LocatorMatcherTasks matchers() final;
 };
 
 class ClangdCurrentDocumentFilter : public Core::ILocatorFilter
 {
 public:
     ClangdCurrentDocumentFilter();
-    ~ClangdCurrentDocumentFilter() override;
 
 private:
-    void prepareSearch(const QString &entry) override;
-    QList<Core::LocatorFilterEntry> matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future,
-                                               const QString &entry) override;
-    class Private;
-    Private * const d;
+    Core::LocatorMatcherTasks matchers() final;
 };
 
-} // namespace Internal
-} // namespace ClangCodeModel
+} // namespace ClangCodeModel::Internal

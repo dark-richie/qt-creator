@@ -5,10 +5,10 @@
 #include "mainwidget.h"
 #include "scxmleditorconstants.h"
 
-#include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectmanager.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
+
 #include <utils/fileutils.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 
 #include <QFileInfo>
@@ -24,7 +24,7 @@ using namespace ScxmlEditor::Internal;
 ScxmlEditorDocument::ScxmlEditorDocument(MainWidget *designWidget, QObject *parent)
     : m_designWidget(designWidget)
 {
-    setMimeType(QLatin1String(ProjectExplorer::Constants::SCXML_MIMETYPE));
+    setMimeType(Utils::Constants::SCXML_MIMETYPE);
     setParent(parent);
     setId(Utils::Id(ScxmlEditor::Constants::K_SCXML_EDITOR_ID));
 
@@ -58,28 +58,26 @@ Core::IDocument::OpenResult ScxmlEditorDocument::open(QString *errorString,
     return OpenResult::Success;
 }
 
-bool ScxmlEditorDocument::save(QString *errorString, const FilePath &filePath, bool autoSave)
+bool ScxmlEditorDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
 {
-    const FilePath oldFileName = this->filePath();
-    const FilePath actualName = filePath.isEmpty() ? oldFileName : filePath;
-    if (actualName.isEmpty())
+    if (filePath.isEmpty())
         return false;
     bool dirty = m_designWidget->isDirty();
 
-    m_designWidget->setFileName(actualName.toString());
+    m_designWidget->setFileName(filePath.toString());
     if (!m_designWidget->save()) {
         *errorString = m_designWidget->errorMessage();
-        m_designWidget->setFileName(oldFileName.toString());
+        m_designWidget->setFileName(this->filePath().toString());
         return false;
     }
 
     if (autoSave) {
-        m_designWidget->setFileName(oldFileName.toString());
+        m_designWidget->setFileName(this->filePath().toString());
         m_designWidget->save();
         return true;
     }
 
-    setFilePath(actualName);
+    setFilePath(filePath);
 
     if (dirty != m_designWidget->isDirty())
         emit changed();

@@ -47,7 +47,7 @@ public:
             const auto it = m_descriptions.constFind(revision);
             if (it != m_descriptions.constEnd())
                 return *it;
-            const QString desc = QString::fromUtf8(GitClient::instance()->synchronousShow(
+            const QString desc = QString::fromUtf8(gitClient().synchronousShow(
                                  m_workingDirectory, revision, RunFlags::NoOutput));
             m_descriptions[revision] = desc;
             return desc;
@@ -71,7 +71,6 @@ LogChangeWidget::LogChangeWidget(QWidget *parent)
     m_model->setHorizontalHeaderLabels(headers);
     setModel(m_model);
     setMinimumWidth(300);
-    setUniformRowHeights(true);
     setRootIsDecorated(false);
     setSelectionBehavior(QAbstractItemView::SelectRows);
     setActivationMode(Utils::DoubleClickActivation);
@@ -95,7 +94,7 @@ QString LogChangeWidget::commit() const
 {
     if (const QStandardItem *sha1Item = currentItem(Sha1Column))
         return sha1Item->text();
-    return QString();
+    return {};
 }
 
 int LogChangeWidget::commitIndex() const
@@ -113,7 +112,7 @@ QString LogChangeWidget::earliestCommit() const
         if (const QStandardItem *item = m_model->item(rows - 1, Sha1Column))
             return item->text();
     }
-    return QString();
+    return {};
 }
 
 void LogChangeWidget::setItemDelegate(QAbstractItemDelegate *delegate)
@@ -170,7 +169,7 @@ bool LogChangeWidget::populateLog(const FilePath &repository, const QString &com
     }
     arguments << "--";
     QString output;
-    if (!GitClient::instance()->synchronousLog(
+    if (!gitClient().synchronousLog(
                 repository, arguments, &output, nullptr, RunFlags::NoOutput)) {
         return false;
     }
@@ -224,7 +223,7 @@ LogChangeDialog::LogChangeDialog(bool isReset, QWidget *parent) :
         m_resetTypeComboBox->addItem(Tr::tr("Hard"), "--hard");
         m_resetTypeComboBox->addItem(Tr::tr("Mixed"), "--mixed");
         m_resetTypeComboBox->addItem(Tr::tr("Soft"), "--soft");
-        m_resetTypeComboBox->setCurrentIndex(GitClient::settings().lastResetIndex.value());
+        m_resetTypeComboBox->setCurrentIndex(settings().lastResetIndex());
         popUpLayout->addWidget(m_resetTypeComboBox);
         popUpLayout->addItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Ignored));
     }
@@ -250,7 +249,7 @@ bool LogChangeDialog::runDialog(const FilePath &repository,
 
     if (QDialog::exec() == QDialog::Accepted) {
         if (m_resetTypeComboBox)
-            GitClient::settings().lastResetIndex.setValue(m_resetTypeComboBox->currentIndex());
+            settings().lastResetIndex.setValue(m_resetTypeComboBox->currentIndex());
         return true;
     }
     return false;
@@ -269,7 +268,7 @@ int LogChangeDialog::commitIndex() const
 QString LogChangeDialog::resetFlag() const
 {
     if (!m_resetTypeComboBox)
-        return QString();
+        return {};
     return m_resetTypeComboBox->itemData(m_resetTypeComboBox->currentIndex()).toString();
 }
 

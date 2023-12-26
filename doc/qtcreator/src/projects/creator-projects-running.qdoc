@@ -25,7 +25,7 @@
 
     To run executable files without deploying them first, select \uicontrol Build >
     \uicontrol {Run Without Deployment}. To make this the default option, deselect the
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol {Build & Run} >
+    \preferences > \uicontrol {Build & Run} >
     \uicontrol General > \uicontrol {Always deploy project before running it}
     check box.
 
@@ -64,17 +64,13 @@
     the application has large image files that would need to be bundled
     into the resource file before running the application.
 
-    \image qtcreator-application-output.png
-
-    \if defined(qtcreator)
-    For more information on the options you have, see
-    \l{Specifying Run Settings}.
-    \endif
+    \image qtcreator-application-output.webp {Application Output view}
 
     \include linux-mobile/creator-projects-running-generic-linux.qdocinc running on embedded linux
 
     \if defined(qtcreator)
+
     \include qnx/creator-projects-running-qnx.qdocinc running on qnx
-    \include python/creator-python-run.qdocinc running python
+    \sa {Configure projects for running}, {Run Python applications}
     \endif
 */

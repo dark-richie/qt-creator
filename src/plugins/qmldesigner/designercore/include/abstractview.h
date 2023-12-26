@@ -79,7 +79,7 @@ public:
 
     ~AbstractView() override;
 
-    Model *model() const;
+    Model *model() const { return m_model.data(); }
     bool isAttached() const;
 
     RewriterTransaction beginRewriterTransaction(const QByteArray &identifier);
@@ -119,6 +119,7 @@ public:
     bool hasModelNodeForInternalId(qint32 internalId) const;
 
     QList<ModelNode> allModelNodes() const;
+    QList<ModelNode> allModelNodesUnordered() const;
     QList<ModelNode> allModelNodesOfType(const NodeMetaInfo &typeName) const;
 
     void emitDocumentMessage(const QList<DocumentMessage> &errors, const QList<DocumentMessage> &warnings = {});
@@ -147,6 +148,8 @@ public:
     virtual void modelAttached(Model *model);
     virtual void modelAboutToBeDetached(Model *model);
 
+    virtual void refreshMetaInfos(const TypeIds &deletedTypeIds);
+
     virtual void nodeCreated(const ModelNode &createdNode);
     virtual void nodeAboutToBeRemoved(const ModelNode &removedNode);
     virtual void nodeRemoved(const ModelNode &removedNode, const NodeAbstractProperty &parentProperty,
@@ -161,7 +164,8 @@ public:
     virtual void variantPropertiesChanged(const QList<VariantProperty> &propertyList,
                                           PropertyChangeFlags propertyChange);
     virtual void bindingPropertiesAboutToBeChanged(const QList<BindingProperty> &propertyList);
-    virtual void bindingPropertiesChanged(const QList<BindingProperty> &propertyList, PropertyChangeFlags propertyChange);
+    virtual void bindingPropertiesChanged(const QList<BindingProperty> &propertyList,
+                                          PropertyChangeFlags propertyChange);
     virtual void signalHandlerPropertiesChanged(const QVector<SignalHandlerProperty> &propertyList,
                                                 PropertyChangeFlags propertyChange);
     virtual void signalDeclarationPropertiesChanged(const QVector<SignalDeclarationProperty> &propertyList,
@@ -195,9 +199,9 @@ public:
                                   const ModelNode &movedNode,
                                   int oldIndex);
 
-    virtual void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports);
-    virtual void possibleImportsChanged(const QList<Import> &possibleImports);
-    virtual void usedImportsChanged(const QList<Import> &usedImports);
+    virtual void importsChanged(const Imports &addedImports, const Imports &removedImports);
+    virtual void possibleImportsChanged(const Imports &possibleImports);
+    virtual void usedImportsChanged(const Imports &usedImports);
 
     virtual void auxiliaryDataChanged(const ModelNode &node,
                                       AuxiliaryDataKeyView type,
@@ -304,5 +308,6 @@ private:
 };
 
 QMLDESIGNERCORE_EXPORT QList<Internal::InternalNodePointer> toInternalNodeList(const QList<ModelNode> &nodeList);
-QMLDESIGNERCORE_EXPORT QList<ModelNode> toModelNodeList(const QList<Internal::InternalNodePointer> &nodeList, AbstractView *view);
+QMLDESIGNERCORE_EXPORT QList<ModelNode> toModelNodeList(
+    const QList<Internal::InternalNodePointer> &nodeList, Model *model, AbstractView *view);
 } // namespace QmlDesigner

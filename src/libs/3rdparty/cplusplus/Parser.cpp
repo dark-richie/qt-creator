@@ -3020,6 +3020,11 @@ bool Parser::parseInitDeclarator(DeclaratorAST *&node, SpecifierListAST *decl_sp
         if (!_languageFeatures.cxx11Enabled || LA(2) == T_NUMERIC_LITERAL) {
             parseInitializer(node->initializer, &node->equal_token);
         } else {
+            if (LA(2) != T_NUMERIC_LITERAL && LA(2) != T_DEFAULT && LA(2) != T_DELETE) {
+                error(cursor(), "expected 'default', 'delete' or '0', got '%s'", tok(2).spell());
+                return false;
+            }
+
             node->equal_token = consumeToken();
 
             IdExpressionAST *id_expr = new (_pool) IdExpressionAST;
@@ -4072,6 +4077,31 @@ bool Parser::parseIfStatement(StatementAST *&node)
             ast->constexpr_token = consumeToken();
         }
         match(T_LPAREN, &ast->lparen_token);
+
+        // C++17: init-statement
+        if (_languageFeatures.cxx17Enabled) {
+            const int savedCursor = cursor();
+            const bool savedBlockErrors = _translationUnit->blockErrors(true);
+            bool foundInitStmt = parseExpressionOrDeclarationStatement(ast->initStmt);
+            if (foundInitStmt)
+                foundInitStmt = ast->initStmt;
+            if (foundInitStmt) {
+                if (const auto exprStmt = ast->initStmt->asExpressionStatement()) {
+                    foundInitStmt = exprStmt->semicolon_token;
+                } else if (const auto declStmt = ast->initStmt->asDeclarationStatement()) {
+                    foundInitStmt = declStmt->declaration
+                            && declStmt->declaration->asSimpleDeclaration()
+                            && declStmt->declaration->asSimpleDeclaration()->semicolon_token;
+                } else {
+                    foundInitStmt = false;
+                }
+            }
+            if (!foundInitStmt) {
+                ast->initStmt = nullptr;
+                rewind(savedCursor);
+            }
+            _translationUnit->blockErrors(savedBlockErrors);
+        }
         parseCondition(ast->condition);
         match(T_RPAREN, &ast->rparen_token);
         if (! parseStatement(ast->statement))
@@ -4916,8 +4946,8 @@ bool Parser::parsePrimaryExpression(ExpressionAST *&node)
             CompoundExpressionAST *ast = new (_pool) CompoundExpressionAST;
             ast->lparen_token = consumeToken();
             StatementAST *statement = nullptr;
-            parseCompoundStatement(statement);
-            ast->statement = statement->asCompoundStatement();
+            if (parseCompoundStatement(statement))
+                ast->statement = statement->asCompoundStatement();
             match(T_RPAREN, &ast->rparen_token);
             node = ast;
             return true;

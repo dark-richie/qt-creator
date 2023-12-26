@@ -116,7 +116,8 @@ void MetaInfoReader::propertyDefinition(const QString &name,
 {
     switch (parserState()) {
     case ParsingType: readTypeProperty(name, value); break;
-    case ParsingImports: readImportsProperty(name, value); break;
+    case ParsingImports:
+        break; // not supported anymore
     case ParsingItemLibrary: readItemLibraryEntryProperty(name, value); break;
     case ParsingProperty: readPropertyProperty(name, value); break;
     case ParsingQmlSource: readQmlSourceProperty(name, value); break;
@@ -220,24 +221,6 @@ MetaInfoReader::ParserSate MetaInfoReader::readExtraFileElement(const QString &n
     return Error;
 }
 
-void MetaInfoReader::readImportsProperty(const QString &name, const QVariant &value)
-{
-    const auto values = value.toStringList();
-
-    if (name == "blacklistImports" && !values.isEmpty()) {
-        m_metaInfo.itemLibraryInfo()->addBlacklistImports(values);
-    } else if ((name == "priorityImports" || name == "showTagsForImports") && !values.isEmpty()) {
-        // Flow tags are no longer shown, but the old property is still supported for prioritizing
-        // imports to keep compatibility with old metainfo files.
-        m_metaInfo.itemLibraryInfo()->addPriorityImports(Utils::toSet(values));
-    } else {
-        addError(::QmlDesigner::Internal::MetaInfoReader::tr("Unknown property for Imports %1")
-                     .arg(name),
-                 currentSourceLocation());
-        setParserState(Error);
-    }
-}
-
 void MetaInfoReader::readTypeProperty(const QString &name, const QVariant &value)
 {
     if (name == QLatin1String("name")) {
@@ -289,7 +272,7 @@ inline QString deEscape(const QString &value)
 
 inline QVariant deEscapeVariant(const QVariant &value)
 {
-    if (value.type() == QVariant::String)
+    if (value.typeId() == QVariant::String)
         return deEscape(value.toString());
     return value;
 }

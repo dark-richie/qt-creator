@@ -39,7 +39,7 @@ static ResultHooks::OutputStringHook outputStringHook(const QString &testCaseNam
 
 static QString normalizeName(const QString &name)
 {
-    static QRegularExpression parameterIndex("/\\d+");
+    static const QRegularExpression parameterIndex("/\\d+");
 
     QString nameWithoutParameterIndices = name;
     nameWithoutParameterIndices.remove(parameterIndex);
@@ -84,8 +84,7 @@ static ResultHooks::FindTestItemHook findTestItemHook(const FilePath &projectFil
                                                       const QString &testCaseName)
 {
     return [=](const TestResult &result) -> ITestTreeItem * {
-        const Id id = Id(Constants::FRAMEWORK_PREFIX).withSuffix(GTest::Constants::FRAMEWORK_NAME);
-        ITestFramework *framework = TestFrameworkManager::frameworkForId(id);
+        ITestFramework *framework = TestFrameworkManager::frameworkForId(GTest::Constants::FRAMEWORK_ID);
         QTC_ASSERT(framework, return nullptr);
         const TestTreeItem *rootNode = framework->rootNode();
         if (!rootNode)

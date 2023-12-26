@@ -10,12 +10,12 @@
 #include <QStringList>
 
 namespace ProjectExplorer {
-class RunConfiguration;
 
-namespace Internal { class CompileOutputSettings; }
-
-class Task;
+class BuildItem;
 class Project;
+class RunConfiguration;
+class RunControl;
+class Task;
 
 enum class BuildForRunConfigStatus { Building, NotBuilding, BuildFailed };
 enum class ConfigSelection { All, Active };
@@ -34,10 +34,8 @@ public:
     static void buildProjectWithoutDependencies(Project *project);
     static void cleanProjectWithoutDependencies(Project *project);
     static void rebuildProjectWithoutDependencies(Project *project);
-    static void buildProjectWithDependencies(
-            Project *project,
-            ConfigSelection configSelection = ConfigSelection::Active
-            );
+    static void buildProjectWithDependencies(Project *project,
+        ConfigSelection configSelection = ConfigSelection::Active, RunControl *starter = nullptr);
     static void cleanProjectWithDependencies(Project *project, ConfigSelection configSelection);
     static void rebuildProjectWithDependencies(Project *project, ConfigSelection configSelection);
     static void buildProjects(const QList<Project *> &projects, ConfigSelection configSelection);
@@ -52,8 +50,8 @@ public:
     static bool isDeploying();
     static bool tasksAvailable();
 
-    static bool buildLists(const QList<BuildStepList *> bsls,
-                           const QStringList &preambelMessage = QStringList());
+    static bool buildLists(const QList<BuildStepList *> &bsls,
+                           const QStringList &preambelMessage = {});
     static bool buildList(BuildStepList *bsl);
 
     static bool isBuilding(const Project *p);
@@ -65,9 +63,6 @@ public:
     static void appendStep(BuildStep *step, const QString &name);
 
     static int getErrorTaskCount();
-
-    static void setCompileOutputSettings(const Internal::CompileOutputSettings &settings);
-    static const Internal::CompileOutputSettings &compileOutputSettings();
 
     static QString displayNameForStepId(Utils::Id stepId);
 
@@ -84,24 +79,21 @@ signals:
     void buildQueueFinished(bool success);
 
 private:
+    static void cleanupBuild();
     static void addToTaskWindow(const ProjectExplorer::Task &task, int linkedOutputLines, int skipLines);
     static void addToOutputWindow(const QString &string, BuildStep::OutputFormat format,
                            BuildStep::OutputNewlineSetting newlineSettings = BuildStep::DoAppendNewline);
 
-    static void nextBuildQueue();
     static void progressChanged(int percent, const QString &text);
-    static void emitCancelMessage();
     static void showBuildResults();
     static void updateTaskCount();
     static void finish();
 
     static void startBuildQueue();
-    static void nextStep();
-    static void clearBuildQueue();
-    static bool buildQueueAppend(const QList<BuildStep *> &steps, QStringList names, const QStringList &preambleMessage = QStringList());
+    static bool buildQueueAppend(const QList<BuildItem> &items,
+                                 const QStringList &preambleMessage = {});
     static void incrementActiveBuildSteps(BuildStep *bs);
     static void decrementActiveBuildSteps(BuildStep *bs);
-    static void disconnectOutput(BuildStep *bs);
 };
 
 } // namespace ProjectExplorer

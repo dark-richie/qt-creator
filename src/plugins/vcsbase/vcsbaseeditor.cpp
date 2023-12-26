@@ -28,6 +28,7 @@
 
 #include <texteditor/textdocument.h>
 #include <texteditor/textdocumentlayout.h>
+#include <texteditor/syntaxhighlighterrunner.h>
 
 #include <utils/algorithm.h>
 #include <utils/progressindicator.h>
@@ -371,16 +372,22 @@ private:
     public:
         int startColumn;
         QString url;
+        qsizetype urlLength;
     };
 
     UrlData m_urlData;
     QRegularExpression m_pattern;
+    QRegularExpression m_jiraPattern;
+    QRegularExpression m_gerritPattern;
 };
 
 UrlTextCursorHandler::UrlTextCursorHandler(VcsBaseEditorWidget *editorWidget)
     : AbstractTextCursorHandler(editorWidget)
 {
     setUrlPattern(QLatin1String("https?\\://[^\\s]+"));
+
+    m_jiraPattern = QRegularExpression("(Fixes|Task-number): ([A-Z]+-[0-9]+)");
+    m_gerritPattern = QRegularExpression("Change-Id: (I[a-f0-9]{40})");
 }
 
 bool UrlTextCursorHandler::findContentsUnderCursor(const QTextCursor &cursor)
@@ -389,23 +396,37 @@ bool UrlTextCursorHandler::findContentsUnderCursor(const QTextCursor &cursor)
 
     m_urlData.url.clear();
     m_urlData.startColumn = -1;
+    m_urlData.urlLength = 0;
 
     QTextCursor cursorForUrl = cursor;
     cursorForUrl.select(QTextCursor::LineUnderCursor);
     if (cursorForUrl.hasSelection()) {
         const QString line = cursorForUrl.selectedText();
         const int cursorCol = cursor.columnNumber();
-        QRegularExpressionMatchIterator i = m_pattern.globalMatch(line);
-        while (i.hasNext()) {
-            const QRegularExpressionMatch match = i.next();
-            const int urlMatchIndex = match.capturedStart();
-            const QString url = match.captured(0);
-            if (urlMatchIndex <= cursorCol && cursorCol <= urlMatchIndex + url.length()) {
-                m_urlData.startColumn = urlMatchIndex;
-                m_urlData.url = url;
-                break;
-            }
+
+        struct {
+            QRegularExpression &pattern;
+            int matchNumber;
+            QString urlPrefix;
+        } RegexUrls[] = {
+            {m_pattern, 0, ""},
+            {m_jiraPattern, 2, "https://bugreports.qt.io/browse/"},
+            {m_gerritPattern, 1, "https://codereview.qt-project.org/r/"},
         };
+        for (const auto &r : RegexUrls) {
+            QRegularExpressionMatchIterator i = r.pattern.globalMatch(line);
+            while (i.hasNext()) {
+                const QRegularExpressionMatch match = i.next();
+                const int urlMatchIndex = match.capturedStart(r.matchNumber);
+                const QString url = match.captured(r.matchNumber);
+                if (urlMatchIndex <= cursorCol && cursorCol <= urlMatchIndex + url.length()) {
+                    m_urlData.startColumn = urlMatchIndex;
+                    m_urlData.url = r.urlPrefix + url;
+                    m_urlData.urlLength = url.length();
+                    break;
+                }
+            }
+        }
     }
 
     return m_urlData.startColumn != -1;
@@ -418,7 +439,7 @@ void UrlTextCursorHandler::highlightCurrentContents()
     sel.cursor = currentCursor();
     sel.cursor.setPosition(currentCursor().position()
                            - (currentCursor().columnNumber() - m_urlData.startColumn));
-    sel.cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, m_urlData.url.length());
+    sel.cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, m_urlData.urlLength);
     sel.format.setFontUnderline(true);
     sel.format.setForeground(linkColor);
     sel.format.setUnderlineColor(linkColor);
@@ -529,8 +550,8 @@ public:
 
     QRegularExpression m_diffFilePattern;
     QRegularExpression m_logEntryPattern;
-    QRegularExpression m_annotationEntryPattern;
-    QRegularExpression m_annotationSeparatorPattern;
+    VcsBase::Annotation m_annotation;
+
     QList<int> m_entrySections; // line number where this section starts
     int m_cursorLine = -1;
     int m_firstLineNumber = -1;
@@ -645,12 +666,12 @@ void VcsBaseEditorWidget::setLogEntryPattern(const QString &pattern)
 
 void VcsBaseEditorWidget::setAnnotationEntryPattern(const QString &pattern)
 {
-    regexpFromString(pattern, &d->m_annotationEntryPattern, QRegularExpression::MultilineOption);
+    regexpFromString(pattern, &d->m_annotation.entryPattern, QRegularExpression::MultilineOption);
 }
 
 void VcsBaseEditorWidget::setAnnotationSeparatorPattern(const QString &pattern)
 {
-    regexpFromString(pattern, &d->m_annotationSeparatorPattern);
+    regexpFromString(pattern, &d->m_annotation.separatorPattern);
 }
 
 bool VcsBaseEditorWidget::supportChangeLinks() const
@@ -740,9 +761,11 @@ void VcsBaseEditorWidget::init()
         break;
     }
     if (hasDiff()) {
-        auto dh = new DiffAndLogHighlighter(d->m_diffFilePattern, d->m_logEntryPattern);
         setCodeFoldingSupported(true);
-        textDocument()->setSyntaxHighlighter(dh);
+        textDocument()->resetSyntaxHighlighter(
+            [diffFilePattern = d->m_diffFilePattern, logEntryPattern = d->m_logEntryPattern] {
+                return new DiffAndLogHighlighter(diffFilePattern, logEntryPattern);
+            });
     }
     // override revisions display (green or red bar on the left, marking changes):
     setRevisionsVisible(false);
@@ -802,8 +825,7 @@ void VcsBaseEditorWidget::setFileLogAnnotateEnabled(bool e)
 
 void VcsBaseEditorWidget::setHighlightingEnabled(bool e)
 {
-    auto dh = static_cast<DiffAndLogHighlighter *>(textDocument()->syntaxHighlighter());
-    dh->setEnabled(e);
+    textDocument()->syntaxHighlighterRunner()->setEnabled(e);
 }
 
 FilePath VcsBaseEditorWidget::workingDirectory() const
@@ -1078,11 +1100,12 @@ void VcsBaseEditorWidget::slotActivateAnnotation()
 
     disconnect(this, &QPlainTextEdit::textChanged, this, &VcsBaseEditorWidget::slotActivateAnnotation);
 
-    if (auto ah = qobject_cast<BaseAnnotationHighlighter *>(textDocument()->syntaxHighlighter())) {
-        ah->setChangeNumbers(changes);
+    if (BaseSyntaxHighlighterRunner *ah = textDocument()->syntaxHighlighterRunner()) {
         ah->rehighlight();
     } else {
-        textDocument()->setSyntaxHighlighter(createAnnotationHighlighter(changes));
+        BaseAnnotationHighlighterCreator creator = annotationHighlighterCreator();
+        textDocument()->resetSyntaxHighlighter(
+            [creator, annotation = d->m_annotation] { return creator(annotation); });
     }
 }
 
@@ -1156,7 +1179,7 @@ void VcsBaseEditorWidget::jumpToChangeFromDiff(QTextCursor cursor)
         return;
     const QString fileName = findDiffFile(fileNameFromDiffSpecification(block));
 
-    const bool exists = fileName.isEmpty() ? false : QFile::exists(fileName);
+    const bool exists = fileName.isEmpty() ? false : QFileInfo::exists(fileName);
 
     if (!exists)
         return;
@@ -1454,7 +1477,7 @@ void VcsBaseEditorWidget::slotAnnotateRevision(const QString &change)
 
 QStringList VcsBaseEditorWidget::annotationPreviousVersions(const QString &) const
 {
-    return QStringList();
+    return {};
 }
 
 void VcsBaseEditorWidget::slotPaste()
@@ -1527,12 +1550,12 @@ QSet<QString> VcsBaseEditorWidget::annotationChanges() const
     QStringView txt = QStringView(text);
     if (txt.isEmpty())
         return changes;
-    if (!d->m_annotationSeparatorPattern.pattern().isEmpty()) {
-        const QRegularExpressionMatch match = d->m_annotationSeparatorPattern.match(txt);
+    if (!d->m_annotation.separatorPattern.pattern().isEmpty()) {
+        const QRegularExpressionMatch match = d->m_annotation.separatorPattern.match(txt);
         if (match.hasMatch())
             txt.truncate(match.capturedStart());
     }
-    QRegularExpressionMatchIterator i = d->m_annotationEntryPattern.globalMatch(txt);
+    QRegularExpressionMatchIterator i = d->m_annotation.entryPattern.globalMatch(txt);
     while (i.hasNext()) {
         const QRegularExpressionMatch match = i.next();
         changes.insert(match.captured(1));
@@ -1554,7 +1577,7 @@ bool VcsBaseEditorWidget::isValidRevision(const QString &revision) const
 QString VcsBaseEditorWidget::revisionSubject(const QTextBlock &inBlock) const
 {
     Q_UNUSED(inBlock)
-    return QString();
+    return {};
 }
 
 bool VcsBaseEditorWidget::hasDiff() const

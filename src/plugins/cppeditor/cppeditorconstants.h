@@ -9,12 +9,13 @@ namespace CppEditor {
 namespace Constants {
 
 const char M_CONTEXT[] = "CppEditor.ContextMenu";
-const char G_CONTEXT_FIRST[] = "CppEditor.GFirst";
+const char G_SYMBOL[] = "CppEditor.GSymbol";
+const char G_SELECTION[] = "CppEditor.GSelection";
+const char G_FILE[] = "CppEditor.GFile";
+const char G_GLOBAL[] = "CppEditor.GGlobal";
 const char CPPEDITOR_ID[] = "CppEditor.C++Editor";
 const char SWITCH_DECLARATION_DEFINITION[] = "CppEditor.SwitchDeclarationDefinition";
 const char OPEN_DECLARATION_DEFINITION_IN_NEXT_SPLIT[] = "CppEditor.OpenDeclarationDefinitionInNextSplit";
-const char FOLLOW_SYMBOL_TO_TYPE[] = "TextEditor.FollowSymbolToType";
-const char FOLLOW_SYMBOL_TO_TYPE_IN_NEXT_SPLIT[] = "TextEditor.FollowSymbolToTypeInNextSplit";
 const char OPEN_PREPROCESSOR_DIALOG[] = "CppEditor.OpenPreprocessorDialog";
 const char MULTIPLE_PARSE_CONTEXTS_AVAILABLE[] = "CppEditor.MultipleParseContextsAvailable";
 const char M_REFACTORING_MENU_INSERTION_POINT[] = "CppEditor.RefactorGroup";
@@ -66,16 +67,6 @@ const char SHOW_PREPROCESSED_FILE[]     = "CppTools.ShowPreprocessedFile";
 const char SHOW_PREPROCESSED_FILE_SPLIT[]     = "CppTools.ShowPreprocessedFileSplit";
 const char TASK_INDEX[]               = "CppTools.Task.Index";
 const char TASK_SEARCH[]              = "CppTools.Task.Search";
-const char C_SOURCE_MIMETYPE[] = "text/x-csrc";
-const char CUDA_SOURCE_MIMETYPE[] = "text/vnd.nvidia.cuda.csrc";
-const char C_HEADER_MIMETYPE[] = "text/x-chdr";
-const char CPP_SOURCE_MIMETYPE[] = "text/x-c++src";
-const char OBJECTIVE_C_SOURCE_MIMETYPE[] = "text/x-objcsrc";
-const char OBJECTIVE_CPP_SOURCE_MIMETYPE[] = "text/x-objc++src";
-const char CPP_HEADER_MIMETYPE[] = "text/x-c++hdr";
-const char QDOC_MIMETYPE[] = "text/x-qdoc";
-const char MOC_MIMETYPE[] = "text/x-moc";
-const char AMBIGUOUS_HEADER_MIMETYPE[] = "application/vnd.qtc.ambiguousheader"; // not a real MIME type
 
 // QSettings keys for use by the "New Class" wizards.
 const char CPPEDITOR_SETTINGSGROUP[] = "CppTools";

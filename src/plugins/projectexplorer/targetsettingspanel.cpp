@@ -19,14 +19,13 @@
 #include "targetsetuppage.h"
 #include "task.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/icore.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/modemanager.h>
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
+#include <utils/stylehelper.h>
 #include <utils/treemodel.h>
 #include <utils/utilsicons.h>
 
@@ -186,10 +185,7 @@ void TargetGroupItemPrivate::ensureWidget()
 
         auto label = new QLabel;
         label->setText(Tr::tr("No kit defined in this project."));
-        QFont f = label->font();
-        f.setPointSizeF(f.pointSizeF() * 1.4);
-        f.setBold(true);
-        label->setFont(f);
+        label->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
         label->setContentsMargins(10, 10, 10, 10);
         label->setAlignment(Qt::AlignTop);
 
@@ -311,8 +307,7 @@ public:
         default:
             break;
         }
-
-        return QVariant();
+        return {};
     }
 
     bool setData(int column, const QVariant &data, int role) override
@@ -556,8 +551,7 @@ public:
         default:
             break;
         }
-
-        return QVariant();
+        return {};
     }
 
     Qt::ItemFlags flags(int column) const override
@@ -613,8 +607,7 @@ public:
             font.setItalic(true);
             return font;
         }
-
-        return QVariant();
+        return {};
     }
 
     bool setData(int column, const QVariant &data, int role) override
@@ -702,8 +695,7 @@ QVariant TargetGroupItem::data(int column, int role) const
         d->ensureWidget();
         return QVariant::fromValue<QWidget *>(d->m_configurePage.data());
     }
-
-    return QVariant();
+    return {};
 }
 
 bool TargetGroupItem::setData(int column, const QVariant &data, int role)
@@ -770,8 +762,7 @@ void TargetGroupItemPrivate::rebuildContents()
 {
     q->removeChildren();
 
-    const QList<Kit *> kits = KitManager::sortKits(KitManager::kits());
-    for (Kit *kit : kits)
+    for (Kit *kit : KitManager::sortedKits())
         q->appendChild(new TargetItem(m_project, kit->id(), m_project->projectIssues(kit)));
 
     if (q->parent())

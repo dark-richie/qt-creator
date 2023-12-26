@@ -6,7 +6,7 @@
 #include <utils/deviceshell.h>
 #include <utils/environment.h>
 #include <utils/launcherinterface.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/temporarydirectory.h>
 
 #include <QObject>
@@ -54,7 +54,7 @@ public:
     }
 
 private:
-    void setupShellProcess(QtcProcess *shellProcess) override
+    void setupShellProcess(Process *shellProcess) override
     {
         shellProcess->setCommand(cmdLine());
     }

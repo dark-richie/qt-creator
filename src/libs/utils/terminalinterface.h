@@ -11,10 +11,12 @@ namespace Utils {
 
 class TerminalInterfacePrivate;
 
+const char TERMINAL_SHELL_NAME[] = "Terminal.ShellName";
+
 class StubCreator : public QObject
 {
 public:
-    virtual void startStubProcess(const CommandLine &cmd, const ProcessSetupData &setup) = 0;
+    virtual expected_str<qint64> startStubProcess(const ProcessSetupData &setup) = 0;
 };
 
 class QTCREATOR_UTILS_EXPORT TerminalInterface : public ProcessInterface

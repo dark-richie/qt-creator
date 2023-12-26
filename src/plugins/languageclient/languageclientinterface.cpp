@@ -5,7 +5,10 @@
 
 #include "languageclienttr.h"
 
+#include <QLocalSocket>
 #include <QLoggingCategory>
+
+#include <memory>
 
 using namespace LanguageServerProtocol;
 using namespace Utils;
@@ -71,7 +74,7 @@ void BaseClientInterface::parseCurrentMessage()
     if (m_currentMessage.mimeType == JsonRpcMessage::jsonRpcMimeType()) {
         emit messageReceived(JsonRpcMessage(m_currentMessage));
     } else {
-        emit error(Tr::tr("Cannot handle MIME type of message %1")
+        emit error(Tr::tr("Cannot handle MIME type \"%1\" of message.")
                        .arg(QString::fromUtf8(m_currentMessage.mimeType)));
     }
     m_currentMessage = BaseMessage();
@@ -95,14 +98,14 @@ void StdIOClientInterface::startImpl()
         QTC_CHECK(!m_process->isRunning());
         delete m_process;
     }
-    m_process = new QtcProcess;
+    m_process = new Process;
     m_process->setProcessMode(ProcessMode::Writer);
-    connect(m_process, &QtcProcess::readyReadStandardError,
+    connect(m_process, &Process::readyReadStandardError,
             this, &StdIOClientInterface::readError);
-    connect(m_process, &QtcProcess::readyReadStandardOutput,
+    connect(m_process, &Process::readyReadStandardOutput,
             this, &StdIOClientInterface::readOutput);
-    connect(m_process, &QtcProcess::started, this, &StdIOClientInterface::started);
-    connect(m_process, &QtcProcess::done, this, [this] {
+    connect(m_process, &Process::started, this, &StdIOClientInterface::started);
+    connect(m_process, &Process::done, this, [this] {
         m_logFile.flush();
         if (m_process->result() != ProcessResult::FinishedWithSuccess)
             emit error(QString("%1 (see logs in \"%2\")")
@@ -168,6 +171,57 @@ void StdIOClientInterface::readOutput()
     qCDebug(LOGLSPCLIENTV) << "StdIOClient std out:\n";
     qCDebug(LOGLSPCLIENTV).noquote() << out;
     parseData(out);
+}
+
+class LocalSocketClientInterface::Private
+{
+public:
+    Private(LocalSocketClientInterface *q, const QString &serverName)
+        : q(q), serverName(serverName) {}
+
+    void discardSocket();
+
+    LocalSocketClientInterface * const q;
+    const QString serverName;
+    std::unique_ptr<QLocalSocket> socket;
+};
+
+LocalSocketClientInterface::LocalSocketClientInterface(const QString &serverName)
+    : d(new Private(this, serverName))
+{
+}
+
+LocalSocketClientInterface::~LocalSocketClientInterface()
+{
+    d->discardSocket();
+    delete d;
+}
+
+void LocalSocketClientInterface::startImpl()
+{
+    d->discardSocket();
+    d->socket.reset(new QLocalSocket);
+    d->socket->setServerName(d->serverName); // TODO: Map path?
+    connect(d->socket.get(), &QLocalSocket::errorOccurred, this,
+            [this] { emit error(d->socket->errorString()); });
+    connect(d->socket.get(), &QLocalSocket::readyRead, this,
+            [this] { parseData(d->socket->readAll()); });
+    connect(d->socket.get(), &QLocalSocket::connected, this, &StdIOClientInterface::started);
+    connect(d->socket.get(), &QLocalSocket::disconnected, this, &StdIOClientInterface::finished);
+    d->socket->connectToServer();
+}
+
+void LocalSocketClientInterface::sendData(const QByteArray &data)
+{
+    d->socket->write(data);
+}
+
+void LocalSocketClientInterface::Private::discardSocket()
+{
+    if (socket) {
+        socket->disconnect(q);
+        socket->disconnectFromServer();
+    }
 }
 
 } // namespace LanguageClient

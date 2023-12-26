@@ -5,29 +5,30 @@
 #include "iosconstants.h"
 #include "iostr.h"
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 
 #include <utils/port.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QMapIterator>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace Ios::Internal {
 
-const QLatin1String iosDeviceTypeDisplayNameKey("displayName");
-const QLatin1String iosDeviceTypeTypeKey("type");
-const QLatin1String iosDeviceTypeIdentifierKey("identifier");
+const char iosDeviceTypeDisplayNameKey[] = "displayName";
+const char iosDeviceTypeTypeKey[] = "type";
+const char iosDeviceTypeIdentifierKey[] = "identifier";
 
-IosSimulator::IosSimulator(Utils::Id id)
+IosSimulator::IosSimulator(Id id)
     : m_lastPort(Constants::IOS_SIMULATOR_PORT_START)
 {
     setupId(IDevice::AutoDetected, id);
     setType(Constants::IOS_SIMULATOR_TYPE);
     setMachineType(IDevice::Emulator);
     setOsType(Utils::OsTypeMac);
-    setDefaultDisplayName(Tr::tr("iOS Simulator"));
+    settings()->displayName.setDefaultValue(Tr::tr("iOS Simulator"));
     setDisplayType(Tr::tr("iOS Simulator"));
     setDeviceState(DeviceReadyToUse);
 }
@@ -52,7 +53,7 @@ Utils::Port IosSimulator::nextPort() const
         // use qrand instead?
         if (++m_lastPort >= Constants::IOS_SIMULATOR_PORT_END)
             m_lastPort = Constants::IOS_SIMULATOR_PORT_START;
-        Utils::QtcProcess portVerifier;
+        Utils::Process portVerifier;
         // this is a bit too broad (it does not check just listening sockets, but also connections
         // to that port from this computer)
         portVerifier.setCommand({"lsof", {"-n", "-P", "-i", QString(":%1").arg(m_lastPort)}});
@@ -72,7 +73,7 @@ IosDeviceType::IosDeviceType(IosDeviceType::Type type, const QString &identifier
     type(type), identifier(identifier), displayName(displayName)
 { }
 
-bool IosDeviceType::fromMap(const QVariantMap &map)
+bool IosDeviceType::fromMap(const Store &map)
 {
     bool validType;
     displayName = map.value(iosDeviceTypeDisplayNameKey, QVariant()).toString();
@@ -82,9 +83,9 @@ bool IosDeviceType::fromMap(const QVariantMap &map)
             && (type != IosDeviceType::SimulatedDevice || !identifier.isEmpty());
 }
 
-QVariantMap IosDeviceType::toMap() const
+Store IosDeviceType::toMap() const
 {
-    QVariantMap res;
+    Store res;
     res[iosDeviceTypeDisplayNameKey] = displayName;
     res[iosDeviceTypeTypeKey]        = type;
     res[iosDeviceTypeIdentifierKey]  = identifier;

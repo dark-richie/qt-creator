@@ -1,4 +1,4 @@
-// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*!
@@ -24,13 +24,12 @@
     \uicontrol {Text Editing Macros} > \uicontrol {Save Last Macro}.
 
     To assign a keyboard shortcut to a text editing macro, select
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol Environment >
-    \uicontrol Keyboard. For more information, see
-    \l{Configuring Keyboard Shortcuts}.
+    \preferences > \uicontrol Environment >
+    \uicontrol Keyboard. For more information, see \l{Assign keyboard shortcuts}.
 
     You can also use the \c rm locator filter to run a macro. For more
     information, see \l{Searching with the Locator}.
 
-    To view and remove saved macros, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol {Text Editor} > \uicontrol Macros.
+    To view and remove saved macros, select \preferences >
+    \uicontrol {Text Editor} > \uicontrol Macros.
 */

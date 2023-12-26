@@ -3,8 +3,7 @@
 
 #include "corejsextensions.h"
 
-#include <app/app_version.h>
-
+#include <utils/appinfo.h>
 #include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
@@ -27,7 +26,7 @@ QString UtilsJsExtension::qtVersion() const
 
 QString UtilsJsExtension::qtCreatorVersion() const
 {
-    return QLatin1String(Constants::IDE_VERSION_DISPLAY);
+    return appInfo().displayVersion;
 }
 
 QString UtilsJsExtension::toNativeSeparators(const QString &in) const
@@ -140,14 +139,7 @@ QString UtilsJsExtension::mktemp(const QString &pattern) const
 
 QString UtilsJsExtension::asciify(const QString &input) const
 {
-    QString result;
-    for (const QChar &c : input) {
-        if (c.isPrint() && c.unicode() < 128)
-            result.append(c);
-        else
-            result.append(QString::fromLatin1("u%1").arg(c.unicode(), 4, 16, QChar('0')));
-    }
-    return result;
+    return Utils::asciify(input);
 }
 
 QString UtilsJsExtension::qtQuickVersion(const QString &filePath) const

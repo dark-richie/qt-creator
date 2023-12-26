@@ -14,9 +14,10 @@ namespace Internal {
 class InternalNodeListProperty final : public InternalNodeAbstractProperty
 {
 public:
-    using Pointer = QSharedPointer<InternalNodeListProperty>;
+    using Pointer = std::shared_ptr<InternalNodeListProperty>;
+    static constexpr PropertyType type = PropertyType::NodeList;
 
-    static Pointer create(const PropertyName &name, const InternalNodePointer &propertyOwner);
+    InternalNodeListProperty(const PropertyName &name, const InternalNodePointer &propertyOwner);
 
     bool isValid() const override;
 
@@ -26,13 +27,13 @@ public:
     int indexOf(const InternalNodePointer &node) const override;
     const InternalNodePointer &at(int index) const
     {
-        Q_ASSERT(index >= 0 && index < m_nodeList.count());
+        Q_ASSERT(index >= 0 && index < m_nodeList.size());
         return m_nodeList[index];
     }
 
     InternalNodePointer &at(int index)
     {
-        Q_ASSERT(index >= 0 && index < m_nodeList.count());
+        Q_ASSERT(index >= 0 && index < m_nodeList.size());
         return m_nodeList[index];
     }
 
@@ -43,18 +44,19 @@ public:
         return *found;
     }
 
-    bool isNodeListProperty() const override;
-
-    QList<InternalNodePointer> allSubNodes() const override;
-    QList<InternalNodePointer> directSubNodes() const override;
+    QList<InternalNodePointer> allSubNodes() const;
     const QList<InternalNodePointer> &nodeList() const;
     void slide(int from, int to);
 
+    void addSubNodes(QList<InternalNodePointer> &container) const;
+
     QList<InternalNodePointer>::iterator begin() { return m_nodeList.begin(); }
+
     QList<InternalNodePointer>::iterator end() { return m_nodeList.end(); }
 
+    const QList<InternalNodePointer> &nodes() const { return m_nodeList; }
+
 protected:
-    InternalNodeListProperty(const PropertyName &name, const InternalNodePointer &propertyOwner);
     void add(const InternalNodePointer &node) override;
     void remove(const InternalNodePointer &node) override;
 

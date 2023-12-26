@@ -874,16 +874,12 @@
         <translation>Želiš li prihvatiti licencu za Android SDK?</translation>
     </message>
     <message>
-        <source>Checking pending licenses...
-</source>
-        <translation>Provjera neriješenih licenca …
-</translation>
+        <source>Checking pending licenses...</source>
+        <translation>Provjera neriješenih licenca …</translation>
     </message>
     <message>
-        <source>
-SDK Manager is busy.</source>
-        <translation>
-Upravljač za SDK je zauzet.</translation>
+        <source>SDK Manager is busy.</source>
+        <translation>Upravljač za SDK je zauzet.</translation>
     </message>
     <message>
         <source>Android SDK Changes</source>
@@ -1428,8 +1424,8 @@ Lokalne obveze se ne guraju u glavnu granu sve dok se ne izvrši normalna obveza
         <translation>Lokalni datotečni sustav:</translation>
     </message>
     <message>
-        <source>For example: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</source>
-        <translation>Na primjer: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</translation>
+        <source>For example: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</source>
+        <translation>Na primjer: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</translation>
     </message>
     <message>
         <source>Specify URL:</source>
@@ -2809,8 +2805,8 @@ p, li { white-space: pre-wrap; }
         <translation>Dodatne C++ predprocesorske direktive za %1:</translation>
     </message>
     <message>
-        <source>For appropriate options, consult the GCC or Clang manual pages or the &lt;a href=&quot;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html&quot;&gt;GCC online documentation&lt;/a&gt;.</source>
-        <translation>Odgovarajuće opcije potraži na stranicama GCC ili Clang priručnika ili na &lt;a href=&quot;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html&quot;&gt;GCC online dokumentaciji&lt;/a&gt;.</translation>
+        <source>For appropriate options, consult the GCC or Clang manual pages or the [GCC online documentation](%1).</source>
+        <translation>Odgovarajuće opcije potraži na stranicama GCC ili Clang priručnika ili na [GCC online dokumentaciji](%1).</translation>
     </message>
     <message>
         <source>Use diagnostic flags from build system</source>
@@ -4824,8 +4820,8 @@ Greška: %5</translation>
         <translation>Lokalni datotečni sustav:</translation>
     </message>
     <message>
-        <source>For example: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</source>
-        <translation>Na primjer: &apos;https://[user[:pass]@]host[:port]/[path]&apos;.</translation>
+        <source>For example: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</source>
+        <translation>Na primjer: &quot;https://[user[:pass]@]host[:port]/[path]&quot;.</translation>
     </message>
     <message>
         <source>Specify URL:</source>
@@ -5564,20 +5560,20 @@ Greška: %5</translation>
         <translation>Upravljač za sesije</translation>
     </message>
     <message>
-        <source>&amp;New</source>
-        <translation>&amp;Novi</translation>
+        <source>&amp;New...</source>
+        <translation>&amp;Novi...</translation>
     </message>
     <message>
-        <source>&amp;Rename</source>
-        <translation>&amp;Preimenuj</translation>
+        <source>&amp;Rename...</source>
+        <translation>&amp;Preimenuj...</translation>
     </message>
     <message>
-        <source>C&amp;lone</source>
-        <translation>K&amp;loniraj</translation>
+        <source>C&amp;lone...</source>
+        <translation>K&amp;loniraj...</translation>
     </message>
     <message>
-        <source>&amp;Delete</source>
-        <translation>&amp;Ukloni</translation>
+        <source>&amp;Delete...</source>
+        <translation>&amp;Ukloni...</translation>
     </message>
     <message>
         <source>&amp;Open</source>
@@ -5588,8 +5584,8 @@ Greška: %5</translation>
         <translation>Vrati izvorno stanje posljednje sesije prilikom pokretanja programa</translation>
     </message>
     <message>
-        <source>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;What is a Session?&lt;/a&gt;</source>
-        <translation>&lt;a href=&quot;qthelp://org.qt-project.qtcreator/doc/creator-project-managing-sessions.html&quot;&gt;Što je sesija?&lt;/a&gt;</translation>
+        <source>What is a Session?</source>
+        <translation>Što je sesija?</translation>
     </message>
 </context>
 <context>
@@ -8805,7 +8801,7 @@ should a repository require SSH-authentication (see documentation on SSH and the
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Add Bookmark</source>
         <translation>Dodaj knjižnu oznaku</translation>
@@ -10705,8 +10701,8 @@ will also disable the following plugins:
         <translation>Očekivana vrsta %1, ali vrijednost je sadržavala %2</translation>
     </message>
     <message>
-        <source>Could not parse JSON message &quot;%1&quot;.</source>
-        <translation>Nije moguće obraditi JSON poruku &quot;%1&quot;.</translation>
+        <source>Could not parse JSON message: &quot;%1&quot;.</source>
+        <translation>Nije moguće obraditi JSON poruku: &quot;%1&quot;.</translation>
     </message>
     <message>
         <source>Expected a JSON object, but got a JSON &quot;%1&quot;.</source>
@@ -13630,9 +13626,7 @@ Do you want to uninstall the existing package?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>License command failed.
-
-</source>
+        <source>License command failed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -13644,9 +13638,7 @@ Do you want to uninstall the existing package?</source>
         <translation type="unfinished">Neuspjelo.</translation>
     </message>
     <message>
-        <source>Done
-
-</source>
+        <source>Done</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -14932,8 +14924,8 @@ Check the test environment.</source>
         <translation>Meta+Z,Meta+D</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+D</source>
-        <translation>ALT+Z,Alt+D</translation>
+        <source>Alt+Z,Alt+D</source>
+        <translation>Alt+Z,Alt+D</translation>
     </message>
     <message>
         <source>Log Current File</source>
@@ -14948,8 +14940,8 @@ Check the test environment.</source>
         <translation>Meta+Z,Meta+L</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+L</source>
-        <translation>ALT+Z,Alt+L</translation>
+        <source>Alt+Z,Alt+L</source>
+        <translation>Alt+Z,Alt+L</translation>
     </message>
     <message>
         <source>Status Current File</source>
@@ -14964,8 +14956,8 @@ Check the test environment.</source>
         <translation>Meta+Z,Meta+S</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+S</source>
-        <translation>ALT+Z,Alt+S</translation>
+        <source>Alt+Z,Alt+S</source>
+        <translation>Alt+Z,Alt+S</translation>
     </message>
     <message>
         <source>Add</source>
@@ -15028,8 +15020,8 @@ Check the test environment.</source>
         <translation>Meta+Z,Meta+C</translation>
     </message>
     <message>
-        <source>ALT+Z,Alt+C</source>
-        <translation>ALT+Z,Alt+C</translation>
+        <source>Alt+Z,Alt+C</source>
+        <translation>Alt+Z,Alt+C</translation>
     </message>
     <message>
         <source>Uncommit...</source>
@@ -15383,14 +15375,10 @@ Check the test environment.</source>
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Bookmark</source>
         <translation>Knjižna oznaka</translation>
-    </message>
-    <message>
-        <source>Remove</source>
-        <translation>Ukloni</translation>
     </message>
     <message>
         <source>Deleting a folder also removes its content.&lt;br&gt;Do you want to continue?</source>
@@ -18572,16 +18560,16 @@ Do you want to kill it?</source>
         <translation>U općim postavkama za „Okruženje” konfigurirana zakrpna naredba ne postoji.</translation>
     </message>
     <message>
-        <source>Running in %1: %2 %3</source>
-        <translation>Pokrenuto u %1: %2 %3</translation>
+        <source>Running in &quot;%1&quot;: %2 %3.</source>
+        <translation>Pokrenuto u &quot;%1&quot;: %2 %3.</translation>
     </message>
     <message>
         <source>Unable to launch &quot;%1&quot;: %2</source>
         <translation>Nije moguće pokrenuti „%1”: %2</translation>
     </message>
     <message>
-        <source>A timeout occurred running &quot;%1&quot;</source>
-        <translation>Došlo je do prekoračenja vremena prilikom pokretanja „%1”</translation>
+        <source>A timeout occurred running &quot;%1&quot;.</source>
+        <translation>Došlo je do prekoračenja vremena prilikom pokretanja „%1”.</translation>
     </message>
     <message>
         <source>&quot;%1&quot; crashed.</source>
@@ -35830,8 +35818,8 @@ What do you want to do?</source>
         <translation>Radi: %1 %2</translation>
     </message>
     <message>
-        <source>Running in %1: %2 %3</source>
-        <translation>Radi u %1: %2 %3</translation>
+        <source>Running in &quot;%1&quot;: %2 %3.</source>
+        <translation>Radi u &quot;%1&quot;: %2 %3.</translation>
     </message>
     <message>
         <source>Name of the version control system in use by the current project.</source>
@@ -36253,7 +36241,7 @@ What do you want to do?</source>
     </message>
 </context>
 <context>
-    <name>QtC::Bookmarks</name>
+    <name>QtC::TextEditor</name>
     <message>
         <source>Show Bookmark</source>
         <translation>Prikaži knjižnu oznaku</translation>

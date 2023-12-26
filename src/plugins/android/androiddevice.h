@@ -15,10 +15,9 @@
 #include <QFileSystemWatcher>
 #include <QSettings>
 
-namespace Utils { class QtcProcess; }
+namespace Utils { class Process; }
 
-namespace Android {
-namespace Internal {
+namespace Android::Internal {
 
 class AndroidDevice final : public ProjectExplorer::IDevice
 {
@@ -55,7 +54,7 @@ public:
     QString openGLStatus() const;
 
 protected:
-    void fromMap(const QVariantMap &map) final;
+    void fromMap(const Utils::Store &map) final;
 
 private:
     void addActionsIfNotFound();
@@ -68,15 +67,6 @@ private:
     void initAvdSettings();
 
     std::unique_ptr<QSettings> m_avdSettings;
-};
-
-class AndroidDeviceFactory final : public ProjectExplorer::IDeviceFactory
-{
-public:
-    AndroidDeviceFactory();
-
-private:
-    const AndroidConfig &m_androidConfig;
 };
 
 class AndroidDeviceManager : public QObject
@@ -97,23 +87,25 @@ public:
     QString getRunningAvdsSerialNumber(const QString &name) const;
 
 private:
-    AndroidDeviceManager(QObject *parent = nullptr);
+    explicit AndroidDeviceManager(QObject *parent);
     ~AndroidDeviceManager();
+
     void HandleDevicesListChange(const QString &serialNumber);
     void HandleAvdsListChange();
-    void handleAvdRemoved();
 
     QString emulatorName(const QString &serialNumber) const;
 
     QFutureWatcher<AndroidDeviceInfoList> m_avdsFutureWatcher;
-    QFutureWatcher<QPair<ProjectExplorer::IDevice::ConstPtr, bool>> m_removeAvdFutureWatcher;
+    std::unique_ptr<Utils::Process> m_removeAvdProcess;
     QFileSystemWatcher m_avdFileSystemWatcher;
-    std::unique_ptr<Utils::QtcProcess> m_adbDeviceWatcherProcess;
+    std::unique_ptr<Utils::Process> m_adbDeviceWatcherProcess;
     AndroidConfig &m_androidConfig;
     AndroidAvdManager m_avdManager;
 
-    friend class AndroidPluginPrivate;
+    friend void setupAndroidDeviceManager(QObject *guard);
 };
 
-} // namespace Internal
-} // namespace Android
+void setupAndroidDevice();
+void setupAndroidDeviceManager(QObject *guard);
+
+} // Android::Internal

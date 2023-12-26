@@ -11,13 +11,18 @@
 #include "showoutputtaskhandler.h"
 
 #include <coreplugin/outputwindow.h>
+#include <coreplugin/dialogs/ioptionspage.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/coreconstants.h>
+
 #include <extensionsystem/pluginmanager.h>
+
 #include <texteditor/texteditorsettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/behaviorsettings.h>
+
 #include <utils/algorithm.h>
+#include <utils/layoutbuilder.h>
 #include <utils/outputformatter.h>
 #include <utils/proxyaction.h>
 #include <utils/theme/theme.h>
@@ -35,23 +40,20 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-namespace ProjectExplorer {
-
-class Task;
-
-namespace Internal {
+namespace ProjectExplorer::Internal {
 
 const char SETTINGS_KEY[] = "ProjectExplorer/CompileOutput/Zoom";
 const char C_COMPILE_OUTPUT[] = "ProjectExplorer.CompileOutput";
-const char POP_UP_KEY[] = "ProjectExplorer/Settings/ShowCompilerOutput";
-const char WRAP_OUTPUT_KEY[] = "ProjectExplorer/Settings/WrapBuildOutput";
-const char MAX_LINES_KEY[] = "ProjectExplorer/Settings/MaxBuildOutputLines";
 const char OPTIONS_PAGE_ID[] = "C.ProjectExplorer.CompileOutputOptions";
 
 CompileOutputWindow::CompileOutputWindow(QAction *cancelBuildAction) :
     m_cancelBuildButton(new QToolButton),
     m_settingsButton(new QToolButton)
 {
+    setId("CompileOutput");
+    setDisplayName(QCoreApplication::translate("QtC::ProjectExplorer", "Compile Output"));
+    setPriorityInStatusBar(40);
+
     Core::Context context(C_COMPILE_OUTPUT);
     m_outputWindow = new Core::OutputWindow(context, SETTINGS_KEY);
     m_outputWindow->setWindowTitle(displayName());
@@ -101,8 +103,18 @@ CompileOutputWindow::CompileOutputWindow(QAction *cancelBuildAction) :
         Tr::tr("O"));
     ExtensionSystem::PluginManager::addObject(m_handler);
     setupContext(C_COMPILE_OUTPUT, m_outputWindow);
-    loadSettings();
     updateFromSettings();
+
+    CompileOutputSettings &s = compileOutputSettings();
+    m_outputWindow->setWordWrapEnabled(s.wrapOutput());
+    m_outputWindow->setMaxCharCount(s.maxCharCount());
+
+    connect(&s.wrapOutput, &Utils::BaseAspect::changed, m_outputWindow, [this] {
+        m_outputWindow->setWordWrapEnabled(compileOutputSettings().wrapOutput());
+    });
+    connect(&s.maxCharCount, &Utils::BaseAspect::changed, m_outputWindow, [this] {
+        m_outputWindow->setMaxCharCount(compileOutputSettings().maxCharCount());
+    });
 }
 
 CompileOutputWindow::~CompileOutputWindow()
@@ -115,10 +127,7 @@ CompileOutputWindow::~CompileOutputWindow()
 
 void CompileOutputWindow::updateFromSettings()
 {
-    m_outputWindow->setWordWrapEnabled(m_settings.wrapOutput);
-    m_outputWindow->setMaxCharCount(m_settings.maxCharCount);
 }
-
 bool CompileOutputWindow::hasFocus() const
 {
     return m_outputWindow->window()->focusWidget() == m_outputWindow;
@@ -171,11 +180,6 @@ void CompileOutputWindow::clearContents()
     m_outputWindow->clear();
 }
 
-int CompileOutputWindow::priorityInStatusBar() const
-{
-    return 50;
-}
-
 bool CompileOutputWindow::canNext() const
 {
     return false;
@@ -213,13 +217,6 @@ void CompileOutputWindow::reset()
     m_outputWindow->reset();
 }
 
-void CompileOutputWindow::setSettings(const CompileOutputSettings &settings)
-{
-    m_settings = settings;
-    storeSettings();
-    updateFromSettings();
-}
-
 Utils::OutputFormatter *CompileOutputWindow::outputFormatter() const
 {
     return m_outputWindow->outputFormatter();
@@ -231,76 +228,60 @@ void CompileOutputWindow::updateFilter()
                                            filterUsesRegexp(), filterIsInverted());
 }
 
-const bool kPopUpDefault = false;
-const bool kWrapOutputDefault = true;
+// CompileOutputSettings
 
-void CompileOutputWindow::loadSettings()
+CompileOutputSettings &compileOutputSettings()
 {
-    QSettings * const s = Core::ICore::settings();
-    m_settings.popUp = s->value(POP_UP_KEY, kPopUpDefault).toBool();
-    m_settings.wrapOutput = s->value(WRAP_OUTPUT_KEY, kWrapOutputDefault).toBool();
-    m_settings.maxCharCount = s->value(MAX_LINES_KEY,
-                                       Core::Constants::DEFAULT_MAX_CHAR_COUNT).toInt() * 100;
+    static CompileOutputSettings theSettings;
+    return theSettings;
 }
 
-void CompileOutputWindow::storeSettings() const
+CompileOutputSettings::CompileOutputSettings()
 {
-    Utils::QtcSettings *const s = Core::ICore::settings();
-    s->setValueWithDefault(POP_UP_KEY, m_settings.popUp, kPopUpDefault);
-    s->setValueWithDefault(WRAP_OUTPUT_KEY, m_settings.wrapOutput, kWrapOutputDefault);
-    s->setValueWithDefault(MAX_LINES_KEY,
-                           m_settings.maxCharCount / 100,
-                           Core::Constants::DEFAULT_MAX_CHAR_COUNT);
-}
+    setAutoApply(false);
 
-class CompileOutputSettingsWidget : public Core::IOptionsPageWidget
-{
-public:
-    CompileOutputSettingsWidget()
-    {
-        const CompileOutputSettings &settings = BuildManager::compileOutputSettings();
-        m_wrapOutputCheckBox.setText(Tr::tr("Word-wrap output"));
-        m_wrapOutputCheckBox.setChecked(settings.wrapOutput);
-        m_popUpCheckBox.setText(Tr::tr("Open Compile Output when building"));
-        m_popUpCheckBox.setChecked(settings.popUp);
-        m_maxCharsBox.setMaximum(100000000);
-        m_maxCharsBox.setValue(settings.maxCharCount);
-        const auto layout = new QVBoxLayout(this);
-        layout->addWidget(&m_wrapOutputCheckBox);
-        layout->addWidget(&m_popUpCheckBox);
-        const auto maxCharsLayout = new QHBoxLayout;
+    wrapOutput.setSettingsKey("ProjectExplorer/Settings/WrapBuildOutput");
+    wrapOutput.setDefaultValue(true);
+    wrapOutput.setLabelText(Tr::tr("Word-wrap output"));
+
+    popUp.setSettingsKey("ProjectExplorer/Settings/ShowCompilerOutput");
+    popUp.setLabelText(Tr::tr("Open Compile Output when building"));
+
+    maxCharCount.setSettingsKey("ProjectExplorer/Settings/MaxBuildOutputLines");
+    maxCharCount.setRange(1, Core::Constants::DEFAULT_MAX_CHAR_COUNT);
+    maxCharCount.setDefaultValue(Core::Constants::DEFAULT_MAX_CHAR_COUNT);
+    maxCharCount.setToSettingsTransformation([](const QVariant &v) { return v.toInt() / 100; });
+    maxCharCount.setFromSettingsTransformation([](const QVariant &v) { return v.toInt() * 100; });
+
+    setLayouter([this] {
+        using namespace Layouting;
         const QString msg = Tr::tr("Limit output to %1 characters");
         const QStringList parts = msg.split("%1") << QString() << QString();
-        maxCharsLayout->addWidget(new QLabel(parts.at(0).trimmed()));
-        maxCharsLayout->addWidget(&m_maxCharsBox);
-        maxCharsLayout->addWidget(new QLabel(parts.at(1).trimmed()));
-        maxCharsLayout->addStretch(1);
-        layout->addLayout(maxCharsLayout);
-        layout->addStretch(1);
-    }
+        return Column {
+            wrapOutput,
+            popUp,
+            Row { parts.at(0), maxCharCount, parts.at(1), st },
+            st
+        };
+    });
 
-    void apply() final
-    {
-        CompileOutputSettings s;
-        s.wrapOutput = m_wrapOutputCheckBox.isChecked();
-        s.popUp = m_popUpCheckBox.isChecked();
-        s.maxCharCount = m_maxCharsBox.value();
-        BuildManager::setCompileOutputSettings(s);
-    }
-
-private:
-    QCheckBox m_wrapOutputCheckBox;
-    QCheckBox m_popUpCheckBox;
-    QSpinBox m_maxCharsBox;
-};
-
-CompileOutputSettingsPage::CompileOutputSettingsPage()
-{
-    setId(OPTIONS_PAGE_ID);
-    setDisplayName(Tr::tr("Compile Output"));
-    setCategory(Constants::BUILD_AND_RUN_SETTINGS_CATEGORY);
-    setWidgetCreator([] { return new CompileOutputSettingsWidget; });
+    readSettings();
 }
 
-} // Internal
-} // ProjectExplorer
+// CompileOutputSettingsPage
+
+class CompileOutputSettingsPage final : public Core::IOptionsPage
+{
+public:
+    CompileOutputSettingsPage()
+    {
+        setId(OPTIONS_PAGE_ID);
+        setDisplayName(Tr::tr("Compile Output"));
+        setCategory(Constants::BUILD_AND_RUN_SETTINGS_CATEGORY);
+        setSettingsProvider([] { return &compileOutputSettings(); });
+    }
+};
+
+const CompileOutputSettingsPage settingsPage;
+
+} // ProjectExplorer::Internal

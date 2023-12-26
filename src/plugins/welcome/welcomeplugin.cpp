@@ -7,8 +7,6 @@
 #include <extensionsystem/iplugin.h>
 #include <extensionsystem/pluginmanager.h>
 
-#include <app/app_version.h>
-
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
@@ -26,10 +24,12 @@
 #include <utils/icon.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
+#include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 #include <utils/treemodel.h>
 
 #include <QDesktopServices>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -66,22 +66,6 @@ static void addWeakVerticalSpacerToLayout(QVBoxLayout *layout, int maximumSize)
     weakSpacer->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Maximum);
     layout->addWidget(weakSpacer);
     layout->setStretchFactor(weakSpacer, 1);
-}
-
-class ResizeSignallingWidget : public QWidget
-{
-    Q_OBJECT
-
-public:
-    void resizeEvent(QResizeEvent *event);
-
-signals:
-    void resized(const QSize &size, const QSize &oldSize);
-};
-
-void ResizeSignallingWidget::resizeEvent(QResizeEvent *event)
-{
-    emit resized(event->size(), event->oldSize());
 }
 
 class WelcomeMode : public IMode
@@ -132,8 +116,7 @@ public:
 
         if (!arguments.contains("-notour")) {
             connect(ICore::instance(), &ICore::coreOpened, this, []() {
-                IntroductionWidget::askUserAboutIntroduction(ICore::dialogParent(),
-                                                             ICore::settings());
+                IntroductionWidget::askUserAboutIntroduction(ICore::dialogParent());
             }, Qt::QueuedConnection);
         }
 
@@ -177,10 +160,7 @@ public:
 
             hbox->addSpacing(16);
 
-            QFont welcomeFont = brandFont();
-            welcomeFont.setPixelSize(30);
-            welcomeFont.setWeight(QFont::Light);
-            welcomeFont.setWordSpacing(2);
+            const QFont welcomeFont = StyleHelper::uiFont(StyleHelper::UiElementH1);
 
             auto welcomeLabel = new QLabel("Welcome to");
             welcomeLabel->setFont(welcomeFont);
@@ -188,7 +168,7 @@ public:
 
             hbox->addSpacing(8);
 
-            auto ideNameLabel = new QLabel(Core::Constants::IDE_DISPLAY_NAME);
+            auto ideNameLabel = new QLabel(QGuiApplication::applicationDisplayName());
             ideNameLabel->setFont(welcomeFont);
             ideNameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
             QPalette pal = palette();
@@ -265,7 +245,7 @@ public:
             vbox->addItem(newVBox);
 
             auto newLabel = new QLabel(Tr::tr("New to Qt?"), mainWidget);
-            newLabel->setFont(brandFont());
+            newLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH2));
             newLabel->setAlignment(Qt::AlignHCenter);
             newVBox->addWidget(newLabel);
 
@@ -353,16 +333,14 @@ WelcomeMode::WelcomeMode()
 
     m_modeWidget = new ResizeSignallingWidget;
     m_modeWidget->setPalette(palette);
-    connect(m_modeWidget, &ResizeSignallingWidget::resized,
+    connect(m_modeWidget, &ResizeSignallingWidget::resized, this,
             [this](const QSize &size, const QSize &) {
         const bool hideSideArea = size.width() <= 750;
         const bool hideBottomArea = size.width() <= 850;
         const bool compactVertically = size.height() <= 530;
-        QTimer::singleShot(0, [this, hideSideArea, hideBottomArea, compactVertically]() {
-            m_sideArea->setVisible(!hideSideArea);
-            m_bottomArea->setVisible(!(hideBottomArea || compactVertically));
-            m_topArea->setCompact(compactVertically);
-        });
+        m_sideArea->setVisible(!hideSideArea);
+        m_bottomArea->setVisible(!(hideBottomArea || compactVertically));
+        m_topArea->setCompact(compactVertically);
     });
 
     m_sideArea = new SideArea(m_modeWidget);
@@ -400,7 +378,7 @@ WelcomeMode::~WelcomeMode()
 
 void WelcomeMode::initPlugins()
 {
-    QSettings *settings = ICore::settings();
+    QtcSettings *settings = ICore::settings();
     m_activePage = Id::fromSetting(settings->value(currentPageSettingsKeyC));
 
     for (IWelcomePage *page : IWelcomePage::allWelcomePages())

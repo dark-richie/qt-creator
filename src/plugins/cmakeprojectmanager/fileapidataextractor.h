@@ -5,6 +5,7 @@
 
 #include "cmakebuildtarget.h"
 #include "cmakeprojectnodes.h"
+#include "3rdparty/cmake/cmListFileCache.h"
 
 #include <projectexplorer/rawprojectpart.h>
 
@@ -27,11 +28,14 @@ public:
     bool operator==(const CMakeFileInfo& other) const { return path == other.path; }
     friend size_t qHash(const CMakeFileInfo &info, uint seed = 0) { return qHash(info.path, seed); }
 
+    bool operator<(const CMakeFileInfo &other) const { return path < other.path; }
+
     Utils::FilePath path;
     bool isCMake = false;
     bool isCMakeListsDotTxt = false;
     bool isExternal = false;
     bool isGenerated = false;
+    cmListFile cmakeListFile;
 };
 
 class FileApiQtcData
@@ -48,8 +52,7 @@ public:
     bool usesAllCapsTargets = false;
 };
 
-FileApiQtcData extractData(FileApiData &data,
-                           const Utils::FilePath &sourceDirectory,
-                           const Utils::FilePath &buildDirectory);
+FileApiQtcData extractData(const QFuture<void> &cancelFuture, FileApiData &input,
+                           const Utils::FilePath &sourceDir, const Utils::FilePath &buildDir);
 
 } // CMakeProjectManager::Internal

@@ -3,16 +3,42 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
+#include "core_global.h"
 
-namespace Core {
-namespace Internal {
+#include <utils/aspects.h>
 
-class SystemSettings final : public IOptionsPage
+namespace Core::Internal {
+
+class CORE_TEST_EXPORT SystemSettings final : public Utils::AspectContainer
 {
 public:
     SystemSettings();
+
+    Utils::FilePathAspect patchCommand{this};
+
+    Utils::BoolAspect autoSaveModifiedFiles{this};
+    Utils::IntegerAspect autoSaveInterval{this};
+
+    Utils::BoolAspect autoSaveAfterRefactoring{this};
+
+    Utils::BoolAspect autoSuspendEnabled{this};
+    Utils::IntegerAspect autoSuspendMinDocumentCount{this};
+
+    Utils::BoolAspect warnBeforeOpeningBigFiles{this};
+    Utils::IntegerAspect bigFileSizeLimitInMB{this};
+
+    Utils::IntegerAspect maxRecentFiles{this};
+
+    Utils::SelectionAspect reloadSetting{this};
+
+#ifdef ENABLE_CRASHPAD
+    Utils::BoolAspect enableCrashReporting{this};
+    Utils::BoolAspect showCrashButton{this};
+#endif
+
+    Utils::BoolAspect askBeforeExit{this};
 };
 
-} // namespace Internal
-} // namespace Core
+CORE_TEST_EXPORT SystemSettings &systemSettings();
+
+} // Core::Internal

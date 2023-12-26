@@ -4,12 +4,13 @@
 #include "vcpkgsettings.h"
 
 #include "vcpkgconstants.h"
+#include "vcpkgtr.h"
 
+#include <coreplugin/dialogs/ioptionspage.h>
 #include <coreplugin/icore.h>
 
 #include <cmakeprojectmanager/cmakeprojectconstants.h>
 
-#include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/layoutbuilder.h>
 #include <utils/utilsicons.h>
@@ -17,64 +18,78 @@
 #include <QDesktopServices>
 #include <QToolButton>
 
+using namespace Utils;
+
 namespace Vcpkg::Internal {
+
+VcpkgSettings &settings()
+{
+    static VcpkgSettings theSettings;
+    return theSettings;
+}
 
 VcpkgSettings::VcpkgSettings()
 {
     setSettingsGroup("Vcpkg");
+    setAutoApply(false);
 
-    registerAspect(&vcpkgRoot);
     vcpkgRoot.setSettingsKey("VcpkgRoot");
-    vcpkgRoot.setDisplayStyle(Utils::StringAspect::PathChooserDisplay);
-    vcpkgRoot.setExpectedKind(Utils::PathChooser::ExistingDirectory);
-    vcpkgRoot.setDefaultValue(Utils::qtcEnvironmentVariable(Constants::ENVVAR_VCPKG_ROOT));
+    vcpkgRoot.setExpectedKind(PathChooser::ExistingDirectory);
+    FilePath defaultPath = Environment::systemEnvironment().searchInPath(Constants::VCPKG_COMMAND)
+                               .parentDir();
+    if (!defaultPath.isDir())
+        defaultPath = FilePath::fromUserInput(qtcEnvironmentVariable(Constants::ENVVAR_VCPKG_ROOT));
+    if (defaultPath.isDir())
+        vcpkgRoot.setDefaultValue(defaultPath.toUserOutput());
 
-    readSettings(Core::ICore::settings());
-}
+    connect(this, &AspectContainer::applied, this, &VcpkgSettings::setVcpkgRootEnvironmentVariable);
 
-VcpkgSettings *VcpkgSettings::instance()
-{
-    static VcpkgSettings s;
-    return &s;
-}
-
-bool VcpkgSettings::vcpkgRootValid() const
-{
-    return (vcpkgRoot.filePath() / "vcpkg").withExecutableSuffix().isExecutableFile();
-}
-
-VcpkgSettingsPage::VcpkgSettingsPage()
-{
-    setId(Constants::TOOLSSETTINGSPAGE_ID);
-    setDisplayName("Vcpkg");
-    setCategory(CMakeProjectManager::Constants::Settings::CATEGORY);
-
-    setLayouter([] (QWidget *widget) {
+    setLayouter([this] {
+        using namespace Layouting;
         auto websiteButton = new QToolButton;
-        websiteButton->setIcon(Utils::Icons::ONLINE.icon());
+        websiteButton->setIcon(Icons::ONLINE.icon());
         websiteButton->setToolTip(Constants::WEBSITE_URL);
-
-        using namespace Utils::Layouting;
-        Column {
-            Group {
-                title(tr("Vcpkg installation")),
-                Form {
-                    Utils::PathChooser::label(),
-                    Span{ 2, Row{ VcpkgSettings::instance()->vcpkgRoot, websiteButton} },
-                },
-            },
-            st,
-        }.attachTo(widget);
 
         connect(websiteButton, &QAbstractButton::clicked, [] {
             QDesktopServices::openUrl(QUrl::fromUserInput(Constants::WEBSITE_URL));
         });
+
+        // clang-format off
+        using namespace Layouting;
+        return Column {
+            Group {
+                title(Tr::tr("Vcpkg installation")),
+                Form {
+                    PathChooser::label(),
+                    Span { 2, Row { vcpkgRoot, websiteButton } },
+                },
+            },
+            st,
+        };
+        // clang-format on
     });
+
+    readSettings();
 }
 
-void VcpkgSettingsPage::apply()
+void VcpkgSettings::setVcpkgRootEnvironmentVariable()
 {
-    VcpkgSettings::instance()->writeSettings(Core::ICore::settings());
+    // Set VCPKG_ROOT environment variable so that auto-setup.cmake would pick it up
+    Environment::modifySystemEnvironment({{Constants::ENVVAR_VCPKG_ROOT, vcpkgRoot.value()}});
 }
 
-} // namespace Vcpkg::Internal
+class VcpkgSettingsPage : public Core::IOptionsPage
+{
+public:
+    VcpkgSettingsPage()
+    {
+        setId(Constants::TOOLSSETTINGSPAGE_ID);
+        setDisplayName("Vcpkg");
+        setCategory(CMakeProjectManager::Constants::Settings::CATEGORY);
+        setSettingsProvider([] { return &settings(); });
+    }
+};
+
+static const VcpkgSettingsPage settingsPage;
+
+} // Vcpkg::Internal

@@ -6,14 +6,17 @@
 #include "futureprogress.h"
 #include "progressmanager.h"
 
+#include <solutions/tasking/tasktree.h>
+
 #include <utils/mathutils.h>
 #include <utils/qtcassert.h>
-#include <utils/tasktree.h>
 
 #include <QFutureWatcher>
+#include <QPointer>
 #include <QTimer>
 
 using namespace Utils;
+using namespace Tasking;
 
 namespace Core {
 
@@ -89,6 +92,7 @@ void TaskProgressPrivate::updateProgress()
 
 /*!
     \class Core::TaskProgress
+    \inmodule QtCreator
 
     \brief The TaskProgress class is responsible for showing progress of the running task tree.
 
@@ -124,13 +128,10 @@ TaskProgress::TaskProgress(TaskTree *taskTree)
     connect(d->m_taskTree, &TaskTree::progressValueChanged, this, [this](int value) {
         d->advanceProgress(value);
     });
-    connect(d->m_taskTree, &TaskTree::done, this, [this] {
+    connect(d->m_taskTree, &TaskTree::done, this, [this](DoneWith result) {
         d->m_timer.stop();
-        d->m_futureInterface.reportFinished();
-    });
-    connect(d->m_taskTree, &TaskTree::errorOccurred, this, [this] {
-        d->m_timer.stop();
-        d->m_futureInterface.reportCanceled();
+        if (result != DoneWith::Success)
+            d->m_futureInterface.reportCanceled();
         d->m_futureInterface.reportFinished();
     });
 }

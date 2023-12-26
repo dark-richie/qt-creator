@@ -1,12 +1,10 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
-#include "qmlprofilerplugin.h"
 #include "qmlprofilerrunconfigurationaspect.h"
 #include "qmlprofilerruncontrol.h"
 #include "qmlprofilersettings.h"
 #include "qmlprofilertool.h"
-#include "qmlprofileractions.h"
 
 #ifdef WITH_TESTS
 
@@ -41,7 +39,7 @@
 #include <extensionsystem/pluginmanager.h>
 
 #include <projectexplorer/environmentaspect.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
@@ -49,79 +47,64 @@
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 
+#include <extensionsystem/iplugin.h>
+
 using namespace ProjectExplorer;
 
 namespace QmlProfiler::Internal {
 
-Q_GLOBAL_STATIC(QmlProfilerSettings, qmlProfilerGlobalSettings)
-
-class QmlProfilerPluginPrivate
+class QmlProfilerPlugin final : public ExtensionSystem::IPlugin
 {
-public:
-    QmlProfilerTool m_profilerTool;
-    QmlProfilerOptionsPage m_profilerOptionsPage;
-    QmlProfilerActions m_actions;
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "QmlProfiler.json")
 
-    // The full local profiler.
-    LocalQmlProfilerRunWorkerFactory localQmlProfilerRunWorkerFactory;
-    // The bits plugged in in remote setups.
-    QmlProfilerRunWorkerFactory qmlProfilerRunWorkerFactory;
-};
+    bool initialize(const QStringList &arguments, QString *errorString) final
+    {
+        Q_UNUSED(arguments)
 
-bool QmlProfilerPlugin::initialize(const QStringList &arguments, QString *errorString)
-{
-    Q_UNUSED(arguments)
+        setupQmlProfilerTool();
+        setupQmlProfilerRunning();
 
 #ifdef WITH_TESTS
-    addTest<DebugMessagesModelTest>();
-    addTest<FlameGraphModelTest>();
-    addTest<FlameGraphViewTest>();
-    addTest<InputEventsModelTest>();
-    addTest<LocalQmlProfilerRunnerTest>();
-    addTest<MemoryUsageModelTest>();
-    addTest<PixmapCacheModelTest>();
-    addTest<QmlEventTest>();
-    addTest<QmlEventLocationTest>();
-    addTest<QmlEventTypeTest>();
-    addTest<QmlNoteTest>();
-    addTest<QmlProfilerAnimationsModelTest>();
-    addTest<QmlProfilerAttachDialogTest>();
-    addTest<QmlProfilerBindingLoopsRenderPassTest>();
-    addTest<QmlProfilerClientManagerTest>();
-    addTest<QmlProfilerDetailsRewriterTest>();
-    addTest<QmlProfilerToolTest>();
-    addTest<QmlProfilerTraceClientTest>();
-    addTest<QmlProfilerTraceViewTest>();
+        addTest<DebugMessagesModelTest>();
+        addTest<FlameGraphModelTest>();
+        addTest<FlameGraphViewTest>();
+        addTest<InputEventsModelTest>();
+        addTest<LocalQmlProfilerRunnerTest>();
+        addTest<MemoryUsageModelTest>();
+        addTest<PixmapCacheModelTest>();
+        addTest<QmlEventTest>();
+        addTest<QmlEventLocationTest>();
+        addTest<QmlEventTypeTest>();
+        addTest<QmlNoteTest>();
+        addTest<QmlProfilerAnimationsModelTest>();
+        addTest<QmlProfilerAttachDialogTest>();
+        addTest<QmlProfilerBindingLoopsRenderPassTest>();
+        addTest<QmlProfilerClientManagerTest>();
+        addTest<QmlProfilerDetailsRewriterTest>();
+        addTest<QmlProfilerToolTest>();
+        addTest<QmlProfilerTraceClientTest>();
+        addTest<QmlProfilerTraceViewTest>();
 
-    addTest<QQmlEngine>(); // Trigger debug connector to be started
+        addTest<QQmlEngine>(); // Trigger debug connector to be started
 #endif
 
-    return Utils::HostOsInfo::canCreateOpenGLContext(errorString);
-}
+        return Utils::HostOsInfo::canCreateOpenGLContext(errorString);
+    }
 
-void QmlProfilerPlugin::extensionsInitialized()
-{
-    d = new QmlProfilerPluginPrivate;
-    d->m_actions.attachToTool(&d->m_profilerTool);
-    d->m_actions.registerActions();
+    void extensionsInitialized() final
+    {
+        RunConfiguration::registerAspect<QmlProfilerRunConfigurationAspect>();
+    }
 
-    RunConfiguration::registerAspect<QmlProfilerRunConfigurationAspect>();
-}
+    ShutdownFlag aboutToShutdown() final
+    {
+        destroyQmlProfilerTool();
 
-ExtensionSystem::IPlugin::ShutdownFlag QmlProfilerPlugin::aboutToShutdown()
-{
-    delete d;
-    d = nullptr;
-
-    // Save settings.
-    // Disconnect from signals that are not needed during shutdown
-    // Hide UI (if you add UI that is not in the main window directly)
-    return SynchronousShutdown;
-}
-
-QmlProfilerSettings *QmlProfilerPlugin::globalSettings()
-{
-    return qmlProfilerGlobalSettings();
-}
+        return SynchronousShutdown;
+    }
+};
 
 } // QmlProfiler::Internal
+
+#include "qmlprofilerplugin.moc"

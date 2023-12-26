@@ -4,6 +4,7 @@
 #include "cpprefactoringchanges.h"
 
 #include "cppeditorconstants.h"
+#include "cppworkingcopy.h"
 
 #include <projectexplorer/editorconfiguration.h>
 
@@ -16,29 +17,28 @@
 
 #include <QTextDocument>
 
+#include <utility>
+
 using namespace CPlusPlus;
 using namespace Utils;
 
 namespace CppEditor {
-
-static std::unique_ptr<TextEditor::Indenter> createIndenter(const FilePath &filePath,
-                                                            QTextDocument *textDocument)
+namespace Internal {
+class CppRefactoringChangesData
 {
-    TextEditor::ICodeStylePreferencesFactory *factory
-        = TextEditor::TextEditorSettings::codeStyleFactory(Constants::CPP_SETTINGS_ID);
-    std::unique_ptr<TextEditor::Indenter> indenter(factory->createIndenter(textDocument));
-    indenter->setFileName(filePath);
-    return indenter;
-}
+public:
+    explicit CppRefactoringChangesData(const CPlusPlus::Snapshot &snapshot);
+
+    CPlusPlus::Snapshot m_snapshot;
+    WorkingCopy m_workingCopy;
+};
+} // namespace Internal
+
+using namespace Internal;
 
 CppRefactoringChanges::CppRefactoringChanges(const Snapshot &snapshot)
-    : RefactoringChanges(new CppRefactoringChangesData(snapshot))
+    : m_data(new CppRefactoringChangesData(snapshot))
 {
-}
-
-CppRefactoringChangesData *CppRefactoringChanges::data() const
-{
-    return static_cast<CppRefactoringChangesData *>(m_data.data());
 }
 
 CppRefactoringFilePtr CppRefactoringChanges::file(TextEditor::TextEditorWidget *editor, const Document::Ptr &document)
@@ -48,49 +48,55 @@ CppRefactoringFilePtr CppRefactoringChanges::file(TextEditor::TextEditorWidget *
     return result;
 }
 
-CppRefactoringFilePtr CppRefactoringChanges::file(const FilePath &filePath) const
+TextEditor::RefactoringFilePtr CppRefactoringChanges::file(const FilePath &filePath) const
 {
-    CppRefactoringFilePtr result(new CppRefactoringFile(filePath, m_data));
-    return result;
+    return cppFile(filePath);
+}
+
+CppRefactoringFilePtr CppRefactoringChanges::cppFile(const Utils::FilePath &filePath) const
+{
+    return CppRefactoringFilePtr(new CppRefactoringFile(filePath, m_data));
 }
 
 CppRefactoringFileConstPtr CppRefactoringChanges::fileNoEditor(const FilePath &filePath) const
 {
     QTextDocument *document = nullptr;
-    if (data()->m_workingCopy.contains(filePath))
-        document = new QTextDocument(QString::fromUtf8(data()->m_workingCopy.source(filePath)));
+    if (const auto source = m_data->m_workingCopy.source(filePath))
+        document = new QTextDocument(QString::fromUtf8(*source));
     CppRefactoringFilePtr result(new CppRefactoringFile(document, filePath));
-    result->m_data = m_data;
+    result->m_data = m_data.staticCast<CppRefactoringChangesData>();
 
     return result;
 }
 
 const Snapshot &CppRefactoringChanges::snapshot() const
 {
-    return data()->m_snapshot;
+    return m_data->m_snapshot;
 }
 
-CppRefactoringFile::CppRefactoringFile(const FilePath &filePath, const QSharedPointer<TextEditor::RefactoringChangesData> &data)
-    : RefactoringFile(filePath, data)
+CppRefactoringFile::CppRefactoringFile(const FilePath &filePath, const QSharedPointer<CppRefactoringChangesData> &data)
+    : RefactoringFile(filePath), m_data(data)
 {
-    const Snapshot &snapshot = this->data()->m_snapshot;
+    const Snapshot &snapshot = data->m_snapshot;
     m_cppDocument = snapshot.document(filePath);
 }
 
 CppRefactoringFile::CppRefactoringFile(QTextDocument *document, const FilePath &filePath)
     : RefactoringFile(document, filePath)
-{ }
+{
+}
 
 CppRefactoringFile::CppRefactoringFile(TextEditor::TextEditorWidget *editor)
     : RefactoringFile(editor)
-{ }
+{
+}
 
 Document::Ptr CppRefactoringFile::cppDocument() const
 {
     if (!m_cppDocument || !m_cppDocument->translationUnit() ||
             !m_cppDocument->translationUnit()->ast()) {
         const QByteArray source = document()->toPlainText().toUtf8();
-        const Snapshot &snapshot = data()->m_snapshot;
+        const Snapshot &snapshot = m_data->m_snapshot;
 
         m_cppDocument = snapshot.preprocessedDocument(source, filePath());
         m_cppDocument->check();
@@ -107,7 +113,7 @@ void CppRefactoringFile::setCppDocument(Document::Ptr document)
 Scope *CppRefactoringFile::scopeAt(unsigned index) const
 {
     int line, column;
-    cppDocument()->translationUnit()->getTokenStartPosition(index, &line, &column);
+    cppDocument()->translationUnit()->getTokenPosition(index, &line, &column);
     return cppDocument()->scopeAt(line, column);
 }
 
@@ -124,6 +130,9 @@ bool CppRefactoringFile::isCursorOn(unsigned tokenIndex) const
 
 bool CppRefactoringFile::isCursorOn(const AST *ast) const
 {
+    if (!ast)
+        return false;
+
     QTextCursor tc = cursor();
     int cursorBegin = tc.selectionStart();
 
@@ -131,6 +140,31 @@ bool CppRefactoringFile::isCursorOn(const AST *ast) const
     int end = endOf(ast);
 
     return cursorBegin >= start && cursorBegin <= end;
+}
+
+QList<Token> CppRefactoringFile::tokensForCursor() const
+{
+    QTextCursor c = cursor();
+    int pos = c.selectionStart();
+    int endPos = c.selectionEnd();
+    if (pos > endPos)
+        std::swap(pos, endPos);
+
+    const std::vector<Token> &allTokens = m_cppDocument->translationUnit()->allTokens();
+    const int firstIndex = tokenIndexForPosition(allTokens, pos, 0);
+    if (firstIndex == -1)
+        return {};
+
+    const int lastIndex = pos == endPos
+                              ? firstIndex
+                              : tokenIndexForPosition(allTokens, endPos, firstIndex);
+    if (lastIndex == -1)
+        return {};
+    QTC_ASSERT(lastIndex >= firstIndex, return {});
+    QList<Token> result;
+    for (int i = firstIndex; i <= lastIndex; ++i)
+        result.push_back(allTokens.at(i));
+    return result;
 }
 
 ChangeSet::Range CppRefactoringFile::range(unsigned tokenIndex) const
@@ -156,6 +190,7 @@ int CppRefactoringFile::startOf(unsigned index) const
 
 int CppRefactoringFile::startOf(const AST *ast) const
 {
+    QTC_ASSERT(ast, return 0);
     int firstToken = ast->firstToken();
     const int lastToken = ast->lastToken();
     while (tokenAt(firstToken).generated() && firstToken < lastToken)
@@ -172,6 +207,7 @@ int CppRefactoringFile::endOf(unsigned index) const
 
 int CppRefactoringFile::endOf(const AST *ast) const
 {
+    QTC_ASSERT(ast, return 0);
     int lastToken = ast->lastToken() - 1;
     QTC_ASSERT(lastToken >= 0, return -1);
     const int firstToken = ast->firstToken();
@@ -199,52 +235,44 @@ const Token &CppRefactoringFile::tokenAt(unsigned index) const
     return cppDocument()->translationUnit()->tokenAt(index);
 }
 
-CppRefactoringChangesData *CppRefactoringFile::data() const
-{
-    return static_cast<CppRefactoringChangesData *>(m_data.data());
-}
-
 void CppRefactoringFile::fileChanged()
 {
+    QTC_ASSERT(!filePath().isEmpty(), return);
     m_cppDocument.clear();
-    RefactoringFile::fileChanged();
+    CppModelManager::updateSourceFiles({filePath()});
+}
+
+Id CppRefactoringFile::indenterId() const
+{
+    return Constants::CPP_SETTINGS_ID;
+}
+
+int CppRefactoringFile::tokenIndexForPosition(const std::vector<CPlusPlus::Token> &tokens,
+                                              int pos, int startIndex) const
+{
+    const TranslationUnit * const tu = m_cppDocument->translationUnit();
+
+    // Binary search
+    for (int l = startIndex, u = int(tokens.size()) - 1; l <= u; ) {
+        const int i = (l + u) / 2;
+        const int tokenPos = tu->getTokenPositionInDocument(tokens.at(i), document());
+        if (pos < tokenPos) {
+            u = i - 1;
+            continue;
+        }
+        const int tokenEndPos = tu->getTokenEndPositionInDocument(tokens.at(i), document());
+        if (pos > tokenEndPos) {
+            l = i + 1;
+            continue;
+        }
+        return i;
+    }
+    return -1;
 }
 
 CppRefactoringChangesData::CppRefactoringChangesData(const Snapshot &snapshot)
     : m_snapshot(snapshot)
-    , m_modelManager(CppModelManager::instance())
-    , m_workingCopy(m_modelManager->workingCopy())
+    , m_workingCopy(CppModelManager::workingCopy())
 {}
 
-void CppRefactoringChangesData::indentSelection(const QTextCursor &selection,
-                                                const FilePath &filePath,
-                                                const TextEditor::TextDocument *textDocument) const
-{
-    if (textDocument) { // use the indenter from the textDocument if there is one, can be ClangFormat
-        textDocument->indenter()->indent(selection, QChar::Null, textDocument->tabSettings());
-    } else {
-        const auto &tabSettings = ProjectExplorer::actualTabSettings(filePath, textDocument);
-        auto indenter = createIndenter(filePath, selection.document());
-        indenter->indent(selection, QChar::Null, tabSettings);
-    }
-}
-
-void CppRefactoringChangesData::reindentSelection(const QTextCursor &selection,
-                                                  const FilePath &filePath,
-                                                  const TextEditor::TextDocument *textDocument) const
-{
-    if (textDocument) { // use the indenter from the textDocument if there is one, can be ClangFormat
-        textDocument->indenter()->reindent(selection, textDocument->tabSettings());
-    } else {
-        const auto &tabSettings = ProjectExplorer::actualTabSettings(filePath, textDocument);
-        auto indenter = createIndenter(filePath, selection.document());
-        indenter->reindent(selection, tabSettings);
-    }
-}
-
-void CppRefactoringChangesData::fileChanged(const FilePath &filePath)
-{
-    m_modelManager->updateSourceFiles({filePath});
-}
-
-} // CppEditor
+} // namespace CppEditor

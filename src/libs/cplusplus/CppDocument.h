@@ -14,7 +14,6 @@
 #include <QSharedPointer>
 #include <QDateTime>
 #include <QHash>
-#include <QFileInfo>
 #include <QFuture>
 #include <QAtomicInt>
 
@@ -297,7 +296,12 @@ public:
         }
     };
 
-    Utils::FilePaths includedFiles() const;
+    enum class Duplicates {
+        Remove,
+        Keep,
+    };
+
+    Utils::FilePaths includedFiles(Duplicates duplicates = Duplicates::Remove) const;
     void addIncludeFile(const Include &include);
 
     const QList<Include> &resolvedIncludes() const

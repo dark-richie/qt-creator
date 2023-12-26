@@ -68,8 +68,9 @@ void CurveEditorView::modelAboutToBeDetached(Model *model)
 
 bool dirtyfiesView(const ModelNode &node)
 {
-    return QmlTimeline::isValidQmlTimeline(node)
-           || QmlTimelineKeyframeGroup::isValidQmlTimelineKeyframeGroup(node);
+    return (node.type() == "QtQuick.Timeline.Keyframe" && node.hasParentProperty())
+        || QmlTimeline::isValidQmlTimeline(node)
+        || QmlTimelineKeyframeGroup::isValidQmlTimelineKeyframeGroup(node);
 }
 
 void CurveEditorView::nodeRemoved([[maybe_unused]] const ModelNode &removedNode,
@@ -143,13 +144,8 @@ void CurveEditorView::variantPropertiesChanged([[maybe_unused]] const QList<Vari
                                                [[maybe_unused]] PropertyChangeFlags propertyChange)
 {
     for (const auto &property : propertyList) {
-        if ((property.name() == "frame" || property.name() == "value")
-            && property.parentModelNode().type() == "QtQuick.Timeline.Keyframe"
-            && property.parentModelNode().hasParentProperty()) {
-            const ModelNode framesNode = property.parentModelNode().parentProperty().parentModelNode();
-            if (QmlTimelineKeyframeGroup::isValidQmlTimelineKeyframeGroup(framesNode))
-                updateKeyframes();
-        }
+        if (dirtyfiesView(property.parentModelNode()))
+            updateKeyframes();
     }
 }
 
@@ -157,20 +153,16 @@ void CurveEditorView::bindingPropertiesChanged([[maybe_unused]] const QList<Bind
                                                [[maybe_unused]] PropertyChangeFlags propertyChange)
 {
     for (const auto &property : propertyList) {
-        if (property.name() == "easing.bezierCurve") {
+        if (dirtyfiesView(property.parentModelNode()))
             updateKeyframes();
-        }
     }
 }
 
 void CurveEditorView::propertiesRemoved([[maybe_unused]] const QList<AbstractProperty> &propertyList)
 {
     for (const auto &property : propertyList) {
-        if (property.name() == "keyframes") {
-            ModelNode parent = property.parentModelNode();
-            if (dirtyfiesView(parent))
-                updateKeyframes();
-        }
+        if (dirtyfiesView(property.parentModelNode()))
+            updateKeyframes();
     }
 }
 
@@ -312,13 +304,23 @@ void CurveEditorView::commitKeyframes(TreeItem *item)
             ModelNode groupNode = group.modelNode();
             commitAuxiliaryData(groupNode, item);
 
-            auto replaceKeyframes = [&group, pitem, this]() mutable {
+            auto replaceKeyframes = [&group, pitem, this] {
                 m_block = true;
 
-                for (auto& frame : group.keyframes())
-                    frame.destroy();
-
                 AnimationCurve curve = pitem->curve();
+
+                unsigned int i = 0;
+                const size_t numberOfKeyFrames = curve.keyframes().size();
+                for (auto &frame : group.keyframes()) {
+                    if (i < numberOfKeyFrames) {
+                        QPointF pos = curve.keyframes().at(i).position();
+                        frame.variantProperty("frame").setValue(pos.x());
+                    } else {
+                        frame.destroy();
+                    }
+                    i++;
+                }
+
                 if (curve.valueType() == AnimationCurve::ValueType::Bool) {
                     for (const auto& frame : curve.keyframes()) {
                         QPointF pos = frame.position();
@@ -338,7 +340,7 @@ void CurveEditorView::commitKeyframes(TreeItem *item)
                                     attachEasingCurve(group, pos.x(), segment.easingCurve());
                             } else if (frame.interpolation() == Keyframe::Interpolation::Easing) {
                                 QVariant data = frame.data();
-                                if (data.type() == static_cast<int>(QMetaType::QEasingCurve))
+                                if (data.typeId() == static_cast<int>(QMetaType::QEasingCurve))
                                     attachEasingCurve(group, pos.x(), data.value<QEasingCurve>());
                             }
                         }

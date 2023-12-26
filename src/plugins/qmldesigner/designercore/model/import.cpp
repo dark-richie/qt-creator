@@ -5,23 +5,28 @@
 
 #include <QHash>
 
-namespace QmlDesigner {
+#include <QStringView>
 
-Import::Import() = default;
+namespace QmlDesigner {
 
 Import Import::createLibraryImport(const QString &url, const QString &version, const QString &alias, const QStringList &importPaths)
 {
-    return Import(url, QString(), version, alias, importPaths);
+    return Import(url, version, alias, importPaths, Type::Library);
 }
 
 Import Import::createFileImport(const QString &file, const QString &version, const QString &alias, const QStringList &importPaths)
 {
-    return Import(QString(), file, version, alias, importPaths);
+    return Import(file, version, alias, importPaths, Type::File);
 }
 
 Import Import::empty()
 {
-    return Import(QString(), QString(), QString(), QString(), QStringList());
+    return Import(QString(), QString(), QString(), QStringList(), Type::Empty);
+}
+
+bool Import::hasVersion() const
+{
+    return !m_version.isEmpty() && m_version != "-1.-1";
 }
 
 QString Import::toImportString() const
@@ -33,12 +38,16 @@ QString Import::toImportString() const
     return result;
 }
 
-Import::Import(const QString &url, const QString &file, const QString &version, const QString &alias, const QStringList &importPaths):
-        m_url(url),
-        m_file(file),
-        m_version(version),
-        m_alias(alias),
-        m_importPathList(importPaths)
+Import::Import(const QString &url,
+               const QString &version,
+               const QString &alias,
+               const QStringList &importPaths,
+               Type type)
+    : m_url(url)
+    , m_version(version)
+    , m_alias(alias)
+    , m_importPathList(importPaths)
+    , m_type(type)
 {
 }
 
@@ -62,11 +71,6 @@ QString Import::toString(bool skipAlias, bool skipVersion) const
     return result;
 }
 
-bool Import::operator==(const Import &other) const
-{
-    return url() == other.url() && file() == other.file() && (version() == other.version() || version().isEmpty() || other.version().isEmpty());
-}
-
 bool Import::isSameModule(const Import &other) const
 {
     if (isLibraryImport())
@@ -85,26 +89,123 @@ int Import::minorVersion() const
     return minorFromVersion(m_version);
 }
 
+Version Import::toVersion() const
+{
+    auto found = std::find(m_version.begin(), m_version.end(), u'.');
+    if (found == m_version.end())
+        return {};
+
+    QStringView majorVersionToken{m_version.begin(), found};
+    bool canConvertMajor = false;
+    int majorVersion = majorVersionToken.toInt(&canConvertMajor);
+
+    QStringView minorVersionToken{std::next(found), m_version.end()};
+    bool canConvertMinor = false;
+    int minorVersion = minorVersionToken.toInt(&canConvertMinor);
+
+    if (canConvertMajor && canConvertMinor)
+        return {majorVersion, minorVersion};
+
+    return {};
+}
+
 int Import::majorFromVersion(const QString &version)
 {
-    if (version.isEmpty())
+    auto found = std::find(version.begin(), version.end(), u'.');
+    if (found == version.end())
         return -1;
-    return version.split('.').first().toInt();
+
+    QStringView majorVersionToken{version.begin(), found};
+    bool canConvert = false;
+    int majorVersion = majorVersionToken.toInt(&canConvert);
+
+    if (canConvert)
+        return majorVersion;
+
+    return -1;
 }
 
 int Import::minorFromVersion(const QString &version)
 {
-    if (version.isEmpty())
+    auto found = std::find(version.begin(), version.end(), u'.');
+    if (found == version.end())
         return -1;
-    const QStringList parts = version.split('.');
-    if (parts.size() < 2)
-        return -1;
-    return parts[1].toInt();
+
+    QStringView minorVersionToken{std::next(found), version.end()};
+    bool canConvert = false;
+    int minorVersion = minorVersionToken.toInt(&canConvert);
+
+    if (canConvert)
+        return minorVersion;
+
+    return -1;
 }
 
 size_t qHash(const Import &import)
 {
     return ::qHash(import.url()) ^ ::qHash(import.file()) ^ ::qHash(import.version()) ^ ::qHash(import.alias());
+}
+
+Imports set_difference(const Imports &first, const Imports &second)
+{
+    Imports difference;
+    difference.reserve(first.size());
+
+    std::set_difference(first.begin(),
+                        first.end(),
+                        second.begin(),
+                        second.end(),
+                        std::back_inserter(difference));
+
+    return difference;
+}
+
+Imports set_union(const Imports &first, const Imports &second)
+{
+    Imports set_union;
+    set_union.reserve(std::min(first.size(), second.size()));
+
+    std::set_union(first.begin(),
+                   first.end(),
+                   second.begin(),
+                   second.end(),
+                   std::back_inserter(set_union));
+
+    return set_union;
+}
+
+Imports set_intersection(const Imports &first, const Imports &second)
+{
+    Imports set_intersection;
+    set_intersection.reserve(std::min(first.size(), second.size()));
+
+    std::set_intersection(first.begin(),
+                          first.end(),
+                          second.begin(),
+                          second.end(),
+                          std::back_inserter(set_intersection));
+
+    return set_intersection;
+}
+
+Imports set_strict_difference(const Imports &first, const Imports &second)
+{
+    Imports difference;
+    difference.reserve(first.size());
+
+    auto strictLess = [](const Import &first, const Import &second) {
+        return std::tie(first.m_url, first.m_type, first.m_version)
+               < std::tie(second.m_url, second.m_type, second.m_version);
+    };
+
+    std::set_difference(first.begin(),
+                        first.end(),
+                        second.begin(),
+                        second.end(),
+                        std::back_inserter(difference),
+                        strictLess);
+
+    return difference;
 }
 
 } // namespace QmlDesigner

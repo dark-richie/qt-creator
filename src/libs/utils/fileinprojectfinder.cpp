@@ -40,6 +40,7 @@ static bool checkPath(const FilePath &candidate, int matchLength,
 
 /*!
   \class Utils::FileInProjectFinder
+  \inmodule QtCreator
 
   \brief The FileInProjectFinder class is a helper class to find the \e original
   file in the project directory for a given file URL.
@@ -109,13 +110,16 @@ void FileInProjectFinder::addMappedPath(const FilePath &localFilePath, const QSt
 }
 
 /*!
-  Returns the best match for the given file URL in the project directory.
+  Returns the best match for the file URL \a fileUrl in the project directory.
 
   The function first checks whether the file inside the project directory exists.
   If not, the leading directory in the path is stripped, and the - now shorter - path is
   checked for existence, and so on. Second, it tries to locate the file in the sysroot
-  folder specified. Third, we walk the list of project files, and search for a file name match
-  there. If all fails, it returns the original path from the file URL.
+  folder specified. Third, it walks the list of project files and searches for a file name match
+  there.
+
+  If all fails, the function returns the original path from the file URL. To
+  indicate that no match was found in the project, \a success is set to false.
   */
 FilePaths FileInProjectFinder::findFile(const QUrl &fileUrl, bool *success) const
 {
@@ -248,7 +252,10 @@ bool FileInProjectFinder::findFileOrDirectory(const FilePath &originalPath, File
             }
         }
         while (prefixToIgnore != -1) {
-            FilePath candidate = originalPath.resolvePath(m_projectDir);
+            QString candidateString = originalPath.toFSPathString();
+            candidateString.remove(0, prefixToIgnore);
+            candidateString.prepend(m_projectDir.toString());
+            const FilePath candidate = FilePath::fromString(candidateString);
             const int matchLength = origLength - prefixToIgnore;
             // FIXME: This might be a worse match than what we find later.
             if (checkPath(candidate, matchLength, fileHandler, directoryHandler)) {
@@ -470,7 +477,7 @@ FilePath chooseFileFromList(const FilePaths &candidates)
         filesMenu.addAction(candidate.toUserOutput());
     if (const QAction * const action = filesMenu.exec(QCursor::pos()))
         return FilePath::fromUserInput(action->text());
-    return FilePath();
+    return {};
 }
 
 } // namespace Utils

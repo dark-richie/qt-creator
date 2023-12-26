@@ -14,6 +14,7 @@
 #include <cplusplus/FindUsages.h>
 
 #include <cppeditor/cppcodemodelsettings.h>
+#include <cppeditor/cppeditorwidget.h>
 #include <cppeditor/cppfindreferences.h>
 #include <cppeditor/cpptoolsreuse.h>
 
@@ -72,7 +73,7 @@ public:
     const Position linkAsPosition;
     const QPointer<SearchResult> search;
     const LinkHandler callback;
-    QList<SearchResultItem> declDefItems;
+    SearchResultItems declDefItems;
     bool openedExtraFileForLink = false;
     bool declHasUsedTag = false;
     bool recursiveCallDetected = false;
@@ -89,8 +90,9 @@ public:
             const SearchResult *search,
             const ReplacementData &replacementData,
             const QString &newSymbolName,
-            const QList<SearchResultItem> &checkedItems,
-            bool preserveCase);
+            const SearchResultItems &checkedItems,
+            bool preserveCase,
+            bool preferLowerCaseFileNames);
     void handleFindUsagesResult(const QList<Location> &locations);
     void finishSearch();
     void reportAllSearchResultsAndFinish();
@@ -141,17 +143,18 @@ ClangdFindReferences::ClangdFindReferences(ClangdClient *client, TextDocument *d
         const auto renameFilesCheckBox = new QCheckBox;
         renameFilesCheckBox->setVisible(false);
         d->search->setAdditionalReplaceWidget(renameFilesCheckBox);
-        const auto renameHandler =
-                [search = d->search](const QString &newSymbolName,
-                       const QList<SearchResultItem> &checkedItems,
-                       bool preserveCase) {
+        const bool preferLowerCase = CppEditor::preferLowerCaseFileNames(client->project());
+        const auto renameHandler = [search = d->search, preferLowerCase](
+                                       const QString &newSymbolName,
+                                       const SearchResultItems &checkedItems,
+                                       bool preserveCase) {
             const auto replacementData = search->userData().value<ReplacementData>();
             Private::handleRenameRequest(search, replacementData, newSymbolName, checkedItems,
-                                         preserveCase);
+                                         preserveCase, preferLowerCase);
         };
         connect(d->search, &SearchResult::replaceButtonClicked, renameHandler);
     }
-    connect(d->search, &SearchResult::activated, [](const SearchResultItem& item) {
+    connect(d->search, &SearchResult::activated, [](const SearchResultItem &item) {
         EditorManager::openEditorAtSearchResult(item);
     });
     if (d->search->isInteractive())
@@ -243,15 +246,14 @@ void ClangdFindReferences::Private::handleRenameRequest(
         const SearchResult *search,
         const ReplacementData &replacementData,
         const QString &newSymbolName,
-        const QList<SearchResultItem> &checkedItems,
-        bool preserveCase)
+        const SearchResultItems &checkedItems,
+        bool preserveCase,
+        bool preferLowerCaseFileNames)
 {
     const Utils::FilePaths filePaths = BaseFileFind::replaceAll(newSymbolName, checkedItems,
                                                                 preserveCase);
-    if (!filePaths.isEmpty()) {
-        DocumentManager::notifyFilesChangedInternally(filePaths);
+    if (!filePaths.isEmpty())
         SearchResultWindow::instance()->hide();
-    }
 
     const auto renameFilesCheckBox = qobject_cast<QCheckBox *>(search->additionalReplaceWidget());
     QTC_ASSERT(renameFilesCheckBox, return);
@@ -261,7 +263,7 @@ void ClangdFindReferences::Private::handleRenameRequest(
     ProjectExplorerPlugin::renameFilesForSymbol(
                 replacementData.oldSymbolName, newSymbolName,
                 Utils::toList(replacementData.fileRenameCandidates),
-                CppEditor::preferLowerCaseFileNames());
+                preferLowerCaseFileNames);
 }
 
 void ClangdFindReferences::Private::handleFindUsagesResult(const QList<Location> &locations)
@@ -391,7 +393,7 @@ static Usage::Tags getUsageType(const ClangdAstPath &path, const QString &search
 void ClangdFindReferences::Private::addSearchResultsForFile(const FilePath &file,
                                                             const ReferencesFileData &fileData)
 {
-    QList<SearchResultItem> items;
+    SearchResultItems items;
     qCDebug(clangdLog) << file << "has valid AST:" << fileData.ast.isValid();
     const auto expectedDeclTypes = [this]() -> QStringList {
         if (checkUnusedData)
@@ -452,9 +454,10 @@ void ClangdFindReferences::Private::addSearchResultsForFile(const FilePath &file
         item.setContainingFunctionName(getContainingFunction(astPath, range).detail());
 
         if (search->supportsReplace()) {
-            const bool fileInSession = ProjectManager::projectForFile(file);
-            item.setSelectForReplacement(fileInSession);
-            if (fileInSession && file.baseName().compare(replacementData->oldSymbolName,
+            const Node * const node = ProjectTree::nodeForFile(file);
+            item.setSelectForReplacement(!ProjectManager::hasProjects()
+                                         || (node && !node->isGenerated()));
+            if (node && file.baseName().compare(replacementData->oldSymbolName,
                                                          Qt::CaseInsensitive) == 0) {
                 replacementData->fileRenameCandidates << file;
             }
@@ -667,10 +670,10 @@ ClangdFindReferences::CheckUnusedData::~CheckUnusedData()
 class ClangdFindLocalReferences::Private
 {
 public:
-    Private(ClangdFindLocalReferences *q, TextDocument *document, const QTextCursor &cursor,
+    Private(ClangdFindLocalReferences *q, CppEditorWidget *editorWidget, const QTextCursor &cursor,
             const RenameCallback &callback)
-        : q(q), document(document), cursor(cursor), callback(callback),
-          uri(client()->hostPathToServerUri(document->filePath())),
+        : q(q), editorWidget(editorWidget), document(editorWidget->textDocument()), cursor(cursor),
+          callback(callback), uri(client()->hostPathToServerUri(document->filePath())),
           revision(document->document()->revision())
     {}
 
@@ -682,6 +685,7 @@ public:
     void finish();
 
     ClangdFindLocalReferences * const q;
+    const QPointer<CppEditorWidget> editorWidget;
     const QPointer<TextDocument> document;
     const QTextCursor cursor;
     RenameCallback callback;
@@ -691,9 +695,9 @@ public:
 };
 
 ClangdFindLocalReferences::ClangdFindLocalReferences(
-        ClangdClient *client, TextDocument *document, const QTextCursor &cursor,
-        const RenameCallback &callback)
-    : QObject(client), d(new Private(this, document, cursor, callback))
+    ClangdClient *client, CppEditorWidget *editorWidget, const QTextCursor &cursor,
+    const RenameCallback &callback)
+    : QObject(client), d(new Private(this, editorWidget, cursor, callback))
 {
     d->findDefinition();
 }
@@ -709,7 +713,11 @@ void ClangdFindLocalReferences::Private::findDefinition()
         if (sentinel)
             getDefinitionAst(l);
     };
-    client()->symbolSupport().findLinkAt(document, cursor, linkHandler, true);
+    client()->symbolSupport().findLinkAt(document,
+                                         cursor,
+                                         linkHandler,
+                                         true,
+                                         LanguageClient::LinkTarget::SymbolDef);
 }
 
 void ClangdFindLocalReferences::Private::getDefinitionAst(const Link &link)
@@ -777,7 +785,7 @@ void ClangdFindLocalReferences::Private::handleReferences(const QList<Location> 
         return loc.toLink(mapper);
     };
 
-    const Utils::Links links = Utils::transform(references, transformLocation);
+    Utils::Links links = Utils::transform(references, transformLocation);
 
     // The callback only uses the symbol length, so we just create a dummy.
     // Note that the calculation will be wrong for identifiers with
@@ -785,7 +793,27 @@ void ClangdFindLocalReferences::Private::handleReferences(const QList<Location> 
     QString symbol;
     if (!references.isEmpty()) {
         const Range r = references.first().range();
-        symbol = QString(r.end().character() - r.start().character(), 'x');
+        const Position pos = r.start();
+        symbol = QString(r.end().character() - pos.character(), 'x');
+        if (editorWidget && document) {
+            QTextCursor cursor(document->document());
+            cursor.setPosition(Text::positionInText(document->document(), pos.line() + 1,
+                                                    pos.character() + 1));
+            const QList<Text::Range> occurrencesInComments
+                = symbolOccurrencesInDeclarationComments(editorWidget, cursor);
+            for (const Text::Range &range : occurrencesInComments) {
+                static const auto cmp = [](const Link &l, const Text::Range &r) {
+                    if (l.targetLine < r.begin.line)
+                        return true;
+                    if (l.targetLine > r.begin.line)
+                        return false;
+                    return l.targetColumn < r.begin.column;
+                };
+                const auto it = std::lower_bound(links.begin(), links.end(), range, cmp);
+                links.emplace(it, links.first().targetFilePath, range.begin.line,
+                              range.begin.column);
+            }
+        }
     }
     callback(symbol, links, revision);
     callback = {};

@@ -25,7 +25,7 @@
 #include <texteditor/basefilefind.h>
 
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/qtcassert.h>
 #include <utils/textfileformat.h>
 
@@ -105,8 +105,8 @@ namespace Internal {
 static QByteArray getSource(const Utils::FilePath &fileName,
                             const WorkingCopy &workingCopy)
 {
-    if (workingCopy.contains(fileName)) {
-        return workingCopy.source(fileName);
+    if (const auto source = workingCopy.source(fileName)) {
+        return *source;
     } else {
         QString fileContents;
         Utils::TextFileFormat format;
@@ -398,6 +398,8 @@ void CppFindReferences::findUsages(CPlusPlus::Symbol *symbol,
     parameters.symbolId = fullIdForSymbol(symbol);
     parameters.symbolFilePath = symbol->filePath();
     parameters.categorize = codeModelSettings()->categorizeFindReferences();
+    parameters.preferLowerCaseFileNames = preferLowerCaseFileNames(
+        ProjectManager::projectForFile(symbol->filePath()));
 
     if (symbol->asClass() || symbol->asForwardClassDeclaration()) {
         CPlusPlus::Overview overview;
@@ -435,9 +437,9 @@ void CppFindReferences::findAll_helper(SearchResult *search, CPlusPlus::Symbol *
 
     if (search->isInteractive())
         SearchResultWindow::instance()->popup(IOutputPane::ModeSwitch | IOutputPane::WithFocus);
-    const WorkingCopy workingCopy = m_modelManager->workingCopy();
+    const WorkingCopy workingCopy = CppModelManager::workingCopy();
     QFuture<CPlusPlus::Usage> result;
-    result = Utils::asyncRun(m_modelManager->sharedThreadPool(), find_helper,
+    result = Utils::asyncRun(CppModelManager::sharedThreadPool(), find_helper,
                              workingCopy, context, symbol, categorize);
     createWatcher(result, search);
 
@@ -456,10 +458,8 @@ void CppFindReferences::setupSearch(Core::SearchResult *search)
             std::bind(&CppFindReferences::onReplaceButtonClicked, this, search, _1, _2, _3));
 }
 
-void CppFindReferences::onReplaceButtonClicked(Core::SearchResult *search,
-                                               const QString &text,
-                                               const QList<SearchResultItem> &items,
-                                               bool preserveCase)
+void CppFindReferences::onReplaceButtonClicked(Core::SearchResult *search, const QString &text,
+                                               const SearchResultItems &items, bool preserveCase)
 {
     const Utils::FilePaths filePaths = TextEditor::BaseFileFind::replaceAll(text, items, preserveCase);
     if (!filePaths.isEmpty()) {
@@ -477,14 +477,14 @@ void CppFindReferences::onReplaceButtonClicked(Core::SearchResult *search,
 
     ProjectExplorerPlugin::renameFilesForSymbol(
                 parameters.prettySymbolName, text, parameters.filesToRename,
-                preferLowerCaseFileNames());
+                parameters.preferLowerCaseFileNames);
 }
 
 void CppFindReferences::searchAgain(SearchResult *search)
 {
     CppFindReferencesParameters parameters = search->userData().value<CppFindReferencesParameters>();
     parameters.filesToRename.clear();
-    CPlusPlus::Snapshot snapshot = CppModelManager::instance()->snapshot();
+    CPlusPlus::Snapshot snapshot = CppModelManager::snapshot();
     search->restart();
     CPlusPlus::LookupContext context;
     CPlusPlus::Symbol *symbol = findSymbol(parameters, snapshot, &context);
@@ -544,7 +544,7 @@ CPlusPlus::Symbol *CppFindReferences::findSymbol(const CppFindReferencesParamete
 
     CPlusPlus::Document::Ptr newSymbolDocument = snapshot.document(parameters.symbolFilePath);
     // document is not parsed and has no bindings yet, do it
-    QByteArray source = getSource(newSymbolDocument->filePath(), m_modelManager->workingCopy());
+    QByteArray source = getSource(newSymbolDocument->filePath(), CppModelManager::workingCopy());
     CPlusPlus::Document::Ptr doc =
             snapshot.preprocessedDocument(source, newSymbolDocument->filePath());
     doc->check();
@@ -576,8 +576,11 @@ static void displayResults(SearchResult *search,
         item.setContainingFunctionName(result.containingFunction);
         item.setStyle(colorStyleForUsageType(result.tags));
         item.setUseTextEditorFont(true);
-        if (search->supportsReplace())
-            item.setSelectForReplacement(ProjectManager::projectForFile(result.path));
+        if (search->supportsReplace()) {
+            const Node * const node = ProjectTree::nodeForFile(result.path);
+            item.setSelectForReplacement(!ProjectManager::hasProjects()
+                                         || (node && !node->isGenerated()));
+        }
         search->addResult(item);
 
         if (parameters.prettySymbolName.isEmpty())
@@ -598,6 +601,10 @@ static void displayResults(SearchResult *search,
 
 static void searchFinished(SearchResult *search, QFutureWatcher<CPlusPlus::Usage> *watcher)
 {
+    if (!watcher->isCanceled() && search->supportsReplace()) {
+        search->addResults(symbolOccurrencesInDeclarationComments(search->allItems()),
+                           SearchResult::AddSortedByPosition);
+    }
     search->finishSearch(watcher->isCanceled());
 
     CppFindReferencesParameters parameters = search->userData().value<CppFindReferencesParameters>();
@@ -743,13 +750,12 @@ void CppFindReferences::findMacroUses(const CPlusPlus::Macro &macro, const QStri
     setupSearch(search);
     SearchResultWindow::instance()->popup(IOutputPane::ModeSwitch | IOutputPane::WithFocus);
 
-    connect(search, &SearchResult::activated,
-            [](const Core::SearchResultItem& item) {
-                Core::EditorManager::openEditorAtSearchResult(item);
-            });
+    connect(search, &SearchResult::activated, search, [](const SearchResultItem &item) {
+        Core::EditorManager::openEditorAtSearchResult(item);
+    });
 
-    const CPlusPlus::Snapshot snapshot = m_modelManager->snapshot();
-    const WorkingCopy workingCopy = m_modelManager->workingCopy();
+    const CPlusPlus::Snapshot snapshot = CppModelManager::snapshot();
+    const WorkingCopy workingCopy = CppModelManager::workingCopy();
 
     // add the macro definition itself
     {
@@ -769,7 +775,7 @@ void CppFindReferences::findMacroUses(const CPlusPlus::Macro &macro, const QStri
     }
 
     QFuture<CPlusPlus::Usage> result;
-    result = Utils::asyncRun(m_modelManager->sharedThreadPool(), findMacroUses_helper,
+    result = Utils::asyncRun(CppModelManager::sharedThreadPool(), findMacroUses_helper,
                              workingCopy, snapshot, macro);
     createWatcher(result, search);
 
@@ -830,8 +836,8 @@ void CppFindReferences::checkUnused(Core::SearchResult *search, const Link &link
     });
     connect(search, &SearchResult::canceled, watcher, [watcher] { watcher->cancel(); });
     connect(search, &SearchResult::destroyed, watcher, [watcher] { watcher->cancel(); });
-    watcher->setFuture(Utils::asyncRun(m_modelManager->sharedThreadPool(), find_helper,
-                                       m_modelManager->workingCopy(), context, symbol, true));
+    watcher->setFuture(Utils::asyncRun(CppModelManager::sharedThreadPool(), find_helper,
+                                       CppModelManager::workingCopy(), context, symbol, true));
 }
 
 void CppFindReferences::createWatcher(const QFuture<CPlusPlus::Usage> &future, SearchResult *search)

@@ -252,6 +252,15 @@ void AddQtOperation::unittest()
     QCOMPARE(version1.value(QLatin1String(QMAKE)).toString(), QLatin1String("/tmp/test/qmake2"));
     QVERIFY(version1.contains(QLatin1String("extraData")));
     QCOMPARE(version1.value(QLatin1String("extraData")).toString(), QLatin1String("extraValue"));
+
+    // Docker paths
+    qtData.m_id = "testId3";
+    qtData.m_qmake = "docker://image///path/to//some/qmake";
+
+    map = qtData.addQt(map);
+    QVariantMap version2 = map.value(QLatin1String("QtVersion.2")).toMap();
+    QVERIFY(version2.contains(QLatin1String(QMAKE)));
+    QCOMPARE(version2.value(QLatin1String(QMAKE)).toString(), QLatin1String("docker://image/path/to/some/qmake"));
 }
 #endif
 
@@ -270,7 +279,7 @@ QVariantMap AddQtData::addQt(const QVariantMap &map) const
     for (QVariantMap::const_iterator i = map.begin(); i != map.end(); ++i) {
         if (!i.key().startsWith(QLatin1String(PREFIX)))
             continue;
-        QString number = i.key().mid(QString::fromLatin1(PREFIX).count());
+        QString number = i.key().mid(QString::fromLatin1(PREFIX).size());
         bool ok;
         int count = number.toInt(&ok);
         if (ok && count >= versionCount)
@@ -279,7 +288,7 @@ QVariantMap AddQtData::addQt(const QVariantMap &map) const
     const QString qt = QString::fromLatin1(PREFIX) + QString::number(versionCount);
 
     // Sanitize qmake path:
-    QString saneQmake = QDir::cleanPath(m_qmake);
+    const QString saneQmake = cleanPath(m_qmake);
 
     // insert data:
     KeyValuePairList data;

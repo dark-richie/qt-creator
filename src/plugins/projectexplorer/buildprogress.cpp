@@ -49,10 +49,7 @@ BuildProgress::BuildProgress(TaskWindow *taskWindow, Qt::Orientation orientation
     warningLayout->addWidget(m_warningIcon);
     warningLayout->addWidget(m_warningLabel);
 
-    // ### TODO this setup should be done by style
-    QFont f = this->font();
-    f.setPointSizeF(Utils::StyleHelper::sidebarFontSize());
-    f.setBold(true);
+    const QFont f = Utils::StyleHelper::uiFont(Utils::StyleHelper::UiElementCaptionStrong);
     m_errorLabel->setFont(f);
     m_warningLabel->setFont(f);
     m_errorLabel->setPalette(Utils::StyleHelper::sidebarFontPalette(m_errorLabel->palette()));
@@ -60,8 +57,8 @@ BuildProgress::BuildProgress(TaskWindow *taskWindow, Qt::Orientation orientation
     m_errorLabel->setProperty("_q_custom_style_disabled", QVariant(true));
     m_warningLabel->setProperty("_q_custom_style_disabled", QVariant(true));
 
-    m_errorIcon->setAlignment(Qt::AlignRight);
-    m_warningIcon->setAlignment(Qt::AlignRight);
+    m_errorIcon->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_warningIcon->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_errorIcon->setPixmap(Utils::Icons::CRITICAL_TOOLBAR.pixmap());
     m_warningIcon->setPixmap(Utils::Icons::WARNING_TOOLBAR.pixmap());
 

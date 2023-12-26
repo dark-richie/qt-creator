@@ -14,7 +14,7 @@
 #include <cplusplus/Macro.h>
 #include <cplusplus/TranslationUnit.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/qtcassert.h>
 #include <utils/textutils.h>
 
@@ -218,8 +218,8 @@ private:
 
         if (Symbol *s = Internal::CanonicalSymbol::canonicalSymbol(
                     m_scope, m_expression, typeOfExpression)) {
-            const QList<int> tokenIndices = CppModelManager::instance()
-                    ->references(s, typeOfExpression.context());
+            const QList<int> tokenIndices =
+                CppModelManager::references(s, typeOfExpression.context());
             result = toRanges(tokenIndices, m_document->translationUnit());
         }
 
@@ -322,7 +322,7 @@ QFuture<CursorInfo> BuiltinCursorInfo::run(const CursorInfoParams &cursorInfoPar
     QString expression;
     Scope *scope = canonicalSymbol.getScopeAndExpression(textCursor, &expression);
 
-    return Utils::asyncRun(&FindUses::find, document, snapshot, line, column, scope, expression);
+    return Utils::asyncRun(&FindUses::find, document, snapshot, line, column + 1, scope, expression);
 }
 
 SemanticInfo::LocalUseMap

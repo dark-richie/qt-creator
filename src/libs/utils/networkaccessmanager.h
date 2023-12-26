@@ -7,15 +7,10 @@
 
 #include <QNetworkAccessManager>
 
-QT_BEGIN_NAMESPACE
-class QUrl;
-QT_END_NAMESPACE
-
 namespace Utils {
 
 class QTCREATOR_UTILS_EXPORT NetworkAccessManager : public QNetworkAccessManager
 {
-    Q_OBJECT
 public:
     NetworkAccessManager(QObject *parent = nullptr);
 

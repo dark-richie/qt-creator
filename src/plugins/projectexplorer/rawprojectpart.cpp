@@ -6,7 +6,7 @@
 #include "abi.h"
 #include "buildconfiguration.h"
 #include "buildsystem.h"
-#include "kitinformation.h"
+#include "kitaspects.h"
 #include "project.h"
 #include "target.h"
 
@@ -16,7 +16,7 @@
 
 namespace ProjectExplorer {
 
-RawProjectPartFlags::RawProjectPartFlags(const ToolChain *toolChain,
+RawProjectPartFlags::RawProjectPartFlags(const Toolchain *toolChain,
                                          const QStringList &commandLineFlags,
                                          const Utils::FilePath &includeFileBaseDir)
 {
@@ -45,9 +45,10 @@ void RawProjectPart::setFiles(const QStringList &files,
     this->getMimeType = getMimeType;
 }
 
-static QString trimTrailingSlashes(const QString &path) {
+static QString trimTrailingSlashes(const QString &path)
+{
     QString p = path;
-    while (p.endsWith('/') && p.count() > 1) {
+    while (p.endsWith('/') && p.size() > 1) {
         p.chop(1);
     }
     return p;
@@ -141,8 +142,8 @@ KitInfo::KitInfo(Kit *kit)
 {
     // Toolchains
     if (kit) {
-        cToolChain = ToolChainKitAspect::cToolChain(kit);
-        cxxToolChain = ToolChainKitAspect::cxxToolChain(kit);
+        cToolchain = ToolchainKitAspect::cToolchain(kit);
+        cxxToolchain = ToolchainKitAspect::cxxToolchain(kit);
     }
 
     // Sysroot
@@ -154,7 +155,7 @@ bool KitInfo::isValid() const
     return kit;
 }
 
-ToolChainInfo::ToolChainInfo(const ToolChain *toolChain,
+ToolchainInfo::ToolchainInfo(const Toolchain *toolChain,
                              const Utils::FilePath &sysRootPath,
                              const Utils::Environment &env)
 {
@@ -184,8 +185,8 @@ ProjectUpdateInfo::ProjectUpdateInfo(Project *project,
                                      const RppGenerator &rppGenerator)
     : rawProjectParts(rawProjectParts)
     , rppGenerator(rppGenerator)
-    , cToolChainInfo(ToolChainInfo(kitInfo.cToolChain, kitInfo.sysRootPath, env))
-    , cxxToolChainInfo(ToolChainInfo(kitInfo.cxxToolChain, kitInfo.sysRootPath, env))
+    , cToolchainInfo(ToolchainInfo(kitInfo.cToolchain, kitInfo.sysRootPath, env))
+    , cxxToolchainInfo(ToolchainInfo(kitInfo.cxxToolchain, kitInfo.sysRootPath, env))
 {
     if (project) {
         projectName = project->displayName();

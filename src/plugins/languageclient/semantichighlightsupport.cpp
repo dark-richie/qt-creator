@@ -10,6 +10,8 @@
 #include <texteditor/syntaxhighlighter.h>
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorsettings.h>
+#include <texteditor/syntaxhighlighterrunner.h>
+#include <utils/algorithm.h>
 #include <utils/mimeutils.h>
 
 #include <QTextDocument>
@@ -29,7 +31,7 @@ SemanticTokenSupport::SemanticTokenSupport(Client *client)
     QObject::connect(TextEditorSettings::instance(),
                      &TextEditorSettings::fontSettingsChanged,
                      client,
-                     [this]() { updateFormatHash(); });
+                     [this] { updateFormatHash(); });
     QObject::connect(Core::EditorManager::instance(),
                      &Core::EditorManager::currentEditorChanged,
                      this,
@@ -165,9 +167,8 @@ void SemanticTokenSupport::updateSemanticTokensImpl(TextDocument *textDocument,
 
 void SemanticTokenSupport::queueDocumentReload(TextEditor::TextDocument *doc)
 {
-    if (m_docReloadQueue.contains(doc))
+    if (!Utils::insert(m_docReloadQueue, doc))
         return;
-    m_docReloadQueue << doc;
     connect(
         m_client,
         &Client::initialized,
@@ -182,7 +183,7 @@ void SemanticTokenSupport::queueDocumentReload(TextEditor::TextDocument *doc)
 void SemanticTokenSupport::clearHighlight(TextEditor::TextDocument *doc)
 {
     if (m_tokens.contains(doc->filePath())){
-        if (TextEditor::SyntaxHighlighter *highlighter = doc->syntaxHighlighter())
+        if (TextEditor::BaseSyntaxHighlighterRunner *highlighter = doc->syntaxHighlighterRunner())
             highlighter->clearAllExtraFormats();
     }
 }
@@ -412,7 +413,7 @@ void SemanticTokenSupport::highlight(const Utils::FilePath &filePath, bool force
     TextDocument *doc = TextDocument::textDocumentForFilePath(filePath);
     if (!doc || LanguageClientManager::clientForDocument(doc) != m_client)
         return;
-    SyntaxHighlighter *highlighter = doc->syntaxHighlighter();
+    BaseSyntaxHighlighterRunner *highlighter = doc->syntaxHighlighterRunner();
     if (!highlighter)
         return;
     const VersionedTokens versionedTokens = m_tokens.value(filePath);

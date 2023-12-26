@@ -209,23 +209,15 @@ public:
     void uncommit();
     void diffFromEditorSelected(const QStringList &files);
 
-    // Functions
-    void createFileActions(const Core::Context &context);
-    void createDirectoryActions(const Core::Context &context);
-    void createRepositoryActions(const Core::Context &context);
-
     // Variables
-    BazaarSettings m_settings;
-    BazaarClient m_client{&m_settings};
-    BazaarSettingsPage m_settingPage{&m_settings};
+    BazaarClient m_client;
 
     VcsSubmitEditorFactory m_submitEditorFactory {
         submitEditorParameters,
         [] { return new CommitEditor; },
         this
     };
-    Core::CommandLocator *m_commandLocator = nullptr;
-    Core::ActionContainer *m_bazaarContainer = nullptr;
+    CommandLocator *m_commandLocator = nullptr;
 
     QList<QAction *> m_repositoryActionList;
 
@@ -286,7 +278,7 @@ public:
         dryRunBtn->setToolTip(Tr::tr("Test the outcome of removing the last committed revision, without actually removing anything."));
         buttonBox->addButton(dryRunBtn, QDialogButtonBox::ApplyRole);
 
-        using namespace Utils::Layouting;
+        using namespace Layouting;
         Column {
             Form {
                 keepTagsCheckBox, br,
@@ -356,80 +348,176 @@ BazaarPluginPrivate::BazaarPluginPrivate()
     m_commandLocator->setDescription(Tr::tr("Triggers a Bazaar version control operation."));
 
     // Create menu item for Bazaar
-    m_bazaarContainer = ActionManager::createMenu("Bazaar.BazaarMenu");
-    QMenu *menu = m_bazaarContainer->menu();
+
+    const Id bazaarMenuId = "Bazaar.BazaarMenu";
+    ActionContainer *bazaarMenu = ActionManager::createMenu(bazaarMenuId);
+    QMenu *menu = bazaarMenu->menu();
     menu->setTitle(Tr::tr("Bazaar"));
 
-    createFileActions(context);
-    m_bazaarContainer->addSeparator(context);
-    createDirectoryActions(context);
-    m_bazaarContainer->addSeparator(context);
-    createRepositoryActions(context);
-    m_bazaarContainer->addSeparator(context);
+    // File Actions
+
+    ActionBuilder annotateFile(this, ANNOTATE);
+    annotateFile.setParameterText(Tr::tr("Annotate \"%1\""), Tr::tr("Annotate Current File"));
+    annotateFile.setContext(context);
+    annotateFile.bindContextAction(&m_annotateFile);
+    annotateFile.setCommandAttribute(Command::CA_UpdateText);
+    annotateFile.addToContainer(bazaarMenuId);
+    annotateFile.addOnTriggered(this, [this] { annotateCurrentFile(); });
+    m_commandLocator->appendCommand(annotateFile.command());
+
+    ActionBuilder diffFile(this, DIFF);
+    diffFile.setParameterText(Tr::tr("Diff \"%1\""), Tr::tr("Diff Current File"));
+    diffFile.setContext(context);
+    diffFile.bindContextAction(&m_diffFile);
+    diffFile.setCommandAttribute(Command::CA_UpdateText);
+    diffFile.setDefaultKeySequence(Tr::tr("Meta+Z,Meta+D"), Tr::tr("Alt+Z,Alt+D"));
+    diffFile.addToContainer(bazaarMenuId);
+    diffFile.addOnTriggered(this, [this] { diffCurrentFile(); });
+    m_commandLocator->appendCommand(diffFile.command());
+
+    ActionBuilder logFile(this, LOG);
+    logFile.setParameterText(Tr::tr("Log \"%1\""), Tr::tr("Log Current File"));
+    logFile.setContext(context);
+    logFile.bindContextAction(&m_logFile);
+    logFile.setCommandAttribute(Command::CA_UpdateText);
+    logFile.setDefaultKeySequence(Tr::tr("Meta+Z,Meta+L"), Tr::tr("Alt+Z,Alt+L"));
+    logFile.addToContainer(bazaarMenuId);
+    logFile.addOnTriggered(this, [this] { logCurrentFile(); });
+    m_commandLocator->appendCommand(logFile.command());
+
+    ActionBuilder statusFile(this, STATUS);
+    statusFile.setParameterText(Tr::tr("Status \"%1\""), Tr::tr("Status Current File"));
+    statusFile.setContext(context);
+    statusFile.bindContextAction(&m_statusFile);
+    statusFile.setCommandAttribute(Command::CA_UpdateText);
+    statusFile.setDefaultKeySequence(Tr::tr("Meta+Z,Meta+S"), Tr::tr("Alt+Z,Alt+S"));
+    statusFile.addToContainer(bazaarMenuId);
+    statusFile.addOnTriggered(this, [this] { statusCurrentFile(); });
+    m_commandLocator->appendCommand(statusFile.command());
+
+    bazaarMenu->addSeparator(context);
+
+    ActionBuilder addAction(this, ADD);
+    addAction.bindContextAction(&m_addAction);
+    addAction.setParameterText(Tr::tr("Add \"%1\""), Tr::tr("Add"));
+    addAction.setContext(context);
+    addAction.setCommandAttribute(Command::CA_UpdateText);
+    addAction.addToContainer(bazaarMenuId);
+    addAction.addOnTriggered(this, [this] { addCurrentFile(); });
+    m_commandLocator->appendCommand(addAction.command());
+
+    ActionBuilder deleteAction(this, DELETE);
+    deleteAction.setParameterText(Tr::tr("Delete \"%1\"...") , Tr::tr("Delete..."));
+    deleteAction.setContext(context);
+    deleteAction.bindContextAction(&m_deleteAction);
+    deleteAction.setCommandAttribute(Command::CA_UpdateText);
+    deleteAction.addToContainer(bazaarMenuId);
+    deleteAction.addOnTriggered(this, [this] { promptToDeleteCurrentFile(); });
+    m_commandLocator->appendCommand(deleteAction.command());
+
+    ActionBuilder revertFile(this, REVERT);
+    revertFile.setParameterText(Tr::tr("Revert \"%1\"..."), Tr::tr("Revert Current File..."));
+    revertFile.setContext(context);
+    revertFile.bindContextAction(&m_revertFile);
+    revertFile.setCommandAttribute(Command::CA_UpdateText);
+    revertFile.addToContainer(bazaarMenuId);
+    revertFile.addOnTriggered(this, [this] { revertCurrentFile(); });
+    m_commandLocator->appendCommand(revertFile.command());
+
+    bazaarMenu->addSeparator(context);
+
+    // Directory Actions
+
+    ActionBuilder diffMulti(this, DIFFMULTI);
+    diffMulti.setText(Tr::tr("Diff"));
+    diffMulti.setContext(context);
+    diffMulti.addToContainer(bazaarMenuId);
+    diffMulti.addOnTriggered(this, [this] { diffRepository(); });
+    m_repositoryActionList.append(diffMulti.contextAction());
+    m_commandLocator->appendCommand(diffMulti.command());
+
+    ActionBuilder logMulti(this, LOGMULTI);
+    logMulti.setText(Tr::tr("Log"));
+    logMulti.setContext(context);
+    logMulti.addToContainer(bazaarMenuId);
+    logMulti.addOnTriggered(this, [this] { logRepository(); });
+    m_repositoryActionList.append(logMulti.contextAction());
+    m_commandLocator->appendCommand(logMulti.command());
+
+    ActionBuilder revertMulti(this, REVERTMULTI);
+    revertMulti.setText(Tr::tr("Revert..."));
+    revertMulti.setContext(context);
+    revertMulti.addToContainer(bazaarMenuId);
+    revertMulti.addOnTriggered(this, [this] { revertAll(); });
+    m_repositoryActionList.append(revertMulti.contextAction());
+    m_commandLocator->appendCommand(revertMulti.command());
+
+    ActionBuilder statusMulti(this, STATUSMULTI);
+    statusMulti.setText(Tr::tr("Status"));
+    statusMulti.setContext(context);
+    statusMulti.addToContainer(bazaarMenuId);
+    statusMulti.addOnTriggered(this, [this] { this->statusMulti(); });
+    m_repositoryActionList.append(statusMulti.contextAction());
+    m_commandLocator->appendCommand(statusMulti.command());
+
+    bazaarMenu->addSeparator(context);
+
+    // Repository Actions
+
+    ActionBuilder pull(this, PULL);
+    pull.setText(Tr::tr("Pull..."));
+    pull.setContext(context);
+    pull.addToContainer(bazaarMenuId);
+    pull.addOnTriggered(this, [this] { this->pull(); });
+    m_repositoryActionList.append(pull.contextAction());
+    m_commandLocator->appendCommand(pull.command());
+
+    ActionBuilder push(this, PUSH);
+    push.setText(Tr::tr("Push..."));
+    push.setContext(context);
+    push.addToContainer(bazaarMenuId);
+    push.addOnTriggered(this, [this] { this->push(); });
+    m_repositoryActionList.append(push.contextAction());
+    m_commandLocator->appendCommand(push.command());
+
+    ActionBuilder update(this, UPDATE);
+    update.setText(Tr::tr("Update..."));
+    update.setContext(context);
+    update.addToContainer(bazaarMenuId);
+    update.addOnTriggered(this, [this] { this->update(); });
+    m_repositoryActionList.append(update.contextAction());
+    m_commandLocator->appendCommand(update.command());
+
+    ActionBuilder commit(this, COMMIT);
+    commit.setText(Tr::tr("Commit..."));
+    commit.setContext(context);
+    commit.addToContainer(bazaarMenuId);
+    commit.setDefaultKeySequence(Tr::tr("Meta+Z,Meta+C"), Tr::tr("Alt+Z,Alt+C"));
+    commit.addOnTriggered(this, [this] { this->commit(); });
+    m_repositoryActionList.append(commit.contextAction());
+    m_commandLocator->appendCommand(commit.command());
+
+    ActionBuilder uncommit(this, UNCOMMIT);
+    uncommit.setText(Tr::tr("Uncommit..."));
+    uncommit.setContext(context);
+    uncommit.addToContainer(bazaarMenuId);
+    uncommit.addOnTriggered(this, [this] { this->uncommit(); });
+    m_repositoryActionList.append(uncommit.contextAction());
+    m_commandLocator->appendCommand(uncommit.command());
+
+    ActionBuilder createRepository(this, CREATE_REPOSITORY);
+    createRepository.setText(Tr::tr("Create Repository..."));
+    createRepository.addToContainer(bazaarMenuId);
+    createRepository.addOnTriggered(this, [this] { this->createRepository(); });
+
+    bazaarMenu->addSeparator(context);
 
     // Request the Tools menu and add the Bazaar menu to it
     ActionContainer *toolsMenu = ActionManager::actionContainer(Core::Constants::M_TOOLS);
-    toolsMenu->addMenu(m_bazaarContainer);
-    m_menuAction = m_bazaarContainer->menu()->menuAction();
+    toolsMenu->addMenu(bazaarMenu);
+    m_menuAction = bazaarMenu->menu()->menuAction();
 
-    connect(&m_settings, &AspectContainer::applied, this, &IVersionControl::configurationChanged);
-}
-
-void BazaarPluginPrivate::createFileActions(const Context &context)
-{
-    m_annotateFile = new ParameterAction(Tr::tr("Annotate Current File"), Tr::tr("Annotate \"%1\""), ParameterAction::EnabledWithParameter, this);
-    Command *command = ActionManager::registerAction(m_annotateFile, ANNOTATE, context);
-    command->setAttribute(Command::CA_UpdateText);
-    connect(m_annotateFile, &QAction::triggered, this, &BazaarPluginPrivate::annotateCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_diffFile = new ParameterAction(Tr::tr("Diff Current File"), Tr::tr("Diff \"%1\""), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_diffFile, DIFF, context);
-    command->setAttribute(Command::CA_UpdateText);
-    command->setDefaultKeySequence(QKeySequence(useMacShortcuts ? Tr::tr("Meta+Z,Meta+D") : Tr::tr("ALT+Z,Alt+D")));
-    connect(m_diffFile, &QAction::triggered, this, &BazaarPluginPrivate::diffCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_logFile = new ParameterAction(Tr::tr("Log Current File"), Tr::tr("Log \"%1\""), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_logFile, LOG, context);
-    command->setAttribute(Command::CA_UpdateText);
-    command->setDefaultKeySequence(QKeySequence(useMacShortcuts ? Tr::tr("Meta+Z,Meta+L") : Tr::tr("ALT+Z,Alt+L")));
-    connect(m_logFile, &QAction::triggered, this, &BazaarPluginPrivate::logCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_statusFile = new ParameterAction(Tr::tr("Status Current File"), Tr::tr("Status \"%1\""), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_statusFile, STATUS, context);
-    command->setAttribute(Command::CA_UpdateText);
-    command->setDefaultKeySequence(QKeySequence(useMacShortcuts ? Tr::tr("Meta+Z,Meta+S") : Tr::tr("ALT+Z,Alt+S")));
-    connect(m_statusFile, &QAction::triggered, this, &BazaarPluginPrivate::statusCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_bazaarContainer->addSeparator(context);
-
-    m_addAction = new ParameterAction(Tr::tr("Add"), Tr::tr("Add \"%1\""), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_addAction, ADD, context);
-    command->setAttribute(Command::CA_UpdateText);
-    connect(m_addAction, &QAction::triggered, this, &BazaarPluginPrivate::addCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_deleteAction = new ParameterAction(Tr::tr("Delete..."), Tr::tr("Delete \"%1\"..."), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_deleteAction, DELETE, context);
-    command->setAttribute(Command::CA_UpdateText);
-    connect(m_deleteAction, &QAction::triggered, this, &BazaarPluginPrivate::promptToDeleteCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    m_revertFile = new ParameterAction(Tr::tr("Revert Current File..."), Tr::tr("Revert \"%1\"..."), ParameterAction::EnabledWithParameter, this);
-    command = ActionManager::registerAction(m_revertFile, REVERT, context);
-    command->setAttribute(Command::CA_UpdateText);
-    connect(m_revertFile, &QAction::triggered, this, &BazaarPluginPrivate::revertCurrentFile);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
+    connect(&settings(), &AspectContainer::applied, this, &IVersionControl::configurationChanged);
 }
 
 void BazaarPluginPrivate::addCurrentFile()
@@ -480,36 +568,6 @@ void BazaarPluginPrivate::statusCurrentFile()
     m_client.status(state.currentFileTopLevel(), state.relativeCurrentFile());
 }
 
-void BazaarPluginPrivate::createDirectoryActions(const Context &context)
-{
-    auto action = new QAction(Tr::tr("Diff"), this);
-    m_repositoryActionList.append(action);
-    Command *command = ActionManager::registerAction(action, DIFFMULTI, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::diffRepository);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Log"), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, LOGMULTI, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::logRepository);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Revert..."), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, REVERTMULTI, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::revertAll);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Status"), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, STATUSMULTI, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::statusMulti);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-}
 
 void BazaarPluginPrivate::diffRepository()
 {
@@ -523,7 +581,7 @@ void BazaarPluginPrivate::logRepository()
     const VcsBasePluginState state = currentState();
     QTC_ASSERT(state.hasTopLevel(), return);
     QStringList extraOptions;
-    extraOptions += "--limit=" + QString::number(m_settings.logCount.value());
+    extraOptions += "--limit=" + QString::number(settings().logCount());
     m_client.log(state.topLevel(), QStringList(), extraOptions);
 }
 
@@ -543,50 +601,6 @@ void BazaarPluginPrivate::statusMulti()
     const VcsBasePluginState state = currentState();
     QTC_ASSERT(state.hasTopLevel(), return);
     m_client.status(state.topLevel());
-}
-
-void BazaarPluginPrivate::createRepositoryActions(const Context &context)
-{
-    auto action = new QAction(Tr::tr("Pull..."), this);
-    m_repositoryActionList.append(action);
-    Command *command = ActionManager::registerAction(action, PULL, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::pull);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Push..."), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, PUSH, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::push);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Update..."), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, UPDATE, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::update);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Commit..."), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, COMMIT, context);
-    command->setDefaultKeySequence(QKeySequence(useMacShortcuts ? Tr::tr("Meta+Z,Meta+C") : Tr::tr("ALT+Z,Alt+C")));
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::commit);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    action = new QAction(Tr::tr("Uncommit..."), this);
-    m_repositoryActionList.append(action);
-    command = ActionManager::registerAction(action, UNCOMMIT, context);
-    connect(action, &QAction::triggered, this, &BazaarPluginPrivate::uncommit);
-    m_bazaarContainer->addAction(command);
-    m_commandLocator->appendCommand(command);
-
-    auto createRepositoryAction = new QAction(Tr::tr("Create Repository..."), this);
-    command = ActionManager::registerAction(createRepositoryAction, CREATE_REPOSITORY, context);
-    connect(createRepositoryAction, &QAction::triggered, this, &BazaarPluginPrivate::createRepository);
-    m_bazaarContainer->addAction(command);
 }
 
 void BazaarPluginPrivate::pull()
@@ -705,8 +719,8 @@ void BazaarPluginPrivate::showCommitWidget(const QList<VcsBaseClient::StatusItem
 
     const BranchInfo branch = m_client.synchronousBranchQuery(m_submitRepository);
     commitEditor->setFields(m_submitRepository, branch,
-                            m_settings.userName.value(),
-                            m_settings.userEmail.value(), status);
+                            settings().userName(),
+                            settings().userEmail(), status);
 }
 
 void BazaarPluginPrivate::diffFromEditorSelected(const QStringList &files)
@@ -872,7 +886,7 @@ bool BazaarPluginPrivate::managesFile(const FilePath &workingDirectory, const QS
 
 bool BazaarPluginPrivate::isConfigured() const
 {
-    const FilePath binary = m_settings.binaryPath.filePath();
+    const FilePath binary = settings().binaryPath();
     return !binary.isEmpty() && binary.isExecutableFile();
 }
 

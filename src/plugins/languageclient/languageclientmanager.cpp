@@ -14,6 +14,8 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/navigationwidget.h>
 
+#include <extensionsystem/pluginmanager.h>
+
 #include <languageserverprotocol/messages.h>
 #include <languageserverprotocol/progresssupport.h>
 
@@ -26,13 +28,12 @@
 #include <texteditor/textmark.h>
 
 #include <utils/algorithm.h>
-#include <utils/executeondestruction.h>
 #include <utils/theme/theme.h>
 #include <utils/utilsicons.h>
 
-#include <QTextBlock>
 #include <QTimer>
 
+using namespace ExtensionSystem;
 using namespace LanguageServerProtocol;
 
 namespace LanguageClient {
@@ -40,14 +41,13 @@ namespace LanguageClient {
 static Q_LOGGING_CATEGORY(Log, "qtc.languageclient.manager", QtWarningMsg)
 
 static LanguageClientManager *managerInstance = nullptr;
-static bool g_shuttingDown = false;
 
 class LanguageClientManagerPrivate
 {
-    DocumentLocatorFilter m_currentDocumentLocatorFilter;
-    WorkspaceLocatorFilter m_workspaceLocatorFilter;
-    WorkspaceClassLocatorFilter m_workspaceClassLocatorFilter;
-    WorkspaceMethodLocatorFilter m_workspaceMethodLocatorFilter;
+    LanguageCurrentDocumentFilter m_currentDocumentFilter;
+    LanguageAllSymbolsFilter m_allSymbolsFilter;
+    LanguageClassesFilter m_classFilter;
+    LanguageFunctionsFilter m_functionFilter;
 };
 
 LanguageClientManager::LanguageClientManager(QObject *parent)
@@ -63,10 +63,6 @@ LanguageClientManager::LanguageClientManager(QObject *parent)
             this, &LanguageClientManager::documentOpened);
     connect(EditorManager::instance(), &EditorManager::documentClosed,
             this, &LanguageClientManager::documentClosed);
-    connect(EditorManager::instance(), &EditorManager::saved,
-            this, &LanguageClientManager::documentContentsSaved);
-    connect(EditorManager::instance(), &EditorManager::aboutToSave,
-            this, &LanguageClientManager::documentWillSave);
     connect(ProjectManager::instance(), &ProjectManager::projectAdded,
             this, &LanguageClientManager::projectAdded);
     connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
@@ -120,6 +116,13 @@ void LanguageClient::LanguageClientManager::addClient(Client *client)
                 for (QList<Client *> &clients : managerInstance->m_clientsForSetting)
                     QTC_CHECK(clients.removeAll(client) == 0);
             });
+
+    ProjectExplorer::Project *project = client->project();
+    if (!project)
+        project = ProjectExplorer::ProjectManager::startupProject();
+    if (project)
+        client->updateConfiguration(ProjectSettings(project).workspaceConfiguration());
+
     emit managerInstance->clientAdded(client);
 }
 
@@ -140,7 +143,7 @@ void LanguageClientManager::clientStarted(Client *client)
     QTC_ASSERT(client, return);
     if (client->state() != Client::Uninitialized) // do not proceed if we already received an error
         return;
-    if (g_shuttingDown) {
+    if (PluginManager::isShuttingDown()) {
         clientFinished(client);
         return;
     }
@@ -156,6 +159,7 @@ void LanguageClientManager::clientFinished(Client *client)
     QTC_ASSERT(managerInstance, return);
 
     if (managerInstance->m_restartingClients.remove(client)) {
+        client->resetRestartCounter();
         client->reset();
         client->start();
         return;
@@ -165,11 +169,12 @@ void LanguageClientManager::clientFinished(Client *client)
     const bool unexpectedFinish = client->state() != Client::Shutdown
                                   && client->state() != Client::ShutdownRequested;
 
+    const QList<TextEditor::TextDocument *> &clientDocs
+        = managerInstance->m_clientForDocument.keys(client);
     if (unexpectedFinish) {
-        if (!g_shuttingDown) {
-            const QList<TextEditor::TextDocument *> &clientDocs
-                = managerInstance->m_clientForDocument.keys(client);
-            if (client->reset()) {
+        if (!PluginManager::isShuttingDown()) {
+            const bool shouldRestart = client->state() > Client::FailedToInitialize;
+            if (shouldRestart && client->reset()) {
                 qCDebug(Log) << "restart unexpectedly finished client: " << client->name() << client;
                 client->log(
                     Tr::tr("Unexpectedly finished. Restarting in %1 seconds.").arg(restartTimeoutS));
@@ -183,12 +188,16 @@ void LanguageClientManager::clientFinished(Client *client)
             }
             qCDebug(Log) << "client finished unexpectedly: " << client->name() << client;
             client->log(Tr::tr("Unexpectedly finished."));
-            for (TextEditor::TextDocument *document : clientDocs)
-                managerInstance->m_clientForDocument.remove(document);
         }
     }
+
+    if (unexpectedFinish || !QTC_GUARD(clientDocs.isEmpty())) {
+        for (TextEditor::TextDocument *document : clientDocs)
+            openDocumentWithClient(document, nullptr);
+    }
+
     deleteClient(client);
-    if (g_shuttingDown && managerInstance->m_clients.isEmpty())
+    if (isShutdownFinished())
         emit managerInstance->shutdownFinished();
 }
 
@@ -236,18 +245,22 @@ void LanguageClientManager::deleteClient(Client *client)
     managerInstance->m_clients.removeAll(client);
     for (QList<Client *> &clients : managerInstance->m_clientsForSetting)
         clients.removeAll(client);
-    client->deleteLater();
-    if (!g_shuttingDown)
+
+    // a deleteLater is not sufficient here as it pastes the delete later event at the end
+    // of the main event loop and when the plugins are shutdown we spawn an additional eventloop
+    // that will not handle the delete later event. Use invokeMethod with Qt::QueuedConnection
+    // instead.
+    QMetaObject::invokeMethod(client, [client] {delete client;}, Qt::QueuedConnection);
+    managerInstance->trackClientDeletion(client);
+
+    if (!PluginManager::isShuttingDown())
         emit instance()->clientRemoved(client);
 }
 
 void LanguageClientManager::shutdown()
 {
     QTC_ASSERT(managerInstance, return);
-    if (g_shuttingDown)
-        return;
     qCDebug(Log) << "shutdown manager";
-    g_shuttingDown = true;
     const auto clients = managerInstance->clients();
     for (Client *client : clients)
         shutdownClient(client);
@@ -257,11 +270,6 @@ void LanguageClientManager::shutdown()
             deleteClient(client);
         emit managerInstance->shutdownFinished();
     });
-}
-
-bool LanguageClientManager::isShuttingDown()
-{
-    return g_shuttingDown;
 }
 
 LanguageClientManager *LanguageClientManager::instance()
@@ -395,6 +403,16 @@ const BaseSettings *LanguageClientManager::settingForClient(Client *client)
     return nullptr;
 }
 
+void LanguageClientManager::updateWorkspaceConfiguration(const ProjectExplorer::Project *project,
+                                                         const QJsonValue &json)
+{
+    for (Client *client : managerInstance->m_clients) {
+        ProjectExplorer::Project *clientProject = client->project();
+        if (!clientProject || clientProject == project)
+            client->updateConfiguration(json);
+    }
+}
+
 Client *LanguageClientManager::clientForDocument(TextEditor::TextDocument *document)
 {
     QTC_ASSERT(managerInstance, return nullptr);
@@ -467,8 +485,24 @@ void LanguageClientManager::editorOpened(Core::IEditor *editor)
             connect(widget, &TextEditorWidget::requestLinkAt, this,
                     [document = textEditor->textDocument()]
                     (const QTextCursor &cursor, const Utils::LinkHandler &callback, bool resolveTarget) {
-                        if (auto client = clientForDocument(document))
-                            client->symbolSupport().findLinkAt(document, cursor, callback, resolveTarget);
+                        if (auto client = clientForDocument(document)) {
+                            client->findLinkAt(document,
+                                               cursor,
+                                               callback,
+                                               resolveTarget,
+                                               LinkTarget::SymbolDef);
+                        }
+                    });
+            connect(widget, &TextEditorWidget::requestTypeAt, this,
+                    [document = textEditor->textDocument()]
+                    (const QTextCursor &cursor, const Utils::LinkHandler &callback, bool resolveTarget) {
+                        if (auto client = clientForDocument(document)) {
+                            client->findLinkAt(document,
+                                               cursor,
+                                               callback,
+                                               resolveTarget,
+                                               LinkTarget::SymbolTypeDef);
+                        }
                     });
             connect(widget, &TextEditorWidget::requestUsages, this,
                     [document = textEditor->textDocument()](const QTextCursor &cursor) {
@@ -551,24 +585,6 @@ void LanguageClientManager::documentClosed(Core::IDocument *document)
         m_clientForDocument.remove(textDocument);
 }
 
-void LanguageClientManager::documentContentsSaved(Core::IDocument *document)
-{
-    if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(document)) {
-        const QList<Client *> &clients = reachableClients();
-        for (Client *client : clients)
-            client->documentContentsSaved(textDocument);
-    }
-}
-
-void LanguageClientManager::documentWillSave(Core::IDocument *document)
-{
-    if (auto textDocument = qobject_cast<TextEditor::TextDocument *>(document)) {
-        const QList<Client *> &clients = reachableClients();
-        for (Client *client : clients)
-            client->documentWillSave(textDocument);
-    }
-}
-
 void LanguageClientManager::updateProject(ProjectExplorer::Project *project)
 {
     for (BaseSettings *setting : std::as_const(m_currentSettings)) {
@@ -607,6 +623,26 @@ void LanguageClientManager::projectAdded(ProjectExplorer::Project *project)
     const QList<Client *> &clients = reachableClients();
     for (Client *client : clients)
         client->projectOpened(project);
+}
+
+void LanguageClientManager::trackClientDeletion(Client *client)
+{
+    QTC_ASSERT(!m_scheduledForDeletion.contains(client->id()), return);
+    m_scheduledForDeletion.insert(client->id());
+    connect(client, &QObject::destroyed, this, [this, id = client->id()] {
+        m_scheduledForDeletion.remove(id);
+        if (isShutdownFinished())
+            emit shutdownFinished();
+    });
+}
+
+bool LanguageClientManager::isShutdownFinished()
+{
+    if (!PluginManager::isShuttingDown())
+        return false;
+    QTC_ASSERT(managerInstance, return true);
+    return managerInstance->m_clients.isEmpty()
+           && managerInstance->m_scheduledForDeletion.isEmpty();
 }
 
 } // namespace LanguageClient

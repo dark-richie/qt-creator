@@ -7,12 +7,16 @@
 
 #include <coreplugin/icore.h>
 
+#include <cppeditor/cppcodestylepreferences.h>
 #include <cppeditor/cppcodestylepreferencesfactory.h>
+#include <cppeditor/cppqtstyleindenter.h>
+#include <cppeditor/cpptoolssettings.h>
 
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
 
 #include <utils/genericconstants.h>
+#include <utils/qtcsettings.h>
 
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectmanager.h>
@@ -23,6 +27,7 @@
 using namespace clang;
 using namespace format;
 using namespace TextEditor;
+using namespace Utils;
 
 namespace ClangFormat {
 
@@ -32,7 +37,7 @@ static bool isBeautifierPluginActivated()
     return std::find_if(specs.begin(),
                         specs.end(),
                         [](ExtensionSystem::PluginSpec *spec) {
-                            return spec->name() == "Beautifier";
+                            return spec->name() == "Beautifier" && spec->isEffectivelyEnabled();
                         })
            != specs.end();
 }
@@ -42,7 +47,7 @@ static bool isBeautifierOnSaveActivated()
     if (!isBeautifierPluginActivated())
         return false;
 
-    QSettings *s = Core::ICore::settings();
+    QtcSettings *s = Core::ICore::settings();
     bool activated = false;
     s->beginGroup(Utils::Constants::BEAUTIFIER_SETTINGS_GROUP);
     s->beginGroup(Utils::Constants::BEAUTIFIER_GENERAL_GROUP);
@@ -59,6 +64,10 @@ ClangFormatIndenter::ClangFormatIndenter(QTextDocument *doc)
 
 bool ClangFormatIndenter::formatCodeInsteadOfIndent() const
 {
+#ifdef WITH_TESTS
+    if (CppEditor::CppToolsSettings::cppCodeStyle()->codeStyleSettings().forceFormatting)
+        return true;
+#endif
     return getCurrentIndentationOrFormattingSettings(m_fileName)
            == ClangFormatSettings::Mode::Formatting;
 }
@@ -114,7 +123,7 @@ bool ClangFormatIndenter::formatWhileTyping() const
 ClangFormatForwardingIndenter::ClangFormatForwardingIndenter(QTextDocument *doc)
     : TextEditor::Indenter(doc)
     , m_clangFormatIndenter(std::make_unique<ClangFormatIndenter>(doc))
-    , m_cppIndenter(CppEditor::CppCodeStylePreferencesFactory().createIndenter(doc))
+    , m_cppIndenter(CppEditor::createCppQtStyleIndenter(doc))
 {}
 
 ClangFormatForwardingIndenter::~ClangFormatForwardingIndenter() = default;
@@ -130,7 +139,8 @@ TextEditor::Indenter *ClangFormatForwardingIndenter::currentIndenter() const
 {
     ClangFormatSettings::Mode mode = getCurrentIndentationOrFormattingSettings(m_fileName);
 
-    if (mode == ClangFormatSettings::Disable)
+    if (mode == ClangFormatSettings::Disable
+        || m_fileName.fileSize() >= ClangFormatSettings::instance().fileSizeThreshold() * 1024)
         return m_cppIndenter.get();
 
     return m_clangFormatIndenter.get();
@@ -172,10 +182,10 @@ void ClangFormatForwardingIndenter::autoIndent(const QTextCursor &cursor,
     currentIndenter()->autoIndent(cursor, tabSettings, cursorPositionInEditor);
 }
 
-Utils::Text::Replacements ClangFormatForwardingIndenter::format(
-    const TextEditor::RangesInLines &rangesInLines)
+Utils::EditOperations ClangFormatForwardingIndenter::format(
+    const TextEditor::RangesInLines &rangesInLines, FormattingMode mode)
 {
-    return currentIndenter()->format(rangesInLines);
+    return currentIndenter()->format(rangesInLines, mode);
 }
 
 

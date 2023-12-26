@@ -124,11 +124,10 @@ private:
 
 // Moved to the launcher thread, returned to caller's thread.
 // It's assumed that this object will be alive at least
-// as long as the corresponding QtcProcess is alive.
+// as long as the corresponding Process is alive.
 
 class LauncherHandle : public QObject
 {
-    Q_OBJECT
 public:
     // Called from caller's thread, moved to launcher's thread afterwards.
     LauncherHandle(quintptr token) : m_token(token) {}

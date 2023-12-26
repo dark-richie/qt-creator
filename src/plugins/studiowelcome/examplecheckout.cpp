@@ -7,12 +7,14 @@
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
 
+#include <designerpaths.h>
+#include <studiosettingspage.h>
 #include <qmldesignerbase/qmldesignerbaseplugin.h>
 
-#include <utils/archive.h>
 #include <utils/algorithm.h>
 #include <utils/networkaccessmanager.h>
 #include <utils/qtcassert.h>
+#include <utils/unarchiver.h>
 
 #include <private/qqmldata_p.h>
 
@@ -35,6 +37,7 @@
 
 #include <algorithm>
 
+using namespace Tasking;
 using namespace Utils;
 
 void ExampleCheckout::registerTypes()
@@ -55,20 +58,20 @@ void DataModelDownloader::usageStatisticsDownloadExample(const QString &name)
 
 bool DataModelDownloader::downloadEnabled() const
 {
-    const QString lastQDSVersionEntry = "QML/Designer/EnableWelcomePageDownload";
+    const Key lastQDSVersionEntry = "QML/Designer/EnableWelcomePageDownload";
     return Core::ICore::settings()->value(lastQDSVersionEntry, false).toBool();
 }
 
 QString DataModelDownloader::targetPath() const
 {
-    return QmlDesigner::QmlDesignerBasePlugin::examplesPathSetting();
+    return QmlDesigner::Paths::examplesPathSetting();
 }
 
-static Utils::FilePath tempFilePath()
+static FilePath tempFilePath()
 {
     QStandardPaths::StandardLocation location = QStandardPaths::CacheLocation;
 
-    return Utils::FilePath::fromString(QStandardPaths::writableLocation(location))
+    return FilePath::fromString(QStandardPaths::writableLocation(location))
         .pathAppended("QtDesignStudio");
 }
 
@@ -103,29 +106,32 @@ DataModelDownloader::DataModelDownloader(QObject * /* parent */)
         return;
 
     auto studioWelcomePlugin = qobject_cast<StudioWelcome::Internal::StudioWelcomePlugin *>(plugin);
-
-    if (studioWelcomePlugin) {
-        QObject::connect(QmlDesigner::QmlDesignerBasePlugin::instance(),
-                         &QmlDesigner::QmlDesignerBasePlugin::examplesDownloadPathChanged,
+    QmlDesigner::StudioConfigSettingsPage *settingsPage
+        = QmlDesigner::QmlDesignerBasePlugin::studioConfigSettingsPage();
+    if (studioWelcomePlugin && settingsPage) {
+        QObject::connect(settingsPage,
+                         &QmlDesigner::StudioConfigSettingsPage::examplesDownloadPathChanged,
                          this,
                          &DataModelDownloader::targetPathMustChange);
     }
 
-    connect(&m_fileDownloader, &QmlDesigner::FileDownloader::finishedChanged, this, [this]() {
+    connect(&m_fileDownloader, &QmlDesigner::FileDownloader::finishedChanged, this, [this] {
         m_started = false;
 
         if (m_fileDownloader.finished()) {
-            const Utils::FilePath archiveFile = Utils::FilePath::fromString(
-                m_fileDownloader.outputFile());
-            QTC_ASSERT(Utils::Archive::supportsFile(archiveFile), return );
-            auto archive = new Utils::Archive(archiveFile, tempFilePath());
-            QTC_ASSERT(archive->isValid(), delete archive; return );
-            QObject::connect(archive, &Utils::Archive::finished, this, [this, archive](bool ret) {
-                QTC_CHECK(ret);
-                archive->deleteLater();
+            const FilePath archiveFile = FilePath::fromString(m_fileDownloader.outputFile());
+            const auto sourceAndCommand = Unarchiver::sourceAndCommand(archiveFile);
+            QTC_ASSERT(sourceAndCommand, return);
+            auto unarchiver = new Unarchiver;
+            unarchiver->setSourceAndCommand(*sourceAndCommand);
+            unarchiver->setDestDir(tempFilePath());
+            QObject::connect(unarchiver, &Unarchiver::done, this,
+                             [this, unarchiver](DoneResult result) {
+                QTC_CHECK(result == DoneResult::Success);
+                unarchiver->deleteLater();
                 emit finished();
             });
-            archive->unarchive();
+            unarchiver->start();
         }
     });
 }
@@ -177,9 +183,9 @@ bool DataModelDownloader::available() const
     return m_available;
 }
 
-Utils::FilePath DataModelDownloader::targetFolder() const
+FilePath DataModelDownloader::targetFolder() const
 {
-    return Utils::FilePath::fromUserInput(tempFilePath().toString() + "/" + "dataImports");
+    return FilePath::fromUserInput(tempFilePath().toString() + "/" + "dataImports");
 }
 
 void DataModelDownloader::setForceDownload(bool b)

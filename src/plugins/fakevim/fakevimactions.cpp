@@ -10,6 +10,13 @@
 // Qt Creator. The idea is to keep this file here in a "clean" state that
 // allows easy reuse with any QTextEdit or QPlainTextEdit derived class.
 
+#ifndef FAKEVIM_STANDALONE
+#include <texteditor/icodestylepreferences.h>
+#include <texteditor/tabsettings.h>
+#include <texteditor/texteditorsettings.h>
+#include <texteditor/typingsettings.h>
+#endif
+
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
@@ -18,42 +25,17 @@
 
 using namespace Utils;
 
-namespace FakeVim {
-namespace Internal {
+namespace FakeVim::Internal {
 
 #ifdef FAKEVIM_STANDALONE
-FvBaseAspect::FvBaseAspect()
-{
-}
 
-void FvBaseAspect::setValue(const QVariant &value)
-{
-    m_value = value;
-}
-
-QVariant FvBaseAspect::value() const
-{
-    return m_value;
-}
-
-void FvBaseAspect::setDefaultValue(const QVariant &value)
-{
-    m_defaultValue = value;
-    m_value = value;
-}
-
-QVariant FvBaseAspect::defaultValue() const
-{
-    return m_defaultValue;
-}
-
-void FvBaseAspect::setSettingsKey(const QString &group, const QString &key)
+void FvBaseAspect::setSettingsKey(const Key &group, const Key &key)
 {
     m_settingsGroup = group;
     m_settingsKey = key;
 }
 
-QString FvBaseAspect::settingsKey() const
+Key FvBaseAspect::settingsKey() const
 {
     return m_settingsKey;
 }
@@ -62,13 +44,19 @@ QString FvBaseAspect::settingsKey() const
 void setAutoApply(bool ) {}
 #endif
 
+
+FakeVimSettings &settings()
+{
+    static FakeVimSettings theSettings;
+    return theSettings;
+}
+
 FakeVimSettings::FakeVimSettings()
 {
     setAutoApply(false);
 
-#ifndef FAKEVIM_STANDALONE
     setup(&useFakeVim,     false, "UseFakeVim",     {},    Tr::tr("Use FakeVim"));
-#endif
+
     // Specific FakeVim settings
     setup(&readVimRc,      false, "ReadVimRc",      {},    Tr::tr("Read .vimrc from location:"));
     setup(&vimRcPath,      QString(), "VimRcPath",  {},    {}); // Tr::tr("Path to .vimrc")
@@ -94,6 +82,7 @@ FakeVimSettings::FakeVimSettings()
     setup(&showCmd,        true,  "ShowCmd",        "sc",  Tr::tr("Show partial command"));
     setup(&relativeNumber, false, "RelativeNumber", "rnu", Tr::tr("Show line numbers relative to cursor"));
     setup(&blinkingCursor, false, "BlinkingCursor", "bc",  Tr::tr("Blinking cursor"));
+    setup(&systemEncoding, false, "SystemEncoding", {},    Tr::tr("Use system encoding for :source"));
     setup(&scrollOff,      0,     "ScrollOff",      "so",  Tr::tr("Scroll offset:"));
     setup(&backspace,      "indent,eol,start",
                                   "Backspace",      "bs",  Tr::tr("Backspace:"));
@@ -134,20 +123,135 @@ FakeVimSettings::FakeVimSettings()
     vimRcPath.setToolTip(Tr::tr("Keep empty to use the default path, i.e. "
                "%USERPROFILE%\\_vimrc on Windows, ~/.vimrc otherwise."));
     vimRcPath.setPlaceHolderText(Tr::tr("Default: %1").arg(vimrcDefault));
-    vimRcPath.setDisplayStyle(FvStringAspect::PathChooserDisplay);
+
+    setLayouter([this] {
+        using namespace Layouting;
+        using namespace TextEditor;
+
+        Row bools {
+            Column {
+                autoIndent,
+                smartIndent,
+                expandTab,
+                smartTab,
+                hlSearch,
+                showCmd,
+                startOfLine,
+                passKeys,
+                blinkingCursor,
+                HostOsInfo::isWindowsHost() ? LayoutItem(systemEncoding) : empty
+            },
+            Column {
+                incSearch,
+                useCoreSearch,
+                ignoreCase,
+                smartCase,
+                wrapScan,
+                showMarks,
+                passControlKey,
+                relativeNumber,
+                tildeOp
+            }
+        };
+
+        Row ints { shiftWidth, tabStop, scrollOff, st };
+
+        Column strings {
+            backspace,
+            isKeyword,
+            Row {readVimRc, vimRcPath}
+        };
+
+        return Column {
+            useFakeVim,
+
+            Group {
+                title(Tr::tr("Vim Behavior")),
+                Column {
+                    bools,
+                    ints,
+                    strings
+                }
+            },
+
+            Group {
+                title(Tr::tr("Plugin Emulation")),
+                Column {
+                    emulateVimCommentary,
+                    emulateReplaceWithRegister,
+                    emulateArgTextObj,
+                    emulateExchange,
+                    emulateSurround
+                }
+            },
+
+            Row {
+                PushButton {
+                    text(Tr::tr("Copy Text Editor Settings")),
+                    onClicked([this] {
+                        TabSettings ts = TextEditorSettings::codeStyle()->tabSettings();
+                        TypingSettings tps = TextEditorSettings::typingSettings();
+                        expandTab.setValue(ts.m_tabPolicy != TabSettings::TabsOnlyTabPolicy);
+                        tabStop.setValue(ts.m_tabSize);
+                        shiftWidth.setValue(ts.m_indentSize);
+                        smartTab.setValue(tps.m_smartBackspaceBehavior
+                                          == TypingSettings::BackspaceFollowsPreviousIndents);
+                        autoIndent.setValue(true);
+                        smartIndent.setValue(tps.m_autoIndent);
+                        incSearch.setValue(true);
+                    }),
+                },
+                PushButton {
+                    text(Tr::tr("Set Qt Style")),
+                    onClicked([this] {
+                        expandTab.setVolatileValue(true);
+                        tabStop.setVolatileValue(4);
+                        shiftWidth.setVolatileValue(4);
+                        smartTab.setVolatileValue(true);
+                        autoIndent.setVolatileValue(true);
+                        smartIndent.setVolatileValue(true);
+                        incSearch.setVolatileValue(true);
+                        backspace.setVolatileValue(QString("indent,eol,start"));
+                        passKeys.setVolatileValue(true);
+                    }),
+                },
+                PushButton {
+                    text(Tr::tr("Set Plain Style")),
+                    onClicked([this] {
+                        expandTab.setVolatileValue(false);
+                        tabStop.setVolatileValue(8);
+                        shiftWidth.setVolatileValue(8);
+                        smartTab.setVolatileValue(false);
+                        autoIndent.setVolatileValue(false);
+                        smartIndent.setVolatileValue(false);
+                        incSearch.setVolatileValue(false);
+                        backspace.setVolatileValue(QString());
+                        passKeys.setVolatileValue(false);
+                    }),
+                 },
+                 st
+            },
+            st
+        };
+    });
+
+    readSettings();
+
+    vimRcPath.setEnabler(&readVimRc);
+
 #endif
 }
 
 FakeVimSettings::~FakeVimSettings() = default;
 
-FvBaseAspect *FakeVimSettings::item(const QString &name)
+FvBaseAspect *FakeVimSettings::item(const Utils::Key &name)
 {
     return m_nameToAspect.value(name, nullptr);
 }
 
 QString FakeVimSettings::trySetValue(const QString &name, const QString &value)
 {
-    FvBaseAspect *aspect = m_nameToAspect.value(name, nullptr);
+    FvBaseAspect *aspect = m_nameToAspect.value(keyFromString(name), nullptr);
     if (!aspect)
         return Tr::tr("Unknown option: %1").arg(name);
     if (aspect == &tabStop || aspect == &shiftWidth) {
@@ -155,30 +259,30 @@ QString FakeVimSettings::trySetValue(const QString &name, const QString &value)
             return Tr::tr("Argument must be positive: %1=%2")
                     .arg(name).arg(value);
     }
-    aspect->setValue(value);
+    aspect->setVariantValue(value);
     return QString();
 }
 
 void FakeVimSettings::setup(FvBaseAspect *aspect,
                             const QVariant &value,
-                            const QString &settingsKey,
-                            const QString &shortName,
+                            const Utils::Key &settingsKey,
+                            const Utils::Key &shortName,
                             const QString &labelText)
 {
     aspect->setSettingsKey("FakeVim", settingsKey);
-    aspect->setDefaultValue(value);
+    aspect->setDefaultVariantValue(value);
 #ifndef FAKEVIM_STANDALONE
     aspect->setLabelText(labelText);
     aspect->setAutoApply(false);
     registerAspect(aspect);
 
     if (auto boolAspect = dynamic_cast<FvBoolAspect *>(aspect))
-        boolAspect->setLabelPlacement(FvBoolAspect::LabelPlacement::AtCheckBoxWithoutDummyLabel);
+        boolAspect->setLabelPlacement(FvBoolAspect::LabelPlacement::AtCheckBox);
 #else
     Q_UNUSED(labelText)
 #endif
 
-    const QString longName = settingsKey.toLower();
+    const Key longName = settingsKey.toByteArray().toLower();
     if (!longName.isEmpty()) {
         m_nameToAspect[longName] = aspect;
         m_aspectToName[aspect] = longName;
@@ -187,11 +291,27 @@ void FakeVimSettings::setup(FvBaseAspect *aspect,
         m_nameToAspect[shortName] = aspect;
 }
 
-FakeVimSettings *fakeVimSettings()
-{
-    static FakeVimSettings s;
-    return &s;
-}
+#ifndef FAKEVIM_STANDALONE
 
-} // namespace Internal
-} // namespace FakeVim
+class FakeVimSettingsPage final : public Core::IOptionsPage
+{
+public:
+    FakeVimSettingsPage()
+    {
+        const char SETTINGS_CATEGORY[]              = "D.FakeVim";
+        const char SETTINGS_ID[]                    = "A.FakeVim.General";
+
+        setId(SETTINGS_ID);
+        setDisplayName(Tr::tr("General"));
+        setCategory(SETTINGS_CATEGORY);
+        setDisplayCategory(Tr::tr("FakeVim"));
+        setCategoryIconPath(":/fakevim/images/settingscategory_fakevim.png");
+        setSettingsProvider([] { return &settings(); });
+    }
+};
+
+const FakeVimSettingsPage settingsPage;
+
+#endif
+
+} // FakeVim::Internal

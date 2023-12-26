@@ -3,7 +3,7 @@
 
 #include "loadcoredialog.h"
 
-#include "debuggerkitinformation.h"
+#include "debuggerkitaspect.h"
 #include "debuggertr.h"
 #include "gdb/gdbengine.h"
 
@@ -11,13 +11,12 @@
 #include <projectexplorer/kitchooser.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
 #include <utils/processinterface.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
-#include <utils/tasktree.h>
 #include <utils/temporaryfile.h>
 
 #include <QCheckBox>
@@ -34,6 +33,7 @@
 
 using namespace Core;
 using namespace ProjectExplorer;
+using namespace Tasking;
 using namespace Utils;
 
 namespace Debugger::Internal {
@@ -161,7 +161,10 @@ AttachCoreDialog::~AttachCoreDialog()
 
 int AttachCoreDialog::exec()
 {
-    connect(d->symbolFileName, &PathChooser::textChanged, this, &AttachCoreDialog::changed);
+    connect(d->symbolFileName, &PathChooser::validChanged, this, &AttachCoreDialog::changed);
+    connect(d->coreFileName, &PathChooser::validChanged, this, [this] {
+        coreFileChanged(d->coreFileName->rawFilePath());
+    });
     connect(d->coreFileName, &PathChooser::textChanged, this, [this] {
         coreFileChanged(d->coreFileName->rawFilePath());
     });
@@ -170,7 +173,7 @@ int AttachCoreDialog::exec()
     connect(d->buttonBox, &QDialogButtonBox::accepted, this, &AttachCoreDialog::accepted);
     changed();
 
-    connect(&d->taskTree, &TaskTree::done, this, [&]() {
+    connect(&d->taskTree, &TaskTree::done, this, [this] {
         setEnabled(true);
         d->progressIndicator->setVisible(false);
         d->progressLabel->setVisible(false);
@@ -217,8 +220,6 @@ void AttachCoreDialog::accepted()
     const DebuggerItem *debuggerItem = Debugger::DebuggerKitAspect::debugger(kit());
     const FilePath debuggerCommand = debuggerItem->command();
 
-    using namespace Tasking;
-
     const auto copyFile = [debuggerCommand](const FilePath &srcPath) -> expected_str<FilePath> {
         if (!srcPath.isSameDevice(debuggerCommand)) {
             const expected_str<FilePath> tmpPath = debuggerCommand.tmpDir();
@@ -249,17 +250,19 @@ void AttachCoreDialog::accepted()
 
     const Group root = {
         parallel,
-        Async<ResultType>{[=](auto &task) {
-                              task.setConcurrentCallData(copyFileAsync, this->coreFile());
-                          },
-                          [=](const auto &task) { d->coreFileResult = task.result(); }},
-        Async<ResultType>{[=](auto &task) {
-                              task.setConcurrentCallData(copyFileAsync, this->symbolFile());
-                          },
-                          [=](const auto &task) { d->symbolFileResult = task.result(); }},
+        AsyncTask<ResultType>{[this, copyFileAsync](auto &task) {
+                                  task.setConcurrentCallData(copyFileAsync, coreFile());
+                              },
+                              [this](const Async<ResultType> &task) { d->coreFileResult = task.result(); },
+                              CallDoneIf::Success},
+        AsyncTask<ResultType>{[this, copyFileAsync](auto &task) {
+                                  task.setConcurrentCallData(copyFileAsync, symbolFile());
+                              },
+                              [this](const Async<ResultType> &task) { d->symbolFileResult = task.result(); },
+                              CallDoneIf::Success}
     };
 
-    d->taskTree.setupRoot(root);
+    d->taskTree.setRecipe(root);
     d->taskTree.start();
 
     d->progressLabel->setText(Tr::tr("Copying files to device..."));
@@ -274,7 +277,7 @@ void AttachCoreDialog::coreFileChanged(const FilePath &coreFile)
     if (coreFile.osType() != OsType::OsTypeWindows && coreFile.exists()) {
         Kit *k = d->kitChooser->currentKit();
         QTC_ASSERT(k, return);
-        Runnable debugger = DebuggerKitAspect::runnable(k);
+        ProcessRunData debugger = DebuggerKitAspect::runnable(k);
         CoreInfo cinfo = CoreInfo::readExecutableNameFromCore(debugger, coreFile);
         if (!cinfo.foundExecutableName.isEmpty())
             d->symbolFileName->setFilePath(cinfo.foundExecutableName);

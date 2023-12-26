@@ -3,12 +3,15 @@
 
 #include "texteditorplugin.h"
 
+#include "bookmarkfilter.h"
+#include "bookmarkmanager.h"
 #include "findincurrentfile.h"
 #include "findinfiles.h"
 #include "findinopenfiles.h"
 #include "fontsettings.h"
-#include "highlighter.h"
+#include "highlighterhelper.h"
 #include "icodestylepreferences.h"
+#include "jsoneditor.h"
 #include "linenumberfilter.h"
 #include "markdowneditor.h"
 #include "outlinefactory.h"
@@ -17,13 +20,22 @@
 #include "tabsettings.h"
 #include "textdocument.h"
 #include "texteditor.h"
+#include "texteditorconstants.h"
 #include "texteditorsettings.h"
 #include "texteditortr.h"
+
+#ifdef WITH_TESTS
+#include "codeassist/codeassist_test.h"
+#include "highlighter_test.h"
+#endif
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
+#include <coreplugin/coreconstants.h>
 #include <coreplugin/diffservice.h>
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/externaltoolmanager.h>
 #include <coreplugin/foldernavigationwidget.h>
 #include <coreplugin/icore.h>
@@ -33,12 +45,15 @@
 #include <utils/fancylineedit.h>
 #include <utils/qtcassert.h>
 #include <utils/macroexpander.h>
+#include <utils/utilsicons.h>
+
+#include <QMenu>
 
 using namespace Core;
 using namespace Utils;
+using namespace TextEditor::Constants;
 
-namespace TextEditor {
-namespace Internal {
+namespace TextEditor::Internal {
 
 const char kCurrentDocumentSelection[] = "CurrentDocument:Selection";
 const char kCurrentDocumentRow[] = "CurrentDocument:Row";
@@ -51,12 +66,38 @@ const char kCurrentDocumentWordUnderCursor[] = "CurrentDocument:WordUnderCursor"
 class TextEditorPluginPrivate : public QObject
 {
 public:
+    TextEditorPluginPrivate();
+
+    void updateActions(bool enableToggle, int stateMask);
+    void editorOpened(Core::IEditor *editor);
+    void editorAboutToClose(Core::IEditor *editor);
+
+    void requestContextMenu(TextEditorWidget *widget, int lineNumber, QMenu *menu);
+
     void extensionsInitialized();
-    void updateSearchResultsFont(const TextEditor::FontSettings &);
-    void updateSearchResultsTabWidth(const TextEditor::TabSettings &tabSettings);
+    void updateSearchResultsFont(const FontSettings &);
+    void updateSearchResultsTabWidth(const TabSettings &tabSettings);
     void updateCurrentSelection(const QString &text);
 
     void createStandardContextMenu();
+
+    BookmarkManager m_bookmarkManager;
+    BookmarkFilter m_bookmarkFilter{&m_bookmarkManager};
+    BookmarkViewFactory m_bookmarkViewFactory{&m_bookmarkManager};
+
+    Menu m_bookmarkMenu;
+    QAction *m_toggleAction = nullptr;
+    QAction *m_editAction = nullptr;
+    QAction *m_prevAction = nullptr;
+    QAction *m_nextAction = nullptr;
+    QAction *m_docPrevAction = nullptr;
+    QAction *m_docNextAction = nullptr;
+
+    QAction m_editBookmarkAction{Tr::tr("Edit Bookmark")};
+    QAction m_bookmarkMarginAction{Tr::tr("Toggle Bookmark")};
+
+    int m_marginActionLineNumber = 0;
+    FilePath m_marginActionFileName;
 
     TextEditorSettings settings;
     LineNumberFilter lineNumberFilter; // Goto line functionality for quick open
@@ -68,7 +109,158 @@ public:
 
     PlainTextEditorFactory plainTextEditorFactory;
     MarkdownEditorFactory markdownEditorFactory;
+    JsonEditorFactory jsonEditorFactory;
 };
+
+TextEditorPluginPrivate::TextEditorPluginPrivate()
+{
+    const Id bookmarkMenuId = "Bookmarks.Menu";
+    const Context editorManagerContext(Core::Constants::C_EDITORMANAGER);
+
+    m_bookmarkMenu.setId(bookmarkMenuId);
+    m_bookmarkMenu.setTitle(Tr::tr("&Bookmarks"));
+    m_bookmarkMenu.setContainer(Core::Constants::M_TOOLS);
+
+    ActionBuilder toggleAction(this, "Bookmarks.Toggle");
+    toggleAction.setContext(editorManagerContext);
+    toggleAction.setText(Tr::tr("Toggle Bookmark"));
+    toggleAction.setDefaultKeySequence(Tr::tr("Meta+M"), Tr::tr("Ctrl+M"));
+    toggleAction.setTouchBarIcon(Icons::MACOS_TOUCHBAR_BOOKMARK.icon());
+    toggleAction.addToContainer(bookmarkMenuId);
+    toggleAction.bindContextAction(&m_toggleAction);
+    toggleAction.addOnTriggered(this, [this] {
+        IEditor *editor = EditorManager::currentEditor();
+        auto widget = TextEditorWidget::fromEditor(editor);
+        if (widget && editor && !editor->document()->isTemporary())
+            m_bookmarkManager.toggleBookmark(editor->document()->filePath(), editor->currentLine());
+    });
+
+    ActionBuilder editAction(this, "Bookmarks.Edit");
+    editAction.setContext(editorManagerContext);
+    editAction.setText(Tr::tr("Edit Bookmark"));
+    editAction.setDefaultKeySequence(Tr::tr("Meta+Shift+M"), Tr::tr("Ctrl+Shift+M"));
+    editAction.addToContainer(bookmarkMenuId);
+    editAction.bindContextAction(&m_editAction);
+    editAction.addOnTriggered(this, [this] {
+        IEditor *editor = EditorManager::currentEditor();
+        auto widget = TextEditorWidget::fromEditor(editor);
+        if (widget && editor && !editor->document()->isTemporary()) {
+            const FilePath filePath = editor->document()->filePath();
+            const int line = editor->currentLine();
+            if (!m_bookmarkManager.hasBookmarkInPosition(filePath, line))
+                m_bookmarkManager.toggleBookmark(filePath, line);
+            m_bookmarkManager.editByFileAndLine(filePath, line);
+        }
+    });
+
+    m_bookmarkMenu.addSeparator();
+
+    ActionBuilder prevAction(this, BOOKMARKS_PREV_ACTION);
+    prevAction.setContext(editorManagerContext);
+    prevAction.setText(Tr::tr("Previous Bookmark"));
+    prevAction.setDefaultKeySequence(Tr::tr("Meta+,"), Tr::tr("Ctrl+,"));
+    prevAction.addToContainer(bookmarkMenuId);
+    prevAction.setIcon(Icons::PREV_TOOLBAR.icon());
+    prevAction.setIconVisibleInMenu(false);
+    prevAction.bindContextAction(&m_prevAction);
+    prevAction.addOnTriggered(this, [this] { m_bookmarkManager.prev(); });
+
+    ActionBuilder nextAction(this, BOOKMARKS_NEXT_ACTION);
+    nextAction.setContext(editorManagerContext);
+    nextAction.setText(Tr::tr("Next Bookmark"));
+    nextAction.setIcon(Icons::NEXT_TOOLBAR.icon());
+    nextAction.setIconVisibleInMenu(false);
+    nextAction.setDefaultKeySequence(Tr::tr("Meta+."), Tr::tr("Ctrl+."));
+    nextAction.addToContainer(bookmarkMenuId);
+    nextAction.bindContextAction(&m_nextAction);
+    nextAction.addOnTriggered(this, [this] { m_bookmarkManager.next(); });
+
+    m_bookmarkMenu.addSeparator();
+
+    ActionBuilder docPrevAction(this, "Bookmarks.PreviousDocument");
+    docPrevAction.setContext(editorManagerContext);
+    docPrevAction.setText(Tr::tr("Previous Bookmark in Document"));
+    docPrevAction.addToContainer(bookmarkMenuId);
+    docPrevAction.bindContextAction(&m_docPrevAction);
+    docPrevAction.addOnTriggered(this, [this] { m_bookmarkManager.prevInDocument(); });
+
+    ActionBuilder docNextAction(this, "Bookmarks.NextDocument");
+    docNextAction.setContext(Core::Constants::C_EDITORMANAGER);
+    docNextAction.setText(Tr::tr("Next Bookmark in Document"));
+    docNextAction.addToContainer(bookmarkMenuId);
+    docNextAction.bindContextAction(&m_docNextAction);
+    docNextAction.addOnTriggered(this, [this] { m_bookmarkManager.nextInDocument(); });
+
+    connect(&m_editBookmarkAction, &QAction::triggered, this, [this] {
+            m_bookmarkManager.editByFileAndLine(m_marginActionFileName, m_marginActionLineNumber);
+    });
+
+    connect(&m_bookmarkManager, &BookmarkManager::updateActions,
+            this, &TextEditorPluginPrivate::updateActions);
+    updateActions(false, m_bookmarkManager.state());
+
+    connect(&m_bookmarkMarginAction, &QAction::triggered, this, [this] {
+            m_bookmarkManager.toggleBookmark(m_marginActionFileName, m_marginActionLineNumber);
+    });
+
+    ActionContainer *touchBar = ActionManager::actionContainer(Core::Constants::TOUCH_BAR);
+    touchBar->addAction(toggleAction.command(), Core::Constants::G_TOUCHBAR_EDITOR);
+
+    // EditorManager
+    connect(EditorManager::instance(), &EditorManager::editorAboutToClose,
+            this, &TextEditorPluginPrivate::editorAboutToClose);
+    connect(EditorManager::instance(), &EditorManager::editorOpened,
+            this, &TextEditorPluginPrivate::editorOpened);
+}
+
+void TextEditorPluginPrivate::updateActions(bool enableToggle, int state)
+{
+    const bool hasbm    = state >= BookmarkManager::HasBookMarks;
+    const bool hasdocbm = state == BookmarkManager::HasBookmarksInDocument;
+
+    m_toggleAction->setEnabled(enableToggle);
+    m_editAction->setEnabled(enableToggle);
+    m_prevAction->setEnabled(hasbm);
+    m_nextAction->setEnabled(hasbm);
+    m_docPrevAction->setEnabled(hasdocbm);
+    m_docNextAction->setEnabled(hasdocbm);
+}
+
+void TextEditorPluginPrivate::editorOpened(IEditor *editor)
+{
+    if (auto widget = TextEditorWidget::fromEditor(editor)) {
+        connect(widget, &TextEditorWidget::markRequested,
+                this, [this, editor](TextEditorWidget *, int line, TextMarkRequestKind kind) {
+                    if (kind == BookmarkRequest && !editor->document()->isTemporary())
+                        m_bookmarkManager.toggleBookmark(editor->document()->filePath(), line);
+                });
+
+        connect(widget, &TextEditorWidget::markContextMenuRequested,
+                this, &TextEditorPluginPrivate::requestContextMenu);
+    }
+}
+
+void TextEditorPluginPrivate::editorAboutToClose(IEditor *editor)
+{
+    if (auto widget = TextEditorWidget::fromEditor(editor)) {
+        disconnect(widget, &TextEditorWidget::markContextMenuRequested,
+                   this, &TextEditorPluginPrivate::requestContextMenu);
+    }
+}
+
+void TextEditorPluginPrivate::requestContextMenu(TextEditorWidget *widget,
+    int lineNumber, QMenu *menu)
+{
+    if (widget->textDocument()->isTemporary())
+        return;
+
+    m_marginActionLineNumber = lineNumber;
+    m_marginActionFileName = widget->textDocument()->filePath();
+
+    menu->addAction(&m_bookmarkMarginAction);
+    if (m_bookmarkManager.hasBookmarkInPosition(m_marginActionFileName, m_marginActionLineNumber))
+        menu->addAction(&m_editBookmarkAction);
+}
 
 static TextEditorPlugin *m_instance = nullptr;
 
@@ -105,9 +297,9 @@ void TextEditorPlugin::initialize()
             editor->editorWidget()->invokeAssist(Completion);
     });
     connect(command, &Command::keySequenceChanged, [command] {
-        Utils::FancyLineEdit::setCompletionShortcut(command->keySequence());
+        FancyLineEdit::setCompletionShortcut(command->keySequence());
     });
-    Utils::FancyLineEdit::setCompletionShortcut(command->keySequence());
+    FancyLineEdit::setCompletionShortcut(command->keySequence());
 
     // Add shortcut for invoking function hint completion
     QAction *functionHintAction = new QAction(Tr::tr("Display Function Hint"), this);
@@ -142,6 +334,11 @@ void TextEditorPlugin::initialize()
                                     Tr::tr("Text", "SnippetProvider"));
 
     d->createStandardContextMenu();
+
+#ifdef WITH_TESTS
+    addTest<CodeAssistTests>();
+    addTest<GenerigHighlighterTests>();
+#endif
 }
 
 void TextEditorPluginPrivate::extensionsInitialized()
@@ -150,7 +347,7 @@ void TextEditorPluginPrivate::extensionsInitialized()
             &FolderNavigationWidgetFactory::aboutToShowContextMenu,
             this, [](QMenu *menu, const FilePath &filePath, bool isDir) {
                 if (!isDir && Core::DiffService::instance()) {
-                    menu->addAction(TextEditor::TextDocument::createDiffAgainstCurrentFileAction(
+                    menu->addAction(TextDocument::createDiffAgainstCurrentFileAction(
                         menu, [filePath] { return filePath; }));
                 }
             });
@@ -175,7 +372,7 @@ void TextEditorPlugin::extensionsInitialized()
 {
     d->extensionsInitialized();
 
-    Utils::MacroExpander *expander = Utils::globalMacroExpander();
+    MacroExpander *expander = Utils::globalMacroExpander();
 
     expander->registerVariable(kCurrentDocumentSelection,
         Tr::tr("Selected text within the current document."),
@@ -239,7 +436,7 @@ LineNumberFilter *TextEditorPlugin::lineNumberFilter()
 
 ExtensionSystem::IPlugin::ShutdownFlag TextEditorPlugin::aboutToShutdown()
 {
-    Highlighter::handleShutdown();
+    HighlighterHelper::handleShutdown();
     return SynchronousShutdown;
 }
 
@@ -324,5 +521,4 @@ void TextEditorPluginPrivate::createStandardContextMenu()
     add(Constants::SWITCH_UTF8BOM, Constants::G_BOM);
 }
 
-} // namespace Internal
-} // namespace TextEditor
+} // namespace TextEditor::Internal

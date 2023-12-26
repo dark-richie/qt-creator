@@ -5,24 +5,10 @@
 
 #include "builtineditordocumentparser.h"
 #include "cppdoxygen.h"
-#include "cppeditorconstants.h"
 #include "cppmodelmanager.h"
 #include "cpptoolsreuse.h"
-#include "editordocumenthandle.h"
 
 #include <coreplugin/icore.h>
-#include <cppeditor/cppeditorconstants.h>
-#include <texteditor/codeassist/assistproposalitem.h>
-#include <texteditor/codeassist/genericproposal.h>
-#include <texteditor/codeassist/ifunctionhintproposalmodel.h>
-#include <texteditor/codeassist/functionhintproposal.h>
-#include <texteditor/snippets/snippet.h>
-#include <texteditor/texteditorsettings.h>
-#include <texteditor/completionsettings.h>
-
-#include <utils/mimeutils.h>
-#include <utils/qtcassert.h>
-#include <utils/textutils.h>
 
 #include <cplusplus/BackwardsScanner.h>
 #include <cplusplus/CppRewriter.h>
@@ -31,11 +17,29 @@
 #include <cplusplus/Overview.h>
 #include <cplusplus/ResolveExpression.h>
 
+#include <cppeditor/cppeditorconstants.h>
+
+#include <texteditor/codeassist/assistproposalitem.h>
+#include <texteditor/codeassist/genericproposal.h>
+#include <texteditor/codeassist/ifunctionhintproposalmodel.h>
+#include <texteditor/codeassist/functionhintproposal.h>
+#include <texteditor/snippets/snippet.h>
+#include <texteditor/texteditorsettings.h>
+#include <texteditor/completionsettings.h>
+
+#include <utils/algorithm.h>
+#include <utils/mimeconstants.h>
+#include <utils/mimeutils.h>
+#include <utils/qtcassert.h>
+#include <utils/textutils.h>
+
 #include <QDirIterator>
 #include <QLatin1String>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QIcon>
+
+#include <set>
 
 using namespace CPlusPlus;
 using namespace CppEditor;
@@ -414,7 +418,7 @@ std::unique_ptr<AssistInterface> InternalCompletionAssistProvider::createAssistI
                 BuiltinEditorDocumentParser::get(filePath),
                 languageFeatures,
                 reason,
-                CppModelManager::instance()->workingCopy());
+                CppModelManager::workingCopy());
 }
 
 // -----------------
@@ -847,27 +851,27 @@ bool InternalCppCompletionAssistProcessor::accepts() const
 IAssistProposal *InternalCppCompletionAssistProcessor::createContentProposal()
 {
     // Duplicates are kept only if they are snippets.
-    QSet<QString> processed;
-    auto it = m_completions.begin();
-    while (it != m_completions.end()) {
-        auto item = static_cast<CppAssistProposalItem *>(*it);
-        if (!processed.contains(item->text()) || item->isSnippet()) {
+    std::set<QString> processed;
+    for (auto it = m_completions.begin(); it != m_completions.end();) {
+        if ((*it)->isSnippet()) {
             ++it;
-            if (!item->isSnippet()) {
-                processed.insert(item->text());
-                if (!item->isOverloaded()) {
-                    if (auto symbol = qvariant_cast<Symbol *>(item->data())) {
-                        if (Function *funTy = symbol->type()->asFunctionType()) {
-                            if (funTy->hasArguments())
-                                item->markAsOverloaded();
-                        }
-                    }
-                }
-            }
-        } else {
+            continue;
+        }
+        if (!processed.insert((*it)->text()).second) {
             delete *it;
             it = m_completions.erase(it);
+            continue;
         }
+        auto item = static_cast<CppAssistProposalItem *>(*it);
+        if (!item->isOverloaded()) {
+            if (auto symbol = qvariant_cast<Symbol *>(item->data())) {
+                if (Function *funTy = symbol->type()->asFunctionType()) {
+                    if (funTy->hasArguments())
+                        item->markAsOverloaded();
+                }
+            }
+        }
+        ++it;
     }
 
     m_model->loadContent(m_completions);
@@ -1041,7 +1045,7 @@ int InternalCppCompletionAssistProcessor::startCompletionHelper()
     int line = 0, column = 0;
     Utils::Text::convertPosition(interface()->textDocument(), startOfExpression, &line, &column);
     return startCompletionInternal(interface()->filePath(),
-                                   line, column - 1, expression, endOfExpression);
+                                   line, column, expression, endOfExpression);
 }
 
 bool InternalCppCompletionAssistProcessor::tryObjCCompletion()
@@ -1074,7 +1078,7 @@ bool InternalCppCompletionAssistProcessor::tryObjCCompletion()
     int line = 0, column = 0;
     Utils::Text::convertPosition(interface()->textDocument(), interface()->position(), &line,
                                  &column);
-    Scope *scope = thisDocument->scopeAt(line, column - 1);
+    Scope *scope = thisDocument->scopeAt(line, column);
     if (!scope)
         return false;
 
@@ -1215,7 +1219,8 @@ bool InternalCppCompletionAssistProcessor::completeInclude(const QTextCursor &cu
     if (!headerPaths.contains(currentFilePath))
         headerPaths.append(currentFilePath);
 
-    const QStringList suffixes = Utils::mimeTypeForName(QLatin1String("text/x-c++hdr")).suffixes();
+    const QStringList suffixes =
+        Utils::mimeTypeForName(Utils::Constants::CPP_HEADER_MIMETYPE).suffixes();
 
     for (const ProjectExplorer::HeaderPath &headerPath : std::as_const(headerPaths)) {
         QString realPath = headerPath.path;
@@ -1264,8 +1269,8 @@ bool InternalCppCompletionAssistProcessor::objcKeywordsWanted() const
         return false;
 
     const Utils::MimeType mt = Utils::mimeTypeForFile(interface()->filePath());
-    return mt.matchesName(QLatin1String(CppEditor::Constants::OBJECTIVE_C_SOURCE_MIMETYPE))
-            || mt.matchesName(QLatin1String(CppEditor::Constants::OBJECTIVE_CPP_SOURCE_MIMETYPE));
+    return mt.matchesName(QLatin1String(Utils::Constants::OBJECTIVE_C_SOURCE_MIMETYPE))
+            || mt.matchesName(QLatin1String(Utils::Constants::OBJECTIVE_CPP_SOURCE_MIMETYPE));
 }
 
 int InternalCppCompletionAssistProcessor::startCompletionInternal(const Utils::FilePath &filePath,
@@ -1457,9 +1462,8 @@ bool InternalCppCompletionAssistProcessor::globalCompletion(Scope *currentScope)
 
     QSet<ClassOrNamespace *> processed;
     for (; currentBinding; currentBinding = currentBinding->parent()) {
-        if (processed.contains(currentBinding))
+        if (!Utils::insert(processed, currentBinding))
             break;
-        processed.insert(currentBinding);
 
         const QList<ClassOrNamespace*> usings = currentBinding->usings();
         for (ClassOrNamespace* u : usings)
@@ -1596,10 +1600,9 @@ void InternalCppCompletionAssistProcessor::completeNamespace(ClassOrNamespace *b
 
     while (!bindingsToVisit.isEmpty()) {
         ClassOrNamespace *binding = bindingsToVisit.takeFirst();
-        if (!binding || bindingsVisited.contains(binding))
+        if (!binding || !Utils::insert(bindingsVisited, binding))
             continue;
 
-        bindingsVisited.insert(binding);
         bindingsToVisit += binding->usings();
 
         QList<Scope *> scopesToVisit;
@@ -1617,10 +1620,8 @@ void InternalCppCompletionAssistProcessor::completeNamespace(ClassOrNamespace *b
 
         while (!scopesToVisit.isEmpty()) {
             Scope *scope = scopesToVisit.takeFirst();
-            if (!scope || scopesVisited.contains(scope))
+            if (!scope || !Utils::insert(scopesVisited, scope))
                 continue;
-
-            scopesVisited.insert(scope);
 
             for (Scope::iterator it = scope->memberBegin(); it != scope->memberEnd(); ++it) {
                 Symbol *member = *it;
@@ -1638,10 +1639,9 @@ void InternalCppCompletionAssistProcessor::completeClass(ClassOrNamespace *b, bo
 
     while (!bindingsToVisit.isEmpty()) {
         ClassOrNamespace *binding = bindingsToVisit.takeFirst();
-        if (!binding || bindingsVisited.contains(binding))
+        if (!binding || !Utils::insert(bindingsVisited, binding))
             continue;
 
-        bindingsVisited.insert(binding);
         bindingsToVisit += binding->usings();
 
         QList<Scope *> scopesToVisit;
@@ -1661,10 +1661,8 @@ void InternalCppCompletionAssistProcessor::completeClass(ClassOrNamespace *b, bo
 
         while (!scopesToVisit.isEmpty()) {
             Scope *scope = scopesToVisit.takeFirst();
-            if (!scope || scopesVisited.contains(scope))
+            if (!scope || !Utils::insert(scopesVisited, scope))
                 continue;
-
-            scopesVisited.insert(scope);
 
             if (staticLookup)
                 addCompletionItem(scope, InjectedClassNameOrder); // add a completion item for the injected class name.
@@ -1735,9 +1733,7 @@ bool InternalCppCompletionAssistProcessor::completeQtMethod(const QList<LookupIt
         todo.append(b);
         while (!todo.isEmpty()) {
             ClassOrNamespace *binding = todo.takeLast();
-            if (!processed.contains(binding)) {
-                processed.insert(binding);
-
+            if (Utils::insert(processed, binding)) {
                 const QList<Symbol *> symbols = binding->symbols();
                 for (Symbol *s : symbols)
                     if (Class *clazz = s->asClass())
@@ -1860,10 +1856,8 @@ void InternalCppCompletionAssistProcessor::addMacros_helper(const Snapshot &snap
 {
     Document::Ptr doc = snapshot.document(filePath);
 
-    if (!doc || processed->contains(doc->filePath()))
+    if (!doc || !Utils::insert(*processed, doc->filePath()))
         return;
-
-    processed->insert(doc->filePath());
 
     const QList<Document::Include> includes = doc->resolvedIncludes();
     for (const Document::Include &i : includes)
@@ -1989,7 +1983,7 @@ bool InternalCppCompletionAssistProcessor::completeConstructorOrFunction(const Q
         int lineSigned = 0, columnSigned = 0;
         Utils::Text::convertPosition(interface()->textDocument(), interface()->position(),
                                      &lineSigned, &columnSigned);
-        unsigned line = lineSigned, column = columnSigned - 1;
+        unsigned line = lineSigned, column = columnSigned;
 
         // find a scope that encloses the current location, starting from the lastVisibileSymbol
         // and moving outwards
@@ -2084,7 +2078,7 @@ void CppCompletionAssistInterface::getCppSpecifics() const
     m_gotCppSpecifics = true;
 
     if (m_parser) {
-        m_parser->update({CppModelManager::instance()->workingCopy(),
+        m_parser->update({CppModelManager::workingCopy(),
                           nullptr,
                           Utils::Language::Cxx,
                           false});

@@ -6,6 +6,7 @@ import QtQuick.Controls
 import StudioControls 1.0 as StudioControls
 import StudioTheme 1.0 as StudioTheme
 import "../toolbar"
+import HelperWidgets 2.0
 
 import ToolBar 1.0
 
@@ -33,8 +34,12 @@ Item {
                 id: settingButton
                 style: StudioTheme.Values.statusbarButtonStyle
                 buttonIcon: StudioTheme.Constants.settings_medium
-                onClicked: backend.triggerProjectSettings()
-                enabled: backend.isInDesignMode || (backend.isInEditMode && backend.projectOpened)
+                checkable: true
+                checkedInverted: true
+                checked: backend.isInSessionMode
+                onClicked: settingButton.checked ? backend.triggerProjectSettings() : backend.triggerModeChange()
+                enabled: backend.projectOpened
+                tooltip: qsTr("Set runtime configuration for the project.")
             }
 
             Text {
@@ -45,6 +50,10 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
+                ToolTipArea {
+                    anchors.fill: parent
+                    tooltip: qsTr("Choose a predefined kit for the runtime configuration of the project.")
+                }
             }
 
             StudioControls.TopLevelComboBox {
@@ -54,7 +63,8 @@ Item {
                 model: backend.kits
                 onActivated: backend.setCurrentKit(kits.currentIndex)
                 openUpwards: true
-                enabled: (backend.isInDesignMode || (backend.isInEditMode && backend.projectOpened)) && backend.isQt6
+                enabled: (backend.isInDesignMode || (backend.isInEditMode && backend.projectOpened))
+                         && backend.isQt6 && !backend.isMCUs
                 property int kitIndex: backend.currentKit
                 onKitIndexChanged: kits.currentIndex = backend.currentKit
             }
@@ -67,6 +77,10 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
+                ToolTipArea {
+                    anchors.fill: parent
+                    tooltip: qsTr("Choose a style for the Qt Quick Controls of the project.")
+                }
             }
 
             StudioControls.TopLevelComboBox {
@@ -76,9 +90,9 @@ Item {
                 model: backend.styles
                 onActivated: backend.setCurrentStyle(styles.currentIndex)
                 openUpwards: true
-                enabled: backend.isInDesignMode
+                enabled: backend.isInDesignMode && !backend.isMCUs
                 property int currentStyleIndex: backend.currentStyle
-                onCurrentStyleIndexChanged: currentIndex = backend.currentStyle
+                onCurrentStyleIndexChanged: styles.currentIndex = backend.currentStyle
             }
         }
     }

@@ -47,10 +47,6 @@ public:
     QFuture<CursorInfo> cursorInfo(const CursorInfoParams &params);
     TextEditor::TabSettings tabSettings() const override;
 
-    bool save(QString *errorString,
-              const Utils::FilePath &filePath = Utils::FilePath(),
-              bool autoSave = false) override;
-
     bool usesClangd() const;
 
 signals:
@@ -68,15 +64,19 @@ signals:
 
 protected:
     void applyFontSettings() override;
+    bool saveImpl(QString *errorString,
+                  const Utils::FilePath &filePath = Utils::FilePath(),
+                  bool autoSave = false) override;
 
 private:
+
     void invalidateFormatterCache();
     void onFilePathChanged(const Utils::FilePath &oldPath, const Utils::FilePath &newPath);
     void onMimeTypeChanged();
 
     void onAboutToReload();
     void onReloadFinished();
-    void onDiagnosticsChanged(const QString &fileName, const QString &kind);
+    void onDiagnosticsChanged(const Utils::FilePath &fileName, const QString &kind);
 
 
     void reparseWithPreferredParseContext(const QString &id);

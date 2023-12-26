@@ -34,8 +34,6 @@ SettingsWidget::SettingsWidget()
 {
     m_instance = this;
 
-    resize(400, 300);
-
     auto createPathChooser = [this](ClangToolType tool)
     {
         const QString placeHolderText = toolShippedExecutable(tool).toUserOutput();
@@ -51,8 +49,8 @@ SettingsWidget::SettingsWidget()
         pathChooser->setDefaultValue(placeHolderText);
         pathChooser->setFilePath(path);
         pathChooser->setHistoryCompleter(tool == ClangToolType::Tidy
-                                        ? QString("ClangTools.ClangTidyExecutable.History")
-                                        : QString("ClangTools.ClazyStandaloneExecutable.History"));
+                                        ? Key("ClangTools.ClangTidyExecutable.History")
+                                        : Key("ClangTools.ClazyStandaloneExecutable.History"));
         pathChooser->setCommandVersionArguments({"--version"});
         return pathChooser;
     };

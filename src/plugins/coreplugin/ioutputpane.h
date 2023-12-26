@@ -4,18 +4,10 @@
 #pragma once
 
 #include "core_global.h"
+#include "icontext.h"
 
 #include <utils/fancylineedit.h>
 #include <utils/id.h>
-
-#include <QObject>
-#include <QList>
-#include <QString>
-
-QT_BEGIN_NAMESPACE
-class QAction;
-class QWidget;
-QT_END_NAMESPACE
 
 namespace Core {
 class CommandButton;
@@ -32,11 +24,12 @@ public:
 
     virtual QWidget *outputWidget(QWidget *parent) = 0;
     virtual QList<QWidget *> toolBarWidgets() const;
-    virtual QString displayName() const = 0;
+    Utils::Id id() const;
+    QString displayName() const;
     virtual const QList<OutputWindow *> outputWindows() const { return {}; }
     virtual void ensureWindowVisible(OutputWindow *) { }
 
-    virtual int priorityInStatusBar() const = 0;
+    int priorityInStatusBar() const;
 
     virtual void clearContents() = 0;
     virtual void visibilityChanged(bool visible);
@@ -80,7 +73,11 @@ signals:
     void fontChanged(const QFont &font);
 
 protected:
-    void setupFilterUi(const QString &historyKey);
+    void setId(const Utils::Id &id);
+    void setDisplayName(const QString &name);
+    void setPriorityInStatusBar(int priority);
+
+    void setupFilterUi(const Utils::Key &historyKey);
     QString filterText() const;
     bool filterUsesRegexp() const { return m_filterRegexp; }
     bool filterIsInverted() const { return m_invertFilter; }
@@ -88,7 +85,10 @@ protected:
     void setFilteringEnabled(bool enable);
     QWidget *filterWidget() const { return m_filterOutputLineEdit; }
     void setupContext(const char *context, QWidget *widget);
+    void setupContext(const Context &context, QWidget *widget);
     void setZoomButtonsEnabled(bool enabled);
+
+    IContext *m_context = nullptr;
 
 private:
     virtual void updateFilter();
@@ -100,13 +100,12 @@ private:
     Utils::Id filterCaseSensitivityActionId() const;
     Utils::Id filterInvertedActionId() const;
 
+    Utils::Id m_id;
+    QString m_displayName;
+    int m_priority = -1;
     Core::CommandButton * const m_zoomInButton;
     Core::CommandButton * const m_zoomOutButton;
-    QAction *m_filterActionRegexp = nullptr;
-    QAction *m_filterActionCaseSensitive = nullptr;
-    QAction *m_invertFilterAction = nullptr;
     Utils::FancyLineEdit *m_filterOutputLineEdit = nullptr;
-    IContext *m_context = nullptr;
     bool m_filterRegexp = false;
     bool m_invertFilter = false;
     Qt::CaseSensitivity m_filterCaseSensitivity = Qt::CaseInsensitive;

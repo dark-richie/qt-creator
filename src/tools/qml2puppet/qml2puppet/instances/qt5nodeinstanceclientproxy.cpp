@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 
 #include "capturenodeinstanceserverdispatcher.h"
+#include "qt5bakelightsnodeinstanceserver.h"
 #include "qt5captureimagenodeinstanceserver.h"
 #include "qt5capturepreviewnodeinstanceserver.h"
 #include "qt5informationnodeinstanceserver.h"
@@ -13,10 +14,6 @@
 #include "qt5rendernodeinstanceserver.h"
 #include "qt5testnodeinstanceserver.h"
 #include "quickitemnodeinstance.h"
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    #include <private/qquickdesignersupport_p.h>
-#endif
 
 #if defined(Q_OS_UNIX)
 #include <unistd.h>
@@ -43,10 +40,6 @@ Qt5NodeInstanceClientProxy::Qt5NodeInstanceClientProxy(QObject *parent) :
 
     if (unifiedRenderPath)
         Internal::QuickItemNodeInstance::enableUnifiedRenderPath(true);
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    else
-        QQuickDesignerSupport::activateDesignerWindowManager();
-#endif
 
     if (QCoreApplication::arguments().at(1) == QLatin1String("--readcapturedstream")) {
         qputenv("DESIGNER_DONT_USE_SHARED_MEMORY", "1");
@@ -73,6 +66,9 @@ Qt5NodeInstanceClientProxy::Qt5NodeInstanceClientProxy(QObject *parent) :
         initializeSocket();
     } else if (QCoreApplication::arguments().at(2) == QLatin1String("captureiconmode")) {
         setNodeInstanceServer(std::make_unique<Qt5CaptureImageNodeInstanceServer>(this));
+        initializeSocket();
+    } else if (QCoreApplication::arguments().at(2) == QLatin1String("bakelightsmode")) {
+        setNodeInstanceServer(std::make_unique<Qt5BakeLightsNodeInstanceServer>(this));
         initializeSocket();
     }
 }

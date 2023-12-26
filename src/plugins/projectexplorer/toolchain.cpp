@@ -5,95 +5,95 @@
 
 #include "abi.h"
 #include "devicesupport/idevice.h"
-#include "headerpath.h"
 #include "projectexplorerconstants.h"
 #include "toolchainmanager.h"
 #include "task.h"
 
-#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFileInfo>
 #include <QUuid>
 
 #include <utility>
 
 using namespace Utils;
 
-static const char ID_KEY[] = "ProjectExplorer.ToolChain.Id";
-static const char DISPLAY_NAME_KEY[] = "ProjectExplorer.ToolChain.DisplayName";
-static const char AUTODETECT_KEY[] = "ProjectExplorer.ToolChain.Autodetect";
-static const char DETECTION_SOURCE_KEY[] = "ProjectExplorer.ToolChain.DetectionSource";
-static const char LANGUAGE_KEY_V1[] = "ProjectExplorer.ToolChain.Language"; // For QtCreator <= 4.2
-static const char LANGUAGE_KEY_V2[] = "ProjectExplorer.ToolChain.LanguageV2"; // For QtCreator > 4.2
-const char CODE_MODEL_TRIPLE_KEY[] = "ExplicitCodeModelTargetTriple";
-
 namespace ProjectExplorer {
 namespace Internal {
 
-static QList<ToolChainFactory *> g_toolChainFactories;
+const char ID_KEY[] = "ProjectExplorer.ToolChain.Id";
+const char DISPLAY_NAME_KEY[] = "ProjectExplorer.ToolChain.DisplayName";
+const char AUTODETECT_KEY[] = "ProjectExplorer.ToolChain.Autodetect";
+const char DETECTION_SOURCE_KEY[] = "ProjectExplorer.ToolChain.DetectionSource";
+const char LANGUAGE_KEY_V1[] = "ProjectExplorer.ToolChain.Language"; // For QtCreator <= 4.2
+const char LANGUAGE_KEY_V2[] = "ProjectExplorer.ToolChain.LanguageV2"; // For QtCreator > 4.2
+const char CODE_MODEL_TRIPLE_KEY[] = "ExplicitCodeModelTargetTriple";
+
+QList<ToolchainFactory *> &toolchainFactories()
+{
+    static QList<ToolchainFactory *> theToolchainFactories;
+    return theToolchainFactories;
+}
 
 // --------------------------------------------------------------------------
-// ToolChainPrivate
+// ToolchainPrivate
 // --------------------------------------------------------------------------
 
-class ToolChainPrivate
+class ToolchainPrivate
 {
 public:
-    using Detection = ToolChain::Detection;
+    using Detection = Toolchain::Detection;
 
-    explicit ToolChainPrivate(Utils::Id typeId) :
+    explicit ToolchainPrivate(Id typeId) :
         m_id(QUuid::createUuid().toByteArray()),
         m_typeId(typeId),
-        m_predefinedMacrosCache(new ToolChain::MacrosCache::element_type()),
-        m_headerPathsCache(new ToolChain::HeaderPathsCache::element_type())
+        m_predefinedMacrosCache(new Toolchain::MacrosCache::element_type()),
+        m_headerPathsCache(new Toolchain::HeaderPathsCache::element_type())
     {
         QTC_ASSERT(m_typeId.isValid(), return);
-        QTC_ASSERT(!m_typeId.toString().contains(QLatin1Char(':')), return);
+        QTC_ASSERT(!m_typeId.name().contains(':'), return);
     }
 
     QByteArray m_id;
     FilePath m_compilerCommand;
-    QString m_compilerCommandKey;
+    Key m_compilerCommandKey;
     Abi m_targetAbi;
-    QString m_targetAbiKey;
-    QSet<Utils::Id> m_supportedLanguages;
+    Key m_targetAbiKey;
+    QSet<Id> m_supportedLanguages;
     mutable QString m_displayName;
     QString m_typeDisplayName;
-    Utils::Id m_typeId;
-    Utils::Id m_language;
-    Detection m_detection = ToolChain::UninitializedDetection;
+    Id m_typeId;
+    Id m_language;
+    Detection m_detection = Toolchain::UninitializedDetection;
     QString m_detectionSource;
     QString m_explicitCodeModelTargetTriple;
 
-    ToolChain::MacrosCache m_predefinedMacrosCache;
-    ToolChain::HeaderPathsCache m_headerPathsCache;
+    Toolchain::MacrosCache m_predefinedMacrosCache;
+    Toolchain::HeaderPathsCache m_headerPathsCache;
     std::optional<bool> m_isValid;
+    bool m_hasError = false;
 };
 
 
 // Deprecated used from QtCreator <= 4.2
 
-Utils::Id fromLanguageV1(int language)
+Id fromLanguageV1(int language)
 {
     switch (language)
     {
     case Deprecated::Toolchain::C :
-        return Utils::Id(Constants::C_LANGUAGE_ID);
+        return Id(Constants::C_LANGUAGE_ID);
     case Deprecated::Toolchain::Cxx:
-        return Utils::Id(Constants::CXX_LANGUAGE_ID);
+        return Id(Constants::CXX_LANGUAGE_ID);
     case Deprecated::Toolchain::None:
     default:
-        return Utils::Id();
+        return {};
     }
 }
 
 } // namespace Internal
 
-namespace Deprecated {
-namespace Toolchain {
+namespace Deprecated::Toolchain {
+
 QString languageId(Language l)
 {
     switch (l) {
@@ -104,43 +104,45 @@ QString languageId(Language l)
     case Language::Cxx:
         return QStringLiteral("Cxx");
     };
-    return QString();
+    return {};
 }
-} // namespace Toolchain
-} // namespace Deprecated
+
+} // namespace Deprecated::Toolchain
+
+using namespace Internal;
 
 /*!
-    \class ProjectExplorer::ToolChain
-    \brief The ToolChain class represents a tool chain.
-    \sa ProjectExplorer::ToolChainManager
+    \class ProjectExplorer::Toolchain
+    \brief The Toolchain class represents a tool chain.
+    \sa ProjectExplorer::ToolchainManager
 */
 
 // --------------------------------------------------------------------------
 
-ToolChain::ToolChain(Utils::Id typeId) :
-    d(std::make_unique<Internal::ToolChainPrivate>(typeId))
+Toolchain::Toolchain(Id typeId) :
+    d(std::make_unique<ToolchainPrivate>(typeId))
 {
 }
 
-void ToolChain::setLanguage(Utils::Id language)
+void Toolchain::setLanguage(Id language)
 {
     QTC_ASSERT(!d->m_language.isValid() || isAutoDetected(), return);
     QTC_ASSERT(language.isValid(), return);
-    QTC_ASSERT(ToolChainManager::isLanguageSupported(language), return);
+    QTC_ASSERT(ToolchainManager::isLanguageSupported(language), return);
 
     d->m_language = language;
 }
 
-ToolChain::~ToolChain() = default;
+Toolchain::~Toolchain() = default;
 
-QString ToolChain::displayName() const
+QString Toolchain::displayName() const
 {
     if (d->m_displayName.isEmpty())
         return typeDisplayName();
     return d->m_displayName;
 }
 
-void ToolChain::setDisplayName(const QString &name)
+void Toolchain::setDisplayName(const QString &name)
 {
     if (d->m_displayName == name)
         return;
@@ -149,42 +151,42 @@ void ToolChain::setDisplayName(const QString &name)
     toolChainUpdated();
 }
 
-bool ToolChain::isAutoDetected() const
+bool Toolchain::isAutoDetected() const
 {
     return detection() == AutoDetection || detection() == AutoDetectionFromSdk;
 }
 
-ToolChain::Detection ToolChain::detection() const
+Toolchain::Detection Toolchain::detection() const
 {
     return d->m_detection;
 }
 
-QString ToolChain::detectionSource() const
+QString Toolchain::detectionSource() const
 {
     return d->m_detectionSource;
 }
 
-QByteArray ToolChain::id() const
+QByteArray Toolchain::id() const
 {
     return d->m_id;
 }
 
-QStringList ToolChain::suggestedMkspecList() const
+QStringList Toolchain::suggestedMkspecList() const
 {
     return {};
 }
 
-Utils::Id ToolChain::typeId() const
+Id Toolchain::typeId() const
 {
     return d->m_typeId;
 }
 
-Abis ToolChain::supportedAbis() const
+Abis Toolchain::supportedAbis() const
 {
     return {targetAbi()};
 }
 
-bool ToolChain::isValid() const
+bool Toolchain::isValid() const
 {
     if (!d->m_isValid.has_value())
         d->m_isValid = !compilerCommand().isEmpty() && compilerCommand().isExecutableFile();
@@ -192,19 +194,19 @@ bool ToolChain::isValid() const
     return d->m_isValid.value_or(false);
 }
 
-FilePaths ToolChain::includedFiles(const QStringList &flags, const FilePath &directory) const
+FilePaths Toolchain::includedFiles(const QStringList &flags, const FilePath &directory) const
 {
     Q_UNUSED(flags)
     Q_UNUSED(directory)
     return {};
 }
 
-Utils::Id ToolChain::language() const
+Id Toolchain::language() const
 {
     return d->m_language;
 }
 
-bool ToolChain::operator == (const ToolChain &tc) const
+bool Toolchain::operator == (const Toolchain &tc) const
 {
     if (this == &tc)
         return true;
@@ -215,13 +217,15 @@ bool ToolChain::operator == (const ToolChain &tc) const
             && language() == tc.language();
 }
 
-ToolChain *ToolChain::clone() const
+Toolchain *Toolchain::clone() const
 {
-    for (ToolChainFactory *f : std::as_const(Internal::g_toolChainFactories)) {
-        if (f->supportedToolChainType() == d->m_typeId) {
-            ToolChain *tc = f->create();
+    for (ToolchainFactory *f : std::as_const(toolchainFactories())) {
+        if (f->supportedToolchainType() == d->m_typeId) {
+            Toolchain *tc = f->create();
             QTC_ASSERT(tc, return nullptr);
-            tc->fromMap(toMap());
+            Store data;
+            toMap(data);
+            tc->fromMap(data);
             // New ID for the clone. It's different.
             tc->d->m_id = QUuid::createUuid().toByteArray();
             return tc;
@@ -237,14 +241,15 @@ ToolChain *ToolChain::clone() const
     Make sure to call this function when deriving.
 */
 
-QVariantMap ToolChain::toMap() const
+void Toolchain::toMap(Store &result) const
 {
-    QVariantMap result;
+    AspectContainer::toMap(result);
+
     QString idToSave = d->m_typeId.toString() + QLatin1Char(':') + QString::fromUtf8(id());
-    result.insert(QLatin1String(ID_KEY), idToSave);
-    result.insert(QLatin1String(DISPLAY_NAME_KEY), displayName());
-    result.insert(QLatin1String(AUTODETECT_KEY), isAutoDetected());
-    result.insert(QLatin1String(DETECTION_SOURCE_KEY), d->m_detectionSource);
+    result.insert(ID_KEY, idToSave);
+    result.insert(DISPLAY_NAME_KEY, displayName());
+    result.insert(AUTODETECT_KEY, isAutoDetected());
+    result.insert(DETECTION_SOURCE_KEY, d->m_detectionSource);
     result.insert(CODE_MODEL_TRIPLE_KEY, d->m_explicitCodeModelTargetTriple);
     // <Compatibility with QtC 4.2>
     int oldLanguageId = -1;
@@ -255,43 +260,42 @@ QVariantMap ToolChain::toMap() const
     if (oldLanguageId >= 0)
         result.insert(LANGUAGE_KEY_V1, oldLanguageId);
     // </Compatibility>
-    result.insert(QLatin1String(LANGUAGE_KEY_V2), language().toSetting());
+    result.insert(LANGUAGE_KEY_V2, language().toSetting());
     if (!d->m_targetAbiKey.isEmpty())
         result.insert(d->m_targetAbiKey, d->m_targetAbi.toString());
     if (!d->m_compilerCommandKey.isEmpty())
         result.insert(d->m_compilerCommandKey, d->m_compilerCommand.toSettings());
-    return result;
 }
 
-void ToolChain::toolChainUpdated()
+void Toolchain::toolChainUpdated()
 {
     d->m_predefinedMacrosCache->invalidate();
     d->m_headerPathsCache->invalidate();
 
-    ToolChainManager::notifyAboutUpdate(this);
+    ToolchainManager::notifyAboutUpdate(this);
 }
 
-void ToolChain::setDetection(ToolChain::Detection de)
+void Toolchain::setDetection(Toolchain::Detection de)
 {
     d->m_detection = de;
 }
 
-void ToolChain::setDetectionSource(const QString &source)
+void Toolchain::setDetectionSource(const QString &source)
 {
     d->m_detectionSource = source;
 }
 
-QString ToolChain::typeDisplayName() const
+QString Toolchain::typeDisplayName() const
 {
     return d->m_typeDisplayName;
 }
 
-Abi ToolChain::targetAbi() const
+Abi Toolchain::targetAbi() const
 {
     return d->m_targetAbi;
 }
 
-void ToolChain::setTargetAbi(const Abi &abi)
+void Toolchain::setTargetAbi(const Abi &abi)
 {
     if (abi == d->m_targetAbi)
         return;
@@ -300,22 +304,22 @@ void ToolChain::setTargetAbi(const Abi &abi)
     toolChainUpdated();
 }
 
-void ToolChain::setTargetAbiNoSignal(const Abi &abi)
+void Toolchain::setTargetAbiNoSignal(const Abi &abi)
 {
     d->m_targetAbi = abi;
 }
 
-void ToolChain::setTargetAbiKey(const QString &abiKey)
+void Toolchain::setTargetAbiKey(const Key &abiKey)
 {
     d->m_targetAbiKey = abiKey;
 }
 
-FilePath ToolChain::compilerCommand() const
+FilePath Toolchain::compilerCommand() const
 {
     return d->m_compilerCommand;
 }
 
-void ToolChain::setCompilerCommand(const FilePath &command)
+void Toolchain::setCompilerCommand(const FilePath &command)
 {
     d->m_isValid.reset();
 
@@ -325,17 +329,17 @@ void ToolChain::setCompilerCommand(const FilePath &command)
     toolChainUpdated();
 }
 
-bool ToolChain::matchesCompilerCommand(const FilePath &command) const
+bool Toolchain::matchesCompilerCommand(const FilePath &command) const
 {
     return compilerCommand().isSameExecutable(command);
 }
 
-void ToolChain::setCompilerCommandKey(const QString &commandKey)
+void Toolchain::setCompilerCommandKey(const Key &commandKey)
 {
     d->m_compilerCommandKey = commandKey;
 }
 
-void ToolChain::setTypeDisplayName(const QString &typeName)
+void Toolchain::setTypeDisplayName(const QString &typeName)
 {
     d->m_typeDisplayName = typeName;
 }
@@ -346,18 +350,20 @@ void ToolChain::setTypeDisplayName(const QString &typeName)
     Make sure to call this function when deriving.
 */
 
-bool ToolChain::fromMap(const QVariantMap &data)
+void Toolchain::fromMap(const Store &data)
 {
-    d->m_displayName = data.value(QLatin1String(DISPLAY_NAME_KEY)).toString();
+    AspectContainer::fromMap(data);
+
+    d->m_displayName = data.value(DISPLAY_NAME_KEY).toString();
 
     // make sure we have new style ids:
-    const QString id = data.value(QLatin1String(ID_KEY)).toString();
+    const QString id = data.value(ID_KEY).toString();
     int pos = id.indexOf(QLatin1Char(':'));
-    QTC_ASSERT(pos > 0, return false);
-    d->m_typeId = Utils::Id::fromString(id.left(pos));
+    QTC_ASSERT(pos > 0, reportError(); return);
+    d->m_typeId = Id::fromString(id.left(pos));
     d->m_id = id.mid(pos + 1).toUtf8();
 
-    const bool autoDetect = data.value(QLatin1String(AUTODETECT_KEY), false).toBool();
+    const bool autoDetect = data.value(AUTODETECT_KEY, false).toBool();
     d->m_detection = autoDetect ? AutoDetection : ManualDetection;
     d->m_detectionSource = data.value(DETECTION_SOURCE_KEY).toString();
 
@@ -366,34 +372,42 @@ bool ToolChain::fromMap(const QVariantMap &data)
     if (data.contains(LANGUAGE_KEY_V2)) {
         // remove hack to trim language id in 4.4: This is to fix up broken language
         // ids that happened in 4.3 master branch
-        const QString langId = data.value(QLatin1String(LANGUAGE_KEY_V2)).toString();
+        const QString langId = data.value(LANGUAGE_KEY_V2).toString();
         const int pos = langId.lastIndexOf('.');
         if (pos >= 0)
-            d->m_language = Utils::Id::fromString(langId.mid(pos + 1));
+            d->m_language = Id::fromString(langId.mid(pos + 1));
         else
-            d->m_language = Utils::Id::fromString(langId);
+            d->m_language = Id::fromString(langId);
     } else if (data.contains(LANGUAGE_KEY_V1)) { // Import from old settings
-        d->m_language = Internal::fromLanguageV1(data.value(QLatin1String(LANGUAGE_KEY_V1)).toInt());
+        d->m_language = Internal::fromLanguageV1(data.value(LANGUAGE_KEY_V1).toInt());
     }
 
     if (!d->m_language.isValid())
-        d->m_language = Utils::Id(Constants::CXX_LANGUAGE_ID);
+        d->m_language = Id(Constants::CXX_LANGUAGE_ID);
 
     if (!d->m_targetAbiKey.isEmpty())
         d->m_targetAbi = Abi::fromString(data.value(d->m_targetAbiKey).toString());
 
     d->m_compilerCommand = FilePath::fromSettings(data.value(d->m_compilerCommandKey));
     d->m_isValid.reset();
-
-    return true;
 }
 
-const ToolChain::HeaderPathsCache &ToolChain::headerPathsCache() const
+void Toolchain::reportError()
+{
+    d->m_hasError = true;
+}
+
+bool Toolchain::hasError() const
+{
+    return d->m_hasError;
+}
+
+const Toolchain::HeaderPathsCache &Toolchain::headerPathsCache() const
 {
     return d->m_headerPathsCache;
 }
 
-const ToolChain::MacrosCache &ToolChain::predefinedMacrosCache() const
+const Toolchain::MacrosCache &Toolchain::predefinedMacrosCache() const
 {
     return d->m_predefinedMacrosCache;
 }
@@ -410,9 +424,8 @@ static long toLanguageVersionAsLong(QByteArray dateAsByteArray)
     return result;
 }
 
-Utils::LanguageVersion ToolChain::cxxLanguageVersion(const QByteArray &cplusplusMacroValue)
+LanguageVersion Toolchain::cxxLanguageVersion(const QByteArray &cplusplusMacroValue)
 {
-    using Utils::LanguageVersion;
     const long version = toLanguageVersionAsLong(cplusplusMacroValue);
 
     if (version > 201703L)
@@ -427,10 +440,8 @@ Utils::LanguageVersion ToolChain::cxxLanguageVersion(const QByteArray &cplusplus
     return LanguageVersion::CXX03;
 }
 
-Utils::LanguageVersion ToolChain::languageVersion(const Utils::Id &language, const Macros &macros)
+LanguageVersion Toolchain::languageVersion(const Id &language, const Macros &macros)
 {
-    using Utils::LanguageVersion;
-
     if (language == Constants::CXX_LANGUAGE_ID) {
         for (const ProjectExplorer::Macro &macro : macros) {
             if (macro.key == "__cplusplus") // Check for the C++ identifying macro
@@ -466,7 +477,7 @@ Utils::LanguageVersion ToolChain::languageVersion(const Utils::Id &language, con
     }
 }
 
-FilePaths ToolChain::includedFiles(const QString &option,
+FilePaths Toolchain::includedFiles(const QString &option,
                                    const QStringList &flags,
                                    const FilePath &directoryPath,
                                    PossiblyConcatenatedFlag possiblyConcatenated)
@@ -495,22 +506,22 @@ FilePaths ToolChain::includedFiles(const QString &option,
     Used by the tool chain kit information to validate the kit.
 */
 
-Tasks ToolChain::validateKit(const Kit *) const
+Tasks Toolchain::validateKit(const Kit *) const
 {
     return {};
 }
 
-QString ToolChain::sysRoot() const
+QString Toolchain::sysRoot() const
 {
-    return QString();
+    return {};
 }
 
-QString ToolChain::explicitCodeModelTargetTriple() const
+QString Toolchain::explicitCodeModelTargetTriple() const
 {
     return d->m_explicitCodeModelTargetTriple;
 }
 
-QString ToolChain::effectiveCodeModelTargetTriple() const
+QString Toolchain::effectiveCodeModelTargetTriple() const
 {
     const QString overridden = explicitCodeModelTargetTriple();
     if (!overridden.isEmpty())
@@ -518,115 +529,116 @@ QString ToolChain::effectiveCodeModelTargetTriple() const
     return originalTargetTriple();
 }
 
-void ToolChain::setExplicitCodeModelTargetTriple(const QString &triple)
+void Toolchain::setExplicitCodeModelTargetTriple(const QString &triple)
 {
     d->m_explicitCodeModelTargetTriple = triple;
 }
 
 /*!
-    \class ProjectExplorer::ToolChainFactory
-    \brief The ToolChainFactory class creates tool chains from settings or
+    \class ProjectExplorer::ToolchainFactory
+    \brief The ToolchainFactory class creates tool chains from settings or
     autodetects them.
 */
 
 /*!
-    \fn QString ProjectExplorer::ToolChainFactory::displayName() const = 0
+    \fn QString ProjectExplorer::ToolchainFactory::displayName() const = 0
     Contains the name used to display the name of the tool chain that will be
     created.
 */
 
 /*!
-    \fn QStringList ProjectExplorer::ToolChain::clangParserFlags(const QStringList &cxxflags) const = 0
+    \fn QStringList ProjectExplorer::Toolchain::clangParserFlags(const QStringList &cxxflags) const = 0
     Converts tool chain specific flags to list flags that tune the libclang
     parser.
 */
 
 /*!
-    \fn bool ProjectExplorer::ToolChainFactory::canRestore(const QVariantMap &data)
+    \fn bool ProjectExplorer::ToolchainFactory::canRestore(const Store &data)
     Used by the tool chain manager to restore user-generated tool chains.
 */
 
-ToolChainFactory::ToolChainFactory()
+ToolchainFactory::ToolchainFactory()
 {
-    Internal::g_toolChainFactories.append(this);
+    toolchainFactories().append(this);
 }
 
-ToolChainFactory::~ToolChainFactory()
+ToolchainFactory::~ToolchainFactory()
 {
-    Internal::g_toolChainFactories.removeOne(this);
+    toolchainFactories().removeOne(this);
 }
 
-const QList<ToolChainFactory *> ToolChainFactory::allToolChainFactories()
+const QList<ToolchainFactory *> ToolchainFactory::allToolchainFactories()
 {
-    return Internal::g_toolChainFactories;
+    return toolchainFactories();
 }
 
-Toolchains ToolChainFactory::autoDetect(const ToolchainDetector &detector) const
+Toolchains ToolchainFactory::autoDetect(const ToolchainDetector &detector) const
 {
     Q_UNUSED(detector)
     return {};
 }
 
-Toolchains ToolChainFactory::detectForImport(const ToolChainDescription &tcd) const
+Toolchains ToolchainFactory::detectForImport(const ToolchainDescription &tcd) const
 {
     Q_UNUSED(tcd)
     return {};
 }
 
-bool ToolChainFactory::canCreate() const
+bool ToolchainFactory::canCreate() const
 {
     return m_userCreatable;
 }
 
-ToolChain *ToolChainFactory::create() const
+Toolchain *ToolchainFactory::create() const
 {
     return m_toolchainConstructor ? m_toolchainConstructor() : nullptr;
 }
 
-ToolChain *ToolChainFactory::restore(const QVariantMap &data)
+Toolchain *ToolchainFactory::restore(const Store &data)
 {
     if (!m_toolchainConstructor)
         return nullptr;
 
-    ToolChain *tc = m_toolchainConstructor();
+    Toolchain *tc = m_toolchainConstructor();
     QTC_ASSERT(tc, return nullptr);
 
-    if (tc->fromMap(data))
+    tc->fromMap(data);
+    if (!tc->hasError())
         return tc;
 
     delete tc;
     return nullptr;
 }
 
-static QPair<QString, QString> rawIdData(const QVariantMap &data)
+static QPair<QString, QString> rawIdData(const Store &data)
 {
-    const QString raw = data.value(QLatin1String(ID_KEY)).toString();
+    const QString raw = data.value(ID_KEY).toString();
     const int pos = raw.indexOf(QLatin1Char(':'));
     QTC_ASSERT(pos > 0, return qMakePair(QString::fromLatin1("unknown"), QString::fromLatin1("unknown")));
     return {raw.mid(0, pos), raw.mid(pos + 1)};
 }
 
-QByteArray ToolChainFactory::idFromMap(const QVariantMap &data)
+QByteArray ToolchainFactory::idFromMap(const Store &data)
 {
     return rawIdData(data).second.toUtf8();
 }
 
-Utils::Id ToolChainFactory::typeIdFromMap(const QVariantMap &data)
+Id ToolchainFactory::typeIdFromMap(const Store &data)
 {
-    return Utils::Id::fromString(rawIdData(data).first);
+    return Id::fromString(rawIdData(data).first);
 }
 
-void ToolChainFactory::autoDetectionToMap(QVariantMap &data, bool detected)
+void ToolchainFactory::autoDetectionToMap(Store &data, bool detected)
 {
-    data.insert(QLatin1String(AUTODETECT_KEY), detected);
+    data.insert(AUTODETECT_KEY, detected);
 }
 
-ToolChain *ToolChainFactory::createToolChain(Utils::Id toolChainType)
+Toolchain *ToolchainFactory::createToolchain(Id toolchainType)
 {
-    for (ToolChainFactory *factory : std::as_const(Internal::g_toolChainFactories)) {
-        if (factory->m_supportedToolChainType == toolChainType) {
-            if (ToolChain *tc = factory->create()) {
-                tc->d->m_typeId = toolChainType;
+    for (ToolchainFactory *factory : std::as_const(toolchainFactories())) {
+        if (factory->m_supportedToolchainType == toolchainType) {
+            if (Toolchain *tc = factory->create()) {
+                tc->d->m_typeId = toolchainType;
                 return tc;
             }
         }
@@ -634,38 +646,42 @@ ToolChain *ToolChainFactory::createToolChain(Utils::Id toolChainType)
     return nullptr;
 }
 
-QList<Utils::Id> ToolChainFactory::supportedLanguages() const
+QList<Id> ToolchainFactory::supportedLanguages() const
 {
-    return m_supportsAllLanguages ? ToolChainManager::allLanguages() : m_supportedLanguages;
+    return m_supportsAllLanguages ? ToolchainManager::allLanguages() : m_supportedLanguages;
 }
 
-Utils::Id ToolChainFactory::supportedToolChainType() const
+Id ToolchainFactory::supportedToolchainType() const
 {
-    return m_supportedToolChainType;
+    return m_supportedToolchainType;
 }
 
-void ToolChainFactory::setSupportedToolChainType(const Utils::Id &supportedToolChain)
+void ToolchainFactory::setSupportedToolchainType(const Id &supportedToolchainType)
 {
-    m_supportedToolChainType = supportedToolChain;
+    m_supportedToolchainType = supportedToolchainType;
 }
 
-void ToolChainFactory::setSupportedLanguages(const QList<Utils::Id> &supportedLanguages)
+void ToolchainFactory::setSupportedLanguages(const QList<Id> &supportedLanguages)
 {
     m_supportedLanguages = supportedLanguages;
 }
 
-void ToolChainFactory::setSupportsAllLanguages(bool supportsAllLanguages)
+void ToolchainFactory::setSupportsAllLanguages(bool supportsAllLanguages)
 {
     m_supportsAllLanguages = supportsAllLanguages;
 }
 
-void ToolChainFactory::setToolchainConstructor
-    (const std::function<ToolChain *()> &toolchainContructor)
+void ToolchainFactory::setToolchainConstructor(const ToolchainConstructor &toolchainContructor)
 {
     m_toolchainConstructor = toolchainContructor;
 }
 
-void ToolChainFactory::setUserCreatable(bool userCreatable)
+ToolchainFactory::ToolchainConstructor ToolchainFactory::toolchainConstructor() const
+{
+    return m_toolchainConstructor;
+}
+
+void ToolchainFactory::setUserCreatable(bool userCreatable)
 {
     m_userCreatable = userCreatable;
 }
@@ -678,28 +694,28 @@ ToolchainDetector::ToolchainDetector(const Toolchains &alreadyKnown,
     QTC_CHECK(device);
 }
 
-BadToolchain::BadToolchain(const Utils::FilePath &filePath)
+BadToolchain::BadToolchain(const FilePath &filePath)
     : BadToolchain(filePath, filePath.symLinkTarget(), filePath.lastModified())
 {}
 
-BadToolchain::BadToolchain(const Utils::FilePath &filePath, const Utils::FilePath &symlinkTarget,
+BadToolchain::BadToolchain(const FilePath &filePath, const FilePath &symlinkTarget,
                            const QDateTime &timestamp)
     : filePath(filePath), symlinkTarget(symlinkTarget), timestamp(timestamp)
 {}
 
 
-static QString badToolchainFilePathKey() { return {"FilePath"}; }
-static QString badToolchainSymlinkTargetKey() { return {"TargetFilePath"}; }
-static QString badToolchainTimestampKey() { return {"Timestamp"}; }
+static Key badToolchainFilePathKey() { return {"FilePath"}; }
+static Key badToolchainSymlinkTargetKey() { return {"TargetFilePath"}; }
+static Key badToolchainTimestampKey() { return {"Timestamp"}; }
 
-QVariantMap BadToolchain::toMap() const
+Store BadToolchain::toMap() const
 {
     return {{badToolchainFilePathKey(), filePath.toSettings()},
             {badToolchainSymlinkTargetKey(), symlinkTarget.toSettings()},
             {badToolchainTimestampKey(), timestamp.toMSecsSinceEpoch()}};
 }
 
-BadToolchain BadToolchain::fromMap(const QVariantMap &map)
+BadToolchain BadToolchain::fromMap(const Store &map)
 {
     return {
         FilePath::fromSettings(map.value(badToolchainFilePathKey())),
@@ -725,13 +741,15 @@ bool BadToolchains::isBadToolchain(const FilePath &toolchain) const
 
 QVariant BadToolchains::toVariant() const
 {
-    return Utils::transform<QVariantList>(toolchains, &BadToolchain::toMap);
+    return Utils::transform<QVariantList>(toolchains, [](const BadToolchain &bdc) {
+        return variantFromStore(bdc.toMap());
+    });
 }
 
 BadToolchains BadToolchains::fromVariant(const QVariant &v)
 {
     return Utils::transform<QList<BadToolchain>>(v.toList(),
-            [](const QVariant &e) { return BadToolchain::fromMap(e.toMap()); });
+            [](const QVariant &e) { return BadToolchain::fromMap(storeFromVariant(e)); });
 }
 
 } // namespace ProjectExplorer

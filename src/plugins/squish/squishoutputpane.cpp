@@ -16,21 +16,24 @@
 #include <QVBoxLayout>
 
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/icontext.h>
 
 #include <utils/itemviews.h>
+#include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 #include <utils/utilsicons.h>
 
-namespace Squish {
-namespace Internal {
+namespace Squish::Internal {
 
 static SquishOutputPane *m_instance = nullptr;
 
-SquishOutputPane::SquishOutputPane(QObject *parent)
-    : Core::IOutputPane(parent)
-    , m_context(new Core::IContext(this))
+SquishOutputPane::SquishOutputPane()
 {
+    setId("Squish");
+    setDisplayName(Tr::tr("Squish"));
+    setPriorityInStatusBar(-60);
+
+    m_instance = this;
+
     m_outputPane = new QTabWidget;
     m_outputPane->setDocumentMode(true);
 
@@ -98,8 +101,6 @@ SquishOutputPane::SquishOutputPane(QObject *parent)
 
 SquishOutputPane *SquishOutputPane::instance()
 {
-    if (!m_instance)
-        m_instance = new SquishOutputPane;
     return m_instance;
 }
 
@@ -114,17 +115,7 @@ QWidget *SquishOutputPane::outputWidget(QWidget *parent)
 
 QList<QWidget *> SquishOutputPane::toolBarWidgets() const
 {
-    return QList<QWidget *>() << m_filterButton << m_expandAll << m_collapseAll;
-}
-
-QString SquishOutputPane::displayName() const
-{
-    return Tr::tr("Squish");
-}
-
-int SquishOutputPane::priorityInStatusBar() const
-{
-    return -777;
+    return {m_filterButton, m_expandAll, m_collapseAll};
 }
 
 void SquishOutputPane::clearContents()
@@ -305,17 +296,20 @@ void SquishOutputPane::clearOldResults()
 void SquishOutputPane::createToolButtons()
 {
     m_expandAll = new QToolButton(m_treeView);
+    Utils::StyleHelper::setPanelWidget(m_expandAll);
     m_expandAll->setIcon(Utils::Icons::EXPAND_TOOLBAR.icon());
     m_expandAll->setToolTip(Tr::tr("Expand All"));
 
     m_collapseAll = new QToolButton(m_treeView);
+    Utils::StyleHelper::setPanelWidget(m_collapseAll);
     m_collapseAll->setIcon(Utils::Icons::COLLAPSE_TOOLBAR.icon());
     m_collapseAll->setToolTip(Tr::tr("Collapse All"));
 
     m_filterButton = new QToolButton(m_treeView);
+    Utils::StyleHelper::setPanelWidget(m_filterButton);
     m_filterButton->setIcon(Utils::Icons::FILTER.icon());
     m_filterButton->setToolTip(Tr::tr("Filter Test Results"));
-    m_filterButton->setProperty("noArrow", true);
+    m_filterButton->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
     m_filterButton->setAutoRaise(true);
     m_filterButton->setPopupMode(QToolButton::InstantPopup);
     m_filterMenu = new QMenu(m_filterButton);
@@ -391,5 +385,4 @@ void SquishOutputPane::enableAllFiltersTriggered()
     m_filterModel->enableAllResultTypes();
 }
 
-} // namespace Internal
-} // namespace Squish
+} // namespace Squish::Internal

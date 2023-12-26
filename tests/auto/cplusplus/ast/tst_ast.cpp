@@ -68,10 +68,10 @@ public:
             : errorCount(0)
         { }
 
-        virtual void report(int /*level*/,
-                            const StringLiteral *fileName,
-                            int line, int column,
-                            const char *format, va_list ap)
+        void report(int /*level*/,
+                    const StringLiteral *fileName,
+                    int line, int column,
+                    const char *format, va_list ap) override
         {
             ++errorCount;
 
@@ -190,6 +190,7 @@ private slots:
     void enumDeclaration();
     void invalidEnumClassDeclaration();
     void invalidEnumWithDestructorId();
+    void invalidFunctionInitializer();
 };
 
 void tst_AST::gcc_attributes_1()
@@ -2048,6 +2049,14 @@ void tst_AST::invalidEnumWithDestructorId()
 {
     QSharedPointer<TranslationUnit> unit(parseStatement(
         "enum ~A {};", false));
+
+    QVERIFY(diag.errorCount != 0);
+}
+
+void tst_AST::invalidFunctionInitializer()
+{
+    QSharedPointer<TranslationUnit> unit(parse(
+        "int main() { a t=b; c d(e)=\"\"; }", TranslationUnit::ParseTranlationUnit, false, false, true));
 
     QVERIFY(diag.errorCount != 0);
 }

@@ -11,40 +11,35 @@
 #include <qtsingleapplication.h>
 
 #include <utils/algorithm.h>
+#include <utils/appinfo.h>
+#include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/fsengine/fsengine.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcsettings.h>
 #include <utils/singleton.h>
+#include <utils/stylehelper.h>
 #include <utils/temporarydirectory.h>
 #include <utils/terminalcommand.h>
 
 #include <QDebug>
 #include <QDir>
-#include <QFontDatabase>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QLibraryInfo>
-#include <QScopeGuard>
-#include <QStyle>
-#include <QTextStream>
-#include <QThreadPool>
-#include <QTimer>
-#include <QTranslator>
-#include <QUrl>
-#include <QVariant>
-
-#include <QSysInfo>
-
-#include <QNetworkProxyFactory>
-
-#include <QApplication>
 #include <QMessageBox>
+#include <QNetworkProxyFactory>
 #include <QPixmapCache>
 #include <QProcess>
+#include <QScopeGuard>
 #include <QStandardPaths>
-#include <QTemporaryDir>
+#include <QStyle>
+#include <QSurfaceFormat>
 #include <QTextCodec>
+#include <QTextStream>
+#include <QThreadPool>
+#include <QTranslator>
 
 #include <iterator>
 #include <optional>
@@ -287,25 +282,18 @@ static Utils::QtcSettings *createUserSettings()
 
 static void setHighDpiEnvironmentVariable()
 {
-
-    if (Utils::HostOsInfo::isMacHost())
+    if (Utils::StyleHelper::defaultHighDpiScaleFactorRoundingPolicy()
+            == Qt::HighDpiScaleFactorRoundingPolicy::Unset
+        || qEnvironmentVariableIsSet(Utils::StyleHelper::C_QT_SCALE_FACTOR_ROUNDING_POLICY))
         return;
 
-    std::unique_ptr<QSettings> settings(createUserSettings());
+    std::unique_ptr<Utils::QtcSettings> settings(createUserSettings());
 
-    const bool defaultValue = Utils::HostOsInfo::isWindowsHost();
-    const bool enableHighDpiScaling = settings->value("Core/EnableHighDpiScaling", defaultValue).toBool();
-
-    static const char ENV_VAR_QT_DEVICE_PIXEL_RATIO[] = "QT_DEVICE_PIXEL_RATIO";
-    if (enableHighDpiScaling
-            && !qEnvironmentVariableIsSet(ENV_VAR_QT_DEVICE_PIXEL_RATIO) // legacy in 5.6, but still functional
-            && !qEnvironmentVariableIsSet("QT_AUTO_SCREEN_SCALE_FACTOR")
-            && !qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
-            && !qEnvironmentVariableIsSet("QT_SCREEN_SCALE_FACTORS")) {
-    } else {
-        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-            Qt::HighDpiScaleFactorRoundingPolicy::Floor);
-    }
+    using Policy = Qt::HighDpiScaleFactorRoundingPolicy;
+    const Policy defaultPolicy = Utils::StyleHelper::defaultHighDpiScaleFactorRoundingPolicy();
+    const Policy userPolicy = settings->value("Core/HighDpiScaleFactorRoundingPolicy",
+                                              int(defaultPolicy)).value<Policy>();
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(userPolicy);
 }
 
 void setPixmapCacheLimit()
@@ -429,7 +417,7 @@ QStringList lastSessionArgument()
 // and src\tools\qml2puppet\qml2puppet\qmlpuppet.cpp -> QString crashReportsPath()
 QString crashReportsPath()
 {
-    std::unique_ptr<QSettings> settings(createUserSettings());
+    std::unique_ptr<Utils::QtcSettings> settings(createUserSettings());
     QFileInfo(settings->fileName()).path() + "/crashpad_reports";
     if (Utils::HostOsInfo::isMacHost())
         return QFileInfo(createUserSettings()->fileName()).path() + "/crashpad_reports";
@@ -490,6 +478,53 @@ bool startCrashpad(const QString &libexecPath, bool crashReportingEnabled)
 }
 #endif
 
+class ShowInGuiHandler
+{
+public:
+    ShowInGuiHandler()
+    {
+        instance = this;
+        oldHandler = qInstallMessageHandler(log);
+    }
+    ~ShowInGuiHandler() { qInstallMessageHandler(oldHandler); };
+
+private:
+    static void log(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+    {
+        instance->messages += msg;
+        if (type == QtFatalMsg) {
+            // Show some kind of GUI with collected messages before exiting.
+            // For Windows, Qt already uses a dialog.
+            if (Utils::HostOsInfo::isLinuxHost()) {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 5, 0) && QT_VERSION < QT_VERSION_CHECK(6, 5, 3)) \
+    || (QT_VERSION >= QT_VERSION_CHECK(6, 6, 0) && QT_VERSION < QT_VERSION_CHECK(6, 6, 1))
+                // Information about potentially missing libxcb-cursor0 is printed by Qt since Qt 6.5.3 and Qt 6.6.1
+                // Add it manually for other versions >= 6.5.0
+                instance->messages.prepend("From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to "
+                                           "load the Qt xcb platform plugin.");
+#endif
+                if (QFile::exists("/usr/bin/xmessage"))
+                    QProcess::startDetached("/usr/bin/xmessage", {instance->messages.join("\n")});
+            } else if (Utils::HostOsInfo::isMacHost()) {
+                QProcess::startDetached("/usr/bin/osascript",
+                                        {"-e",
+                                         "display dialog \""
+                                             + instance->messages.join("\n").replace("\"", "\\\"")
+                                             + "\" buttons \"OK\" with title \""
+                                             + Core::Constants::IDE_DISPLAY_NAME
+                                             + " Failed to Start\""});
+            }
+        }
+        instance->oldHandler(type, context, msg);
+    };
+
+    static ShowInGuiHandler *instance;
+    QStringList messages;
+    QtMessageHandler oldHandler = nullptr;
+};
+
+ShowInGuiHandler *ShowInGuiHandler::instance = nullptr;
+
 int main(int argc, char **argv)
 {
     Restarter restarter(argc, argv);
@@ -503,10 +538,29 @@ int main(int argc, char **argv)
     Options options = parseCommandLine(argc, argv);
     applicationDirPath(argv[0]);
 
+    const bool hasStyleOption = Utils::findOrDefault(options.appArguments, [](char *arg) {
+        return strcmp(arg, "-style") == 0;
+    });
+
     if (qEnvironmentVariableIsSet("QTC_DO_NOT_PROPAGATE_LD_PRELOAD")) {
         Utils::Environment::modifySystemEnvironment(
             {{"LD_PRELOAD", "", Utils::EnvironmentItem::Unset}});
     }
+
+    auto restoreEnvVarFromSquish = [](const QByteArray &squishVar, const QString &var) {
+        if (qEnvironmentVariableIsSet(squishVar)) {
+            Utils::Environment::modifySystemEnvironment(
+                {{var, "", Utils::EnvironmentItem::Unset}});
+            const QString content = qEnvironmentVariable(squishVar);
+            if (!content.isEmpty()) {
+                Utils::Environment::modifySystemEnvironment(
+                    {{var, content, Utils::EnvironmentItem::Prepend}});
+            }
+        }
+    };
+
+    restoreEnvVarFromSquish("SQUISH_SHELL_ORIG_DYLD_LIBRARY_PATH", "DYLD_LIBRARY_PATH");
+    restoreEnvVarFromSquish("SQUISH_ORIG_DYLD_FRAMEWORK_PATH", "DYLD_FRAMEWORK_PATH");
 
     if (options.userLibraryPath) {
         if ((*options.userLibraryPath).isEmpty()) {
@@ -518,18 +572,20 @@ int main(int argc, char **argv)
         }
     }
 
+    if (Utils::HostOsInfo::isMacHost()) {
+        QSurfaceFormat surfaceFormat;
+        surfaceFormat.setStencilBufferSize(8);
+        surfaceFormat.setDepthBufferSize(24);
+        surfaceFormat.setVersion(4, 1);
+        surfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
+        QSurfaceFormat::setDefaultFormat(surfaceFormat);
+    }
+
     qputenv("QSG_RHI_BACKEND", "opengl");
-    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-                Qt::HighDpiScaleFactorRoundingPolicy::Round);
 
     if (qEnvironmentVariableIsSet("QTCREATOR_DISABLE_NATIVE_MENUBAR")
             || qgetenv("XDG_CURRENT_DESKTOP").startsWith("Unity")) {
         QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
-    }
-
-    if (Utils::HostOsInfo::isRunningUnderRosetta()) {
-        // work around QTBUG-97085: QRegularExpression jitting is not reentrant under Rosetta
-        qputenv("QT_ENABLE_REGEXP_JIT", "0");
     }
 
     if (Utils::HostOsInfo::isLinuxHost() && !qEnvironmentVariableIsSet("GTK_THEME"))
@@ -589,17 +645,22 @@ int main(int argc, char **argv)
 
     SharedTools::QtSingleApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
-    int numberofArguments = static_cast<int>(options.appArguments.size());
+    int numberOfArguments = static_cast<int>(options.appArguments.size());
 
-    SharedTools::QtSingleApplication app((QLatin1String(Core::Constants::IDE_DISPLAY_NAME)),
-                                         numberofArguments,
-                                         options.appArguments.data());
+    // create a custom Qt message handler that shows messages in a bare bones UI
+    // if creation of the QGuiApplication fails.
+    auto handler = std::make_unique<ShowInGuiHandler>();
+    std::unique_ptr<SharedTools::QtSingleApplication>
+        appPtr(SharedTools::createApplication(QLatin1String(Core::Constants::IDE_DISPLAY_NAME),
+                                              numberOfArguments, options.appArguments.data()));
+    handler.reset();
+    SharedTools::QtSingleApplication &app = *appPtr;
     QCoreApplication::setApplicationName(Core::Constants::IDE_CASED_ID);
     QCoreApplication::setApplicationVersion(QLatin1String(Core::Constants::IDE_VERSION_LONG));
     QCoreApplication::setOrganizationName(QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR));
     QGuiApplication::setApplicationDisplayName(Core::Constants::IDE_DISPLAY_NAME);
 
-    auto cleanup = qScopeGuard([] { Utils::Singleton::deleteAll(); });
+    const QScopeGuard cleanup([] { Utils::Singleton::deleteAll(); });
 
     const QStringList pluginArguments = app.arguments();
 
@@ -610,19 +671,26 @@ int main(int argc, char **argv)
     // Re-setup install settings for real
     setupInstallSettings(options.installSettingsPath);
     Utils::QtcSettings *settings = createUserSettings();
-    Utils::QtcSettings *globalSettings
+    Utils::QtcSettings *installSettings
         = new Utils::QtcSettings(QSettings::IniFormat,
                                  QSettings::SystemScope,
                                  QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR),
                                  QLatin1String(Core::Constants::IDE_CASED_ID));
+    // warn if -installsettings points to a place where no install settings are located
+    if (!options.installSettingsPath.isEmpty() && !QFileInfo::exists(installSettings->fileName())) {
+        displayError(QLatin1String("The install settings \"%1\" do not exist. The %2 option must "
+                                   "point to a path with existing settings, excluding the %3 part "
+                                   "of the path.")
+                         .arg(QDir::toNativeSeparators(installSettings->fileName()),
+                              INSTALL_SETTINGS_OPTION,
+                              Core::Constants::IDE_SETTINGSVARIANT_STR));
+    }
     Utils::TerminalCommand::setSettings(settings);
     setPixmapCacheLimit();
     loadFonts();
 
-    if (Utils::HostOsInfo::isWindowsHost()
-            && !qFuzzyCompare(qApp->devicePixelRatio(), 1.0)
-            && QApplication::style()->objectName().startsWith(
-                QLatin1String("windows"), Qt::CaseInsensitive)) {
+    if (Utils::HostOsInfo::isWindowsHost() && !qFuzzyCompare(qApp->devicePixelRatio(), 1.0)
+        && !hasStyleOption) {
         QApplication::setStyle(QLatin1String("fusion"));
     }
     const int threadCount = QThreadPool::globalInstance()->maxThreadCount();
@@ -645,13 +713,29 @@ int main(int argc, char **argv)
 
     PluginManager pluginManager;
     PluginManager::setPluginIID(QLatin1String("org.qt-project.Qt.QtCreatorPlugin"));
-    PluginManager::setGlobalSettings(globalSettings);
+    PluginManager::setInstallSettings(installSettings);
     PluginManager::setSettings(settings);
+    PluginManager::startProfiling();
+
+    Utils::BaseAspect::setQtcSettings(settings);
+
+    using namespace Core;
+    Utils::AppInfo info;
+    info.author = Constants::IDE_AUTHOR;
+    info.year = Constants::IDE_YEAR;
+    info.displayVersion = Constants::IDE_VERSION_DISPLAY;
+    info.id = Constants::IDE_ID;
+    info.revision = Constants::IDE_REVISION_STR;
+    info.revisionUrl = Constants::IDE_REVISION_URL;
+    info.userFileExtension = Constants::IDE_PROJECT_USER_FILE_EXTENSION;
+    Utils::Internal::setAppInfo(info);
 
     QTranslator translator;
     QTranslator qtTranslator;
     QStringList uiLanguages = QLocale::system().uiLanguages();
-    QString overrideLanguage = settings->value(QLatin1String("General/OverrideLanguage")).toString();
+    const QString overrideLanguage = options.hasTestOption
+                                         ? QString("C") // force built-in when running tests
+                                         : settings->value("General/OverrideLanguage").toString();
     if (!overrideLanguage.isEmpty())
         uiLanguages.prepend(overrideLanguage);
     if (!options.uiLanguage.isEmpty())
@@ -660,7 +744,7 @@ int main(int argc, char **argv)
     for (QString locale : std::as_const(uiLanguages)) {
         locale = QLocale(locale).name();
         if (translator.load("qtcreator_" + locale, creatorTrPath)) {
-            const QString &qtTrPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+            const QString &qtTrPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
             const QString &qtTrFile = QLatin1String("qt_") + locale;
             // Binary installer puts Qt tr files into creatorTrPath
             if (qtTranslator.load(qtTrFile, qtTrPath) || qtTranslator.load(qtTrFile, creatorTrPath)) {
@@ -683,7 +767,7 @@ int main(int argc, char **argv)
     if (!overrideCodecForLocale.isEmpty())
         QTextCodec::setCodecForLocale(QTextCodec::codecForName(overrideCodecForLocale));
 
-    app.setDesktopFileName("org.qt-project.qtcreator.desktop");
+    app.setDesktopFileName("org.qt-project.qtcreator");
 
     // Make sure we honor the system's proxy settings
     QNetworkProxyFactory::setUseSystemConfiguration(true);

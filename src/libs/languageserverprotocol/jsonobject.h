@@ -43,88 +43,90 @@ public:
     const_iterator end() const { return m_jsonObject.end(); }
 
 protected:
-    iterator insert(const QStringView key, const JsonObject &value);
-    iterator insert(const QStringView key, const QJsonValue &value);
+    using Key = QLatin1StringView;
+    iterator insert(const Key key, const JsonObject &value);
+    iterator insert(const Key key, const QJsonValue &value);
 
     template <typename T, typename V>
-    iterator insertVariant(const QStringView key, const V &variant);
+    iterator insertVariant(const Key key, const V &variant);
     template <typename T1, typename T2, typename... Args, typename V>
-    iterator insertVariant(const QStringView key, const V &variant);
+    iterator insertVariant(const Key key, const V &variant);
 
     // QJSonObject redirections
-    QJsonValue value(const QStringView key) const { return m_jsonObject.value(key); }
-    bool contains(const QStringView key) const { return m_jsonObject.contains(key); }
-    iterator find(const QStringView key) { return m_jsonObject.find(key); }
-    const_iterator find(const QStringView key) const { return m_jsonObject.find(key); }
-    void remove(const QStringView key) { m_jsonObject.remove(key); }
+    QJsonValue value(const QString &key) const { return m_jsonObject.value(key); }
+    QJsonValue value(const Key key) const { return m_jsonObject.value(key); }
+    bool contains(const Key key) const { return m_jsonObject.contains(key); }
+    iterator find(const Key key) { return m_jsonObject.find(key); }
+    const_iterator find(const Key key) const { return m_jsonObject.find(key); }
+    void remove(const Key key) { m_jsonObject.remove(key); }
     QStringList keys() const { return m_jsonObject.keys(); }
 
     // convenience value access
     template<typename T>
-    T typedValue(const QStringView key) const;
+    T typedValue(const Key key) const;
     template<typename T>
-    std::optional<T> optionalValue(const QStringView key) const;
+    std::optional<T> optionalValue(const Key key) const;
     template<typename T>
-    LanguageClientValue<T> clientValue(const QStringView key) const;
+    LanguageClientValue<T> clientValue(const Key key) const;
     template<typename T>
-    std::optional<LanguageClientValue<T>> optionalClientValue(const QStringView key) const;
+    std::optional<LanguageClientValue<T>> optionalClientValue(const Key key) const;
     template<typename T>
-    QList<T> array(const QStringView key) const;
+    QList<T> array(const Key key) const;
     template<typename T>
-    std::optional<QList<T>> optionalArray(const QStringView key) const;
+    std::optional<QList<T>> optionalArray(const Key key) const;
     template<typename T>
-    LanguageClientArray<T> clientArray(const QStringView key) const;
+    LanguageClientArray<T> clientArray(const Key key) const;
     template<typename T>
-    std::optional<LanguageClientArray<T>> optionalClientArray(const QStringView key) const;
+    std::optional<LanguageClientArray<T>> optionalClientArray(const Key key) const;
     template<typename T>
-    void insertArray(const QStringView key, const QList<T> &array);
+    void insertArray(const Key key, const QList<T> &array);
     template<typename>
-    void insertArray(const QStringView key, const QList<JsonObject> &array);
+    void insertArray(const Key key, const QList<JsonObject> &array);
 
 private:
     QJsonObject m_jsonObject;
 };
 
 template<typename T, typename V>
-JsonObject::iterator JsonObject::insertVariant(const QStringView key, const V &variant)
+JsonObject::iterator JsonObject::insertVariant(const Key key, const V &variant)
 {
     return std::holds_alternative<T>(variant) ? insert(key, std::get<T>(variant)) : end();
 }
 
 template<typename T1, typename T2, typename... Args, typename V>
-JsonObject::iterator JsonObject::insertVariant(const QStringView key, const V &variant)
+JsonObject::iterator JsonObject::insertVariant(const Key key, const V &variant)
 {
     auto result = insertVariant<T1>(key, variant);
     return result != end() ? result : insertVariant<T2, Args...>(key, variant);
 }
 
 template<typename T>
-T JsonObject::typedValue(const QStringView key) const
+T JsonObject::typedValue(const Key key) const
 {
     return fromJsonValue<T>(value(key));
 }
 
 template<typename T>
-std::optional<T> JsonObject::optionalValue(const QStringView key) const
+std::optional<T> JsonObject::optionalValue(const Key key) const
 {
     const QJsonValue &val = value(key);
     return val.isUndefined() ? std::nullopt : std::make_optional(fromJsonValue<T>(val));
 }
 
 template<typename T>
-LanguageClientValue<T> JsonObject::clientValue(const QStringView key) const
+LanguageClientValue<T> JsonObject::clientValue(const Key key) const
 {
     return LanguageClientValue<T>(value(key));
 }
 
 template<typename T>
-std::optional<LanguageClientValue<T>> JsonObject::optionalClientValue(const QStringView key) const
+std::optional<LanguageClientValue<T>> JsonObject::optionalClientValue(const Key key) const
 {
     return contains(key) ? std::make_optional(clientValue<T>(key)) : std::nullopt;
 }
 
 template<typename T>
-QList<T> JsonObject::array(const QStringView key) const
+QList<T> JsonObject::array(const Key key) const
 {
     if (const std::optional<QList<T>> &array = optionalArray<T>(key))
         return *array;
@@ -133,7 +135,7 @@ QList<T> JsonObject::array(const QStringView key) const
 }
 
 template<typename T>
-std::optional<QList<T>> JsonObject::optionalArray(const QStringView key) const
+std::optional<QList<T>> JsonObject::optionalArray(const Key key) const
 {
     const QJsonValue &jsonValue = value(key);
     if (jsonValue.isUndefined())
@@ -142,13 +144,13 @@ std::optional<QList<T>> JsonObject::optionalArray(const QStringView key) const
 }
 
 template<typename T>
-LanguageClientArray<T> JsonObject::clientArray(const QStringView key) const
+LanguageClientArray<T> JsonObject::clientArray(const Key key) const
 {
     return LanguageClientArray<T>(value(key));
 }
 
 template<typename T>
-std::optional<LanguageClientArray<T>> JsonObject::optionalClientArray(const QStringView key) const
+std::optional<LanguageClientArray<T>> JsonObject::optionalClientArray(const Key key) const
 {
     const QJsonValue &val = value(key);
     return !val.isUndefined() ? std::make_optional(LanguageClientArray<T>(value(key)))
@@ -156,7 +158,7 @@ std::optional<LanguageClientArray<T>> JsonObject::optionalClientArray(const QStr
 }
 
 template<typename T>
-void JsonObject::insertArray(const QStringView key, const QList<T> &array)
+void JsonObject::insertArray(const Key key, const QList<T> &array)
 {
     QJsonArray jsonArray;
     for (const T &item : array)
@@ -165,7 +167,7 @@ void JsonObject::insertArray(const QStringView key, const QList<T> &array)
 }
 
 template<typename >
-void JsonObject::insertArray(const QStringView key, const QList<JsonObject> &array)
+void JsonObject::insertArray(const Key key, const QList<JsonObject> &array)
 {
     QJsonArray jsonArray;
     for (const JsonObject &item : array)

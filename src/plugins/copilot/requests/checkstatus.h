@@ -10,8 +10,8 @@ namespace Copilot {
 
 class CheckStatusParams : public LanguageServerProtocol::JsonObject
 {
-    static constexpr char16_t optionsKey[] = u"options";
-    static constexpr char16_t localChecksOnlyKey[] = u"options";
+    static constexpr Key optionsKey{"options"};
+    static constexpr Key localChecksOnlyKey{"options"};
 
 public:
     using JsonObject::JsonObject;
@@ -30,8 +30,8 @@ public:
 
 class CheckStatusResponse : public LanguageServerProtocol::JsonObject
 {
-    static constexpr char16_t userKey[] = u"user";
-    static constexpr char16_t statusKey[] = u"status";
+    static constexpr Key userKey{"user"};
+    static constexpr Key statusKey{"status"};
 
 public:
     using JsonObject::JsonObject;

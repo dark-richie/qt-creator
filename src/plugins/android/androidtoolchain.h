@@ -7,22 +7,21 @@
 
 #include <projectexplorer/gcctoolchain.h>
 
-namespace Android {
-namespace Internal {
+namespace Android::Internal {
 
-using ToolChainList = QList<ProjectExplorer::ToolChain *>;
+using ToolchainList = QList<ProjectExplorer::Toolchain *>;
 
-class AndroidToolChain : public ProjectExplorer::ClangToolChain
+class AndroidToolchain : public ProjectExplorer::GccToolchain
 {
 public:
-    ~AndroidToolChain() override;
+    ~AndroidToolchain() override;
 
     bool isValid() const override;
     void addToEnvironment(Utils::Environment &env) const override;
 
     QStringList suggestedMkspecList() const override;
     Utils::FilePath makeCommand(const Utils::Environment &environment) const override;
-    bool fromMap(const QVariantMap &data) override;
+    void fromMap(const Utils::Store &data) override;
 
     void setNdkLocation(const Utils::FilePath &ndkLocation);
     Utils::FilePath ndkLocation() const;
@@ -31,19 +30,19 @@ protected:
     DetectedAbisResult detectSupportedAbis() const override;
 
 private:
-    explicit AndroidToolChain();
+    explicit AndroidToolchain();
 
-    friend class AndroidToolChainFactory;
+    friend class AndroidToolchainFactory;
 
     mutable Utils::FilePath m_ndkLocation;
 };
 
-class AndroidToolChainFactory : public ProjectExplorer::ToolChainFactory
+class AndroidToolchainFactory : public ProjectExplorer::ToolchainFactory
 {
 public:
-    AndroidToolChainFactory();
+    AndroidToolchainFactory();
 
-    class AndroidToolChainInformation
+    class AndroidToolchainInformation
     {
     public:
         Utils::Id language;
@@ -52,11 +51,12 @@ public:
         QString version;
     };
 
-    static ToolChainList autodetectToolChains(const ToolChainList &alreadyKnown);
-    static ToolChainList autodetectToolChainsFromNdks(const ToolChainList &alreadyKnown,
+    static ToolchainList autodetectToolchains(const ToolchainList &alreadyKnown);
+    static ToolchainList autodetectToolchainsFromNdks(const ToolchainList &alreadyKnown,
                                                       const QList<Utils::FilePath> &ndkLocations,
                                                       const bool isCustom = false);
 };
 
-} // namespace Internal
-} // namespace Android
+void setupAndroidToolchain();
+
+} // Android

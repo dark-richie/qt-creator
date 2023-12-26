@@ -8,13 +8,13 @@
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
 #include <texteditor/texteditor.h>
-#include <utils/executeondestruction.h>
 #include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 
 #include <QPoint>
+#include <QScopeGuard>
 #include <QTextBlock>
 #include <QXmlStreamReader>
 
@@ -148,7 +148,7 @@ void ResourcePreviewHoverHandler::identifyMatch(TextEditorWidget *editorWidget,
                                                 int pos,
                                                 ReportPriority report)
 {
-    Utils::ExecuteOnDestruction reportPriority([this, report](){ report(priority()); });
+    const QScopeGuard cleanup([this, report] { report(priority()); });
 
     if (editorWidget->extraSelectionTooltip(pos).isEmpty()) {
         const QTextBlock tb = editorWidget->document()->findBlock(pos);
@@ -166,7 +166,7 @@ void ResourcePreviewHoverHandler::operateTooltip(TextEditorWidget *editorWidget,
 {
     const QString tt = makeTooltip();
     if (!tt.isEmpty())
-        Utils::ToolTip::show(point, tt, editorWidget);
+        Utils::ToolTip::show(point, tt, Qt::MarkdownText, editorWidget);
     else
         Utils::ToolTip::hide();
 }
@@ -180,10 +180,8 @@ QString ResourcePreviewHoverHandler::makeTooltip() const
 
     const Utils::MimeType mimeType = Utils::mimeTypeForFile(m_resPath);
     if (mimeType.name().startsWith("image", Qt::CaseInsensitive))
-        ret += QString("<img src=\"file:///%1\" /><br/>").arg(m_resPath);
-
-    ret += QString("<a href=\"file:///%1\">%2</a>")
-               .arg(m_resPath, QDir::toNativeSeparators(m_resPath));
+        ret += QString("![image](%1)  \n").arg(m_resPath);
+    ret += QString("[%1](%2)").arg(QDir::toNativeSeparators(m_resPath), m_resPath);
     return ret;
 }
 

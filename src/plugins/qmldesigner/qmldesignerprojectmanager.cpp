@@ -20,7 +20,7 @@
 #include <sqlitedatabase.h>
 #include <qmlprojectmanager/qmlproject.h>
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <asynchronousexplicitimagecache.h>
 #include <asynchronousimagecache.h>
@@ -39,6 +39,7 @@
 
 #include <coreplugin/icore.h>
 
+#include <QDirIterator>
 #include <QFileSystemWatcher>
 #include <QQmlEngine>
 
@@ -175,24 +176,27 @@ class ProjectStorageData
 public:
     ProjectStorageData(::ProjectExplorer::Project *project)
         : database{project->projectDirectory().pathAppended("projectstorage.db").toString()}
+        , projectPartId{ProjectPartId::create(
+              pathCache.sourceId(SourcePath{project->projectDirectory().toString() + "/."}).internalId())}
     {}
-
     Sqlite::Database database;
     ProjectStorage<Sqlite::Database> storage{database, database.isInitialized()};
-    ProjectStorageUpdater::PathCache pathCache{storage};
+    PathCacheType pathCache{storage};
     FileSystem fileSystem{pathCache};
     FileStatusCache fileStatusCache{fileSystem};
     QmlDocumentParser qmlDocumentParser{storage, pathCache};
-    QmlTypesParser qmlTypesParser{pathCache, storage};
+    QmlTypesParser qmlTypesParser{storage};
     ProjectStoragePathWatcher<QFileSystemWatcher, QTimer, ProjectStorageUpdater::PathCache>
         pathWatcher{pathCache, fileSystem, &updater};
+    ProjectPartId projectPartId;
     ProjectStorageUpdater updater{fileSystem,
                                   storage,
                                   fileStatusCache,
                                   pathCache,
                                   qmlDocumentParser,
                                   qmlTypesParser,
-                                  pathWatcher};
+                                  pathWatcher,
+                                  projectPartId};
 };
 
 std::unique_ptr<ProjectStorageData> createProjectStorageData(::ProjectExplorer::Project *project)
@@ -282,14 +286,20 @@ ProjectStorage<Sqlite::Database> *dummyProjectStorage()
     return nullptr;
 }
 
+ProjectStorageUpdater::PathCache *dummyPathCache()
+{
+    return nullptr;
+}
+
 } // namespace
 
-ProjectStorage<Sqlite::Database> &QmlDesignerProjectManager::projectStorage()
+ProjectStorageDependencies QmlDesignerProjectManager::projectStorageDependencies()
 {
     if constexpr (useProjectStorage()) {
-        return m_projectData->projectStorageData->storage;
+        return {m_projectData->projectStorageData->storage,
+                m_projectData->projectStorageData->pathCache};
     } else {
-        return *dummyProjectStorage();
+        return {*dummyProjectStorage(), *dummyPathCache()};
     }
 }
 
@@ -327,60 +337,72 @@ Utils::FilePath qmlPath(::ProjectExplorer::Target *target)
     return {};
 }
 
+template<typename... Path>
+bool skipDirectoriesWith(const QStringView directoryPath, const Path &...paths)
+{
+    return (directoryPath.contains(paths) || ...);
+}
+
+template<typename... Path>
+bool skipDirectoriesEndsWith(const QStringView directoryPath, const Path &...paths)
+{
+    return (directoryPath.endsWith(paths) || ...);
+}
+
+bool skipPath(const QString &directoryPath)
+{
+    return skipDirectoriesWith(directoryPath,
+                               u"QtApplicationManager",
+                               u"QtInterfaceFramework",
+                               u"QtOpcUa",
+                               u"Qt3D",
+                               u"Scene2D",
+                               u"Scene3D",
+                               u"QtWayland",
+                               u"Qt5Compat",
+                               u"QtCharts",
+                               u"QtLocation",
+                               u"QtPositioning",
+                               u"MaterialEditor",
+                               u"QtTextToSpeech",
+                               u"QtWebEngine",
+                               u"Qt/labs",
+                               u"QtDataVisualization")
+           || skipDirectoriesEndsWith(directoryPath, u"designer");
+}
+
+void collectQmldirPaths(const QString &path, QStringList &qmldirPaths)
+{
+    QDirIterator dirIterator{path, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories};
+
+    while (dirIterator.hasNext()) {
+        auto directoryPath = dirIterator.next();
+
+        QString qmldirPath = directoryPath + "/qmldir";
+        if (!skipPath(directoryPath) && QFileInfo::exists(qmldirPath))
+            qmldirPaths.push_back(directoryPath);
+    }
+}
+
 void projectQmldirPaths(::ProjectExplorer::Target *target, QStringList &qmldirPaths)
 {
     ::QmlProjectManager::QmlBuildSystem *buildSystem = getQmlBuildSystem(target);
 
-    const Utils::FilePath pojectDirectoryPath = buildSystem->canonicalProjectDir();
+    const Utils::FilePath projectDirectoryPath = buildSystem->canonicalProjectDir();
     const QStringList importPaths = buildSystem->importPaths();
-    const QDir pojectDirectory(pojectDirectoryPath.toString());
+    const QDir projectDirectory(projectDirectoryPath.toString());
 
     for (const QString &importPath : importPaths)
-        qmldirPaths.push_back(QDir::cleanPath(pojectDirectory.absoluteFilePath(importPath))
-                              + "/qmldir");
+        collectQmldirPaths(importPath, qmldirPaths);
 }
-#ifdef QDS_HAS_QMLDOM
-bool skipPath(const std::filesystem::path &path)
+
+void qtQmldirPaths(::ProjectExplorer::Target *target, QStringList &qmldirPaths)
 {
-    auto directory = path.filename();
-    qDebug() << path.string().data();
-
-    bool skip = directory == "QtApplicationManager" || directory == "QtInterfaceFramework"
-                || directory == "QtOpcUa" || directory == "Qt3D" || directory == "Qt3D"
-                || directory == "Scene2D" || directory == "Scene3D" || directory == "QtWayland"
-                || directory == "Qt5Compat";
-    if (skip)
-        qDebug() << "skip" << path.string().data();
-
-    return skip;
-}
-#endif
-
-void qtQmldirPaths([[maybe_unused]] ::ProjectExplorer::Target *target,
-                   [[maybe_unused]] QStringList &qmldirPaths)
-{
-#ifdef QDS_HAS_QMLDOM
-    const QString installDirectory = qmlPath(target).toString();
-
-    const std::filesystem::path installDirectoryPath{installDirectory.toStdString()};
-
-    auto current = std::filesystem::recursive_directory_iterator{installDirectoryPath};
-    auto end = std::filesystem::end(current);
-    for (; current != end; ++current) {
-        const auto &entry = *current;
-        auto path = entry.path();
-        if (current.depth() < 3 && !current->is_regular_file() && skipPath(path)) {
-            current.disable_recursion_pending();
-            continue;
-        }
-        if (path.filename() == "qmldir") {
-            qmldirPaths.push_back(QString::fromStdU16String(path.generic_u16string()));
-        }
-    }
-#endif
+    if constexpr (useProjectStorage())
+        collectQmldirPaths(qmlPath(target).toString(), qmldirPaths);
 }
 
-QStringList qmlDirs(::ProjectExplorer::Target *target)
+QStringList directories(::ProjectExplorer::Target *target)
 {
     if (!target)
         return {};
@@ -414,6 +436,16 @@ QStringList qmlTypes(::ProjectExplorer::Target *target)
         Core::ICore::resourcePath("qmldesigner/projectstorage/fake.qmltypes").toString());
 
     return qmldirPaths;
+}
+
+QString propertyEditorResourcesPath()
+{
+#ifdef SHARE_QML_PATH
+    if (qEnvironmentVariableIsSet("LOAD_QML_FROM_SOURCE")) {
+        return QLatin1String(SHARE_QML_PATH) + "/propertyEditorQmlSources";
+    }
+#endif
+    return Core::ICore::resourcePath("qmldesigner/propertyEditorQmlSources").toString();
 }
 
 } // namespace
@@ -467,7 +499,7 @@ void QmlDesignerProjectManager::generatePreview()
 
 QmlDesignerProjectManager::ImageCacheData *QmlDesignerProjectManager::imageCacheData()
 {
-    std::call_once(imageCacheFlag, [this]() {
+    std::call_once(imageCacheFlag, [this] {
         m_imageCacheData = std::make_unique<ImageCacheData>(m_externalDependencies);
         auto setTargetInImageCache =
             [imageCacheData = m_imageCacheData.get()](ProjectExplorer::Target *target) {
@@ -508,7 +540,7 @@ void QmlDesignerProjectManager::fileListChanged()
 
 void QmlDesignerProjectManager::activeTargetChanged(ProjectExplorer::Target *target)
 {
-    if (m_projectData)
+    if (!m_projectData || !m_projectData->projectStorageData)
         return;
 
     QObject::disconnect(m_projectData->activeTarget, nullptr, nullptr, nullptr);
@@ -549,8 +581,9 @@ void QmlDesignerProjectManager::update()
     if (!m_projectData || !m_projectData->projectStorageData)
         return;
 
-    m_projectData->projectStorageData->updater.update(qmlDirs(m_projectData->activeTarget),
-                                                      qmlTypes(m_projectData->activeTarget));
+    m_projectData->projectStorageData->updater.update(directories(m_projectData->activeTarget),
+                                                      qmlTypes(m_projectData->activeTarget),
+                                                      propertyEditorResourcesPath());
 }
 
 } // namespace QmlDesigner

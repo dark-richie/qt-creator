@@ -7,19 +7,10 @@
 namespace QmlDesigner {
 namespace Internal {
 
-InternalNodeProperty::InternalNodeProperty(const PropertyName &name, const InternalNode::Pointer &propertyOwner)
-    : InternalNodeAbstractProperty(name, propertyOwner)
+InternalNodeProperty::InternalNodeProperty(const PropertyName &name,
+                                           const InternalNode::Pointer &propertyOwner)
+    : InternalNodeAbstractProperty(name, propertyOwner, PropertyType::Node)
 {
-}
-
-InternalNodeProperty::Pointer InternalNodeProperty::create(const PropertyName &name, const InternalNode::Pointer &propertyOwner)
-{
-    auto newPointer = new InternalNodeProperty(name, propertyOwner);
-    InternalNodeProperty::Pointer smartPointer(newPointer);
-
-    newPointer->setInternalWeakPointer(smartPointer);
-
-    return smartPointer;
 }
 
 bool InternalNodeProperty::isEmpty() const
@@ -48,16 +39,6 @@ bool InternalNodeProperty::isValid() const
     return InternalProperty::isValid() && isNodeProperty();
 }
 
-bool InternalNodeProperty::isNodeProperty() const
-{
-    return true;
-}
-
-InternalNode::Pointer InternalNodeProperty::node() const
-{
-    return m_node;
-}
-
 void InternalNodeProperty::remove([[maybe_unused]] const InternalNode::Pointer &node)
 {
     Q_ASSERT(m_node == node);
@@ -73,24 +54,18 @@ void InternalNodeProperty::add(const InternalNode::Pointer &node)
 
 QList<InternalNode::Pointer> InternalNodeProperty::allSubNodes() const
 {
-    QList<InternalNode::Pointer> nodeList;
+    QList<InternalNode::Pointer> nodes;
+    nodes.reserve(1024);
 
-    if (node()) {
-        nodeList.append(node());
-        nodeList.append(node()->allSubNodes());
-    }
+    addSubNodes(nodes);
 
-    return nodeList;
+    return nodes;
 }
 
-QList<InternalNodePointer> InternalNodeProperty::directSubNodes() const
+void InternalNodeProperty::addSubNodes(QList<InternalNodePointer> &container) const
 {
-    QList<InternalNode::Pointer> nodeList;
-
-    if (node())
-        nodeList.append(node());
-
-    return nodeList;
+    container.push_back(m_node);
+    m_node->addSubNodes(container);
 }
 
 } // namespace Internal

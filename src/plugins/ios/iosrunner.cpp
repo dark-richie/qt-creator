@@ -12,11 +12,11 @@
 #include "iostr.h"
 
 #include <debugger/debuggerconstants.h>
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 #include <debugger/debuggerplugin.h>
 #include <debugger/debuggerruncontrol.h>
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfigurationaspects.h>
 #include <projectexplorer/target.h>
@@ -27,7 +27,7 @@
 #include <qmldebug/qmloutputparser.h>
 
 #include <utils/fileutils.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/url.h>
 #include <utils/utilsicons.h>
 
@@ -81,19 +81,8 @@ public:
     void setCppDebugging(bool cppDebug);
     void setQmlDebugging(QmlDebug::QmlDebugServicesPreset qmlDebugServices);
 
-    QString bundlePath();
-    QString deviceId();
-    IosToolHandler::RunKind runType();
-    bool cppDebug() const;
-    bool qmlDebug() const;
-    QmlDebug::QmlDebugServicesPreset qmlDebugServices() const;
-
     void start() override;
     void stop() final;
-
-    virtual void appOutput(const QString &/*output*/) {}
-    virtual void errorMsg(const QString &/*msg*/) {}
-    virtual void onStart() { reportStarted(); }
 
     Port qmlServerPort() const;
     Port gdbServerPort() const;
@@ -101,9 +90,15 @@ public:
     bool isAppRunning() const;
 
 private:
-    void handleGotServerPorts(Ios::IosToolHandler *handler, const QString &bundlePath,
+    Utils::FilePath bundlePath() const;
+    QString deviceId() const;
+    IosToolHandler::RunKind runType() const;
+    bool cppDebug() const;
+    bool qmlDebug() const;
+
+    void handleGotServerPorts(Ios::IosToolHandler *handler, const FilePath &bundlePath,
                               const QString &deviceId, Port gdbPort, Port qmlPort);
-    void handleGotInferiorPid(Ios::IosToolHandler *handler, const QString &bundlePath,
+    void handleGotInferiorPid(Ios::IosToolHandler *handler, const FilePath &bundlePath,
                               const QString &deviceId, qint64 pid);
     void handleAppOutput(Ios::IosToolHandler *handler, const QString &output);
     void handleErrorMsg(Ios::IosToolHandler *handler, const QString &msg);
@@ -111,7 +106,7 @@ private:
     void handleFinished(Ios::IosToolHandler *handler);
 
     IosToolHandler *m_toolHandler = nullptr;
-    QString m_bundleDir;
+    FilePath m_bundleDir;
     IDeviceConstPtr m_device;
     IosDeviceType m_deviceType;
     bool m_cppDebug = false;
@@ -130,7 +125,7 @@ IosRunner::IosRunner(RunControl *runControl)
     stopRunningRunControl(runControl);
     const IosDeviceTypeAspect::Data *data = runControl->aspect<IosDeviceTypeAspect>();
     QTC_ASSERT(data, return);
-    m_bundleDir = data->bundleDirectory.toString();
+    m_bundleDir = data->bundleDirectory;
     m_device = DeviceKitAspect::device(runControl->kit());
     m_deviceType = data->deviceType;
 }
@@ -150,12 +145,12 @@ void IosRunner::setQmlDebugging(QmlDebug::QmlDebugServicesPreset qmlDebugService
     m_qmlDebugServices = qmlDebugServices;
 }
 
-QString IosRunner::bundlePath()
+FilePath IosRunner::bundlePath() const
 {
     return m_bundleDir;
 }
 
-QString IosRunner::deviceId()
+QString IosRunner::deviceId() const
 {
     IosDevice::ConstPtr dev = m_device.dynamicCast<const IosDevice>();
     if (!dev)
@@ -163,7 +158,7 @@ QString IosRunner::deviceId()
     return dev->uniqueDeviceID();
 }
 
-IosToolHandler::RunKind IosRunner::runType()
+IosToolHandler::RunKind IosRunner::runType() const
 {
     if (m_cppDebug)
         return IosToolHandler::DebugRun;
@@ -180,11 +175,6 @@ bool IosRunner::qmlDebug() const
     return m_qmlDebugServices != QmlDebug::NoQmlDebugServices;
 }
 
-QmlDebug::QmlDebugServicesPreset IosRunner::qmlDebugServices() const
-{
-    return m_qmlDebugServices;
-}
-
 void IosRunner::start()
 {
     if (m_toolHandler && isAppRunning())
@@ -192,9 +182,9 @@ void IosRunner::start()
 
     m_cleanExit = false;
     m_qmlServerPort = Port();
-    if (!QFileInfo::exists(m_bundleDir)) {
+    if (!m_bundleDir.exists()) {
         TaskHub::addTask(DeploymentTask(Task::Warning,
-                                        Tr::tr("Could not find %1.").arg(m_bundleDir)));
+            Tr::tr("Could not find %1.").arg(m_bundleDir.toUserOutput())));
         reportFailure();
         return;
     }
@@ -247,7 +237,7 @@ void IosRunner::stop()
         m_toolHandler->stop();
 }
 
-void IosRunner::handleGotServerPorts(IosToolHandler *handler, const QString &bundlePath,
+void IosRunner::handleGotServerPorts(IosToolHandler *handler, const FilePath &bundlePath,
                                      const QString &deviceId, Port gdbPort,
                                      Port qmlPort)
 {
@@ -278,7 +268,7 @@ void IosRunner::handleGotServerPorts(IosToolHandler *handler, const QString &bun
         reportFailure(Tr::tr("Could not get necessary ports for the debugger connection."));
 }
 
-void IosRunner::handleGotInferiorPid(IosToolHandler *handler, const QString &bundlePath,
+void IosRunner::handleGotInferiorPid(IosToolHandler *handler, const FilePath &bundlePath,
                                      const QString &deviceId, qint64 pid)
 {
     // Called when debugging on Simulator.
@@ -315,7 +305,6 @@ void IosRunner::handleAppOutput(IosToolHandler *handler, const QString &output)
     if (match.hasMatch() && m_qmlServerPort.isValid())
        res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
     appendMessage(output, StdOutFormat);
-    appOutput(res);
 }
 
 void IosRunner::handleErrorMsg(IosToolHandler *handler, const QString &msg)
@@ -337,7 +326,6 @@ void IosRunner::handleErrorMsg(IosToolHandler *handler, const QString &msg)
        res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
 
     appendMessage(res, StdErrFormat);
-    errorMsg(res);
 }
 
 void IosRunner::handleToolExited(IosToolHandler *handler, int code)
@@ -389,8 +377,6 @@ public:
     explicit IosRunSupport(RunControl *runControl);
     ~IosRunSupport() override;
 
-    void didStartApp(IosToolHandler::OpStatus status);
-
 private:
     void start() override;
 };
@@ -400,8 +386,8 @@ IosRunSupport::IosRunSupport(RunControl *runControl)
 {
     setId("IosRunSupport");
     runControl->setIcon(Icons::RUN_SMALL_TOOLBAR);
-    QString displayName = QString("Run on %1").arg(device().isNull() ? QString() : device()->displayName());
-    runControl->setDisplayName(displayName);
+    runControl->setDisplayName(QString("Run on %1")
+                                   .arg(device().isNull() ? QString() : device()->displayName()));
 }
 
 IosRunSupport::~IosRunSupport()

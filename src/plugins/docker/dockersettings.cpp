@@ -6,11 +6,10 @@
 #include "dockerconstants.h"
 #include "dockertr.h"
 
-#include <coreplugin/icore.h>
+#include <coreplugin/dialogs/ioptionspage.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
 
-#include <utils/filepath.h>
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 
@@ -18,10 +17,29 @@ using namespace Utils;
 
 namespace Docker::Internal {
 
+DockerSettings &settings()
+{
+    static DockerSettings theSettings;
+    return theSettings;
+}
+
 DockerSettings::DockerSettings()
 {
-    setSettingsGroup(Constants::DOCKER);
     setAutoApply(false);
+    setSettingsGroup(Constants::DOCKER);
+
+    setLayouter([this] {
+        using namespace Layouting;
+        // clang-format off
+        return Column {
+            Group {
+                title(Tr::tr("Configuration")),
+                Row { dockerBinaryPath }
+            },
+            st
+        };
+        // clang-format on
+    });
 
     FilePaths additionalPaths;
     if (HostOsInfo::isWindowsHost())
@@ -29,42 +47,29 @@ DockerSettings::DockerSettings()
     else
         additionalPaths.append("/usr/local/bin");
 
-    registerAspect(&dockerBinaryPath);
-    dockerBinaryPath.setDisplayStyle(StringAspect::PathChooserDisplay);
     dockerBinaryPath.setExpectedKind(PathChooser::ExistingCommand);
-    dockerBinaryPath.setDefaultFilePath(
-        FilePath::fromString("docker").searchInPath(additionalPaths));
+    dockerBinaryPath.setDefaultValue(
+        FilePath::fromString("docker").searchInPath(additionalPaths).toUserOutput());
     dockerBinaryPath.setDisplayName(Tr::tr("Docker CLI"));
     dockerBinaryPath.setHistoryCompleter("Docker.Command.History");
     dockerBinaryPath.setLabelText(Tr::tr("Command:"));
     dockerBinaryPath.setSettingsKey("cli");
 
-    readSettings(Core::ICore::settings());
+    readSettings();
 }
 
-// DockerSettingsPage
-
-DockerSettingsPage::DockerSettingsPage(DockerSettings *settings)
+class DockerSettingsPage final : public Core::IOptionsPage
 {
-    setId(Docker::Constants::DOCKER_SETTINGS_ID);
-    setDisplayName(Tr::tr("Docker"));
-    setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
-    setSettings(settings);
+public:
+    DockerSettingsPage()
+    {
+        setId(Docker::Constants::DOCKER_SETTINGS_ID);
+        setDisplayName(Tr::tr("Docker"));
+        setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
+        setSettingsProvider([] { return &settings(); });
+    }
+};
 
-    setLayouter([settings](QWidget *widget) {
-        DockerSettings &s = *settings;
-        using namespace Layouting;
-
-        // clang-format off
-        Column {
-            Group {
-                title(Tr::tr("Configuration")),
-                Row { s.dockerBinaryPath }
-            },
-            st
-        }.attachTo(widget);
-        // clang-format on
-    });
-}
+const DockerSettingsPage settingsPage;
 
 } // Docker::Internal

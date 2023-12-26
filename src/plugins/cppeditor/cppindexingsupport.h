@@ -11,7 +11,7 @@
 
 #include <QFuture>
 
-namespace Core { class SearchResultItem; }
+namespace Utils { class SearchResultItem; }
 
 namespace CppEditor {
 
@@ -38,26 +38,25 @@ public:
     struct Parameters
     {
         QString text;
-        Core::FindFlags flags;
+        Utils::FindFlags flags;
         SymbolTypes types;
         SearchScope scope;
     };
 
-    SymbolSearcher(const SymbolSearcher::Parameters &parameters, const QSet<QString> &fileNames);
-    void runSearch(QPromise<Core::SearchResultItem> &promise);
+    SymbolSearcher(const SymbolSearcher::Parameters &parameters,
+                   const QSet<Utils::FilePath> &filePaths);
+
+    void runSearch(QPromise<Utils::SearchResultItem> &promise);
 
 private:
     const CPlusPlus::Snapshot m_snapshot;
     const Parameters m_parameters;
-    const QSet<QString> m_fileNames;
+    const QSet<Utils::FilePath> m_filePaths;
 };
 
 class CPPEDITOR_EXPORT CppIndexingSupport
 {
 public:
-    CppIndexingSupport();
-    ~CppIndexingSupport();
-
     static bool isFindErrorsIndexingActive();
 
     QFuture<void> refreshSourceFiles(const QSet<QString> &sourceFiles,

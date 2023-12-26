@@ -5,11 +5,13 @@
 
 #include "texteditor_global.h"
 
+#include <utils/filepath.h>
+#include <utils/qtcsettings.h>
+#include <utils/store.h>
+
 #include <QTextBlock>
 
-QT_BEGIN_NAMESPACE
-class QSettings;
-QT_END_NAMESPACE
+#include <functional>
 
 namespace TextEditor {
 
@@ -36,11 +38,8 @@ public:
     TabSettings(TabPolicy tabPolicy, int tabSize,
                 int indentSize, ContinuationAlignBehavior continuationAlignBehavior);
 
-    void toSettings(const QString &category, QSettings *s) const;
-    void fromSettings(const QString &category, QSettings *s);
-
-    QVariantMap toMap() const;
-    void fromMap(const QVariantMap &map);
+    Utils::Store toMap() const;
+    void fromMap(const Utils::Store &map);
 
     int lineIndentPosition(const QString &text) const;
     int columnAt(const QString &text, int position) const;
@@ -75,6 +74,10 @@ public:
     ContinuationAlignBehavior m_continuationAlignBehavior = ContinuationAlignWithSpaces;
 
     bool equals(const TabSettings &ts) const;
+
+    using Retriever = std::function<TabSettings(const Utils::FilePath &)>;
+    static void setRetriever(const Retriever &retriever);
+    static TabSettings settingsForFile(const Utils::FilePath &filePath);
 };
 
 } // namespace TextEditor

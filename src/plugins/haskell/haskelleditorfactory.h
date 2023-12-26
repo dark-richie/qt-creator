@@ -3,16 +3,8 @@
 
 #pragma once
 
-#include <texteditor/texteditor.h>
+namespace Haskell::Internal {
 
-namespace Haskell {
-namespace Internal {
+void setupHaskellEditor();
 
-class HaskellEditorFactory : public TextEditor::TextEditorFactory
-{
-public:
-    HaskellEditorFactory();
-};
-
-} // Internal
-} // Haskell
+} // Haskell::Internal

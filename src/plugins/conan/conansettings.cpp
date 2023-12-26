@@ -9,16 +9,22 @@ using namespace Utils;
 
 namespace Conan::Internal {
 
+ConanSettings &settings()
+{
+    static ConanSettings theSettings;
+    return theSettings;
+}
+
 ConanSettings::ConanSettings()
 {
     setSettingsGroup("ConanSettings");
     setAutoApply(false);
 
-    registerAspect(&conanFilePath);
     conanFilePath.setSettingsKey("ConanFilePath");
-    conanFilePath.setDisplayStyle(StringAspect::PathChooserDisplay);
     conanFilePath.setExpectedKind(PathChooser::ExistingCommand);
     conanFilePath.setDefaultValue(HostOsInfo::withExecutableSuffix("conan"));
+
+    readSettings();
 }
 
 } // Conan::Internal

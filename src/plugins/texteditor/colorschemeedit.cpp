@@ -121,7 +121,6 @@ ColorSchemeEdit::ColorSchemeEdit(QWidget *parent) :
     m_formatsModel(new FormatsModel(this))
 {
     setContentsMargins(0, layoutSpacing, 0, 0);
-    resize(513, 416);
 
     auto colorButton = [] () {
         auto tb = new Utils::QtColorButton;
@@ -202,13 +201,14 @@ ColorSchemeEdit::ColorSchemeEdit(QWidget *parent) :
     auto bottomSpacer = new QWidget;
     bottomSpacer->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     Row {
         m_itemList,
         m_builtinSchemeLabel,
         m_fontProperties,
-    }.attachTo(this, WithoutMargins);
+        noMargin
+    }.attachTo(this);
 
     Grid {
         m_foregroundLabel, m_foregroundToolButton, m_eraseForegroundToolButton, br,

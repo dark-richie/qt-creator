@@ -6,10 +6,7 @@
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtversionfactory.h>
 
-#include <QCoreApplication>
-
-namespace Android {
-namespace Internal {
+namespace Android::Internal {
 
 class AndroidQtVersion : public QtSupport::QtVersion
 {
@@ -32,28 +29,26 @@ public:
     const QStringList &androidAbis() const;
     int minimumNDK() const;
 
+    static QString androidDeploymentSettingsFileName(const ProjectExplorer::Target *target);
     static Utils::FilePath androidDeploymentSettings(const ProjectExplorer::Target *target);
 
     struct BuiltWith {
         int apiVersion = -1;
         QVersionNumber ndkVersion;
+        QString androidAbi;
     };
     static BuiltWith parseBuiltWith(const QByteArray &modulesCoreJsonData, bool *ok = nullptr);
     BuiltWith builtWith(bool *ok = nullptr) const;
 
 protected:
     void parseMkSpec(ProFileEvaluator *) const override;
+
 private:
     std::unique_ptr<QObject> m_guard;
     mutable QStringList m_androidAbis;
     mutable int m_minNdk = -1;
 };
 
-class AndroidQtVersionFactory : public QtSupport::QtVersionFactory
-{
-public:
-    AndroidQtVersionFactory();
-};
+void setupAndroidQtVersion();
 
-} // namespace Internal
-} // namespace Android
+} // Android::Internal

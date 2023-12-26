@@ -6,17 +6,17 @@
 #include "core_global.h"
 #include "icontext.h"
 
+#include <utils/appmainwindow.h>
 #include <utils/filepath.h>
 #include <utils/qtcsettings.h>
 
 #include <QList>
-#include <QObject>
 #include <QRect>
-#include <QSettings>
 
 #include <functional>
 
 QT_BEGIN_NAMESPACE
+class QColor;
 class QMainWindow;
 class QPrinter;
 class QStatusBar;
@@ -26,25 +26,20 @@ QT_END_NAMESPACE
 namespace Utils { class InfoBar; }
 
 namespace Core {
+
 class Context;
+class IDocument;
 class IWizardFactory;
-class SettingsDatabase;
-
-namespace Internal { class MainWindow; }
-
 class NewDialog;
 
 class CORE_EXPORT ICore : public QObject
 {
     Q_OBJECT
 
-    friend class Internal::MainWindow;
-    friend class IWizardFactory;
-
-    explicit ICore(Internal::MainWindow *mw);
+public:
+    ICore();
     ~ICore() override;
 
-public:
     enum class ContextPriority {
         High,
         Low
@@ -68,8 +63,8 @@ public:
                                        Utils::Id settingsId = {},
                                        QWidget *parent = nullptr);
 
+    static bool isQtDesignStudio();
     static Utils::QtcSettings *settings(QSettings::Scope scope = QSettings::UserScope);
-    static SettingsDatabase *settingsDatabase();
     static QPrinter *printer();
     static QString userInterfaceLanguage();
 
@@ -80,8 +75,6 @@ public:
     static Utils::FilePath libexecPath(const QString &rel = {});
     static Utils::FilePath crashReportsPath();
 
-    static QString ideDisplayName();
-
     static QString versionString();
 
     static QMainWindow *mainWindow();
@@ -89,6 +82,7 @@ public:
     static Utils::InfoBar *infoBar();
 
     static void raiseWindow(QWidget *widget);
+    static void raiseMainWindow();
 
     static IContext *currentContextObject();
     static QWidget *currentContextWidget();
@@ -112,18 +106,20 @@ public:
         StopOnLoadFail = 4,
         SwitchSplitIfAlreadyVisible = 8
     };
-    static void openFiles(const Utils::FilePaths &filePaths, OpenFilesFlags flags = None);
 
     static void addPreCloseListener(const std::function<bool()> &listener);
 
     static void restart();
 
     enum SaveSettingsReason {
-        InitializationDone,
         SettingsDialogDone,
         ModeChanged,
         MainWindowClosing,
     };
+
+public slots:
+    static void openFileWith();
+    static void exit();
 
 signals:
     void coreAboutToOpen();
@@ -138,7 +134,10 @@ signals:
 public:
     /* internal use */
     static QStringList additionalAboutInformation();
+    static void clearAboutInformation();
     static void appendAboutInformation(const QString &line);
+    static QString aboutInformationCompact();
+    static QString aboutInformationHtml();
     static QString systemInformation();
     static void setupScreenShooter(const QString &name, QWidget *w, const QRect &rc = QRect());
     static QString pluginPath();
@@ -149,14 +148,23 @@ public:
     static Utils::FilePath clazyStandaloneExecutable(const Utils::FilePath &clangBinDirectory);
     static Utils::FilePath clangIncludeDirectory(const QString &clangVersion,
                                                  const Utils::FilePath &clangFallbackIncludeDir);
-    static QString buildCompatibilityString();
+    static Utils::FilePath lldbExecutable(const Utils::FilePath &lldbBinDirectory);
     static QStatusBar *statusBar();
 
     static void saveSettings(SaveSettingsReason reason);
     static void setNewDialogFactory(const std::function<NewDialog *(QWidget *)> &newFactory);
-
-private:
     static void updateNewItemDialogState();
+
+    static void setOverrideColor(const QColor &color);
+
+    static void init();
+    static void extensionsInitialized();
+    static void aboutToShutdown();
+    static void saveSettings();
+
+    static IDocument *openFiles(const Utils::FilePaths &filePaths,
+                                OpenFilesFlags flags = None,
+                                const Utils::FilePath &workingDirectory = {});
 };
 
 } // namespace Core

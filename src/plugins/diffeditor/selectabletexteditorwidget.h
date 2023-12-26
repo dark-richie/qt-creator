@@ -7,8 +7,7 @@
 
 namespace TextEditor { class DisplaySettings; }
 
-namespace DiffEditor {
-namespace Internal {
+namespace DiffEditor::Internal {
 
 class DiffSelection
 {
@@ -40,11 +39,10 @@ private:
     void paintBlock(QPainter *painter,
                     const QTextBlock &block,
                     const QPointF &offset,
-                    const QVector<QTextLayout::FormatRange> &selections,
+                    const QList<QTextLayout::FormatRange> &selections,
                     const QRect &clipRect) const override;
 
     DiffSelections m_diffSelections;
 };
 
-} // namespace Internal
-} // namespace DiffEditor
+} // namespace DiffEditor::Internal

@@ -4,7 +4,7 @@ QtcPlugin {
     name: "CppEditor"
 
     Depends { name: "Qt.widgets" }
-    Depends { condition: project.withAutotests; name: "Qt.testlib" }
+    Depends { condition: project.withPluginTests; name: "Qt.testlib" }
 
     Depends { name: "CPlusPlus" }
     Depends { name: "Utils" }
@@ -12,8 +12,6 @@ QtcPlugin {
     Depends { name: "Core" }
     Depends { name: "TextEditor" }
     Depends { name: "ProjectExplorer" }
-
-    Depends { name: "app_version_header" }
 
     pluginTestDepends: [
         "QmakeProjectManager",
@@ -82,8 +80,6 @@ QtcPlugin {
         "cppcompletionassistprocessor.h",
         "cppcompletionassistprovider.cpp",
         "cppcompletionassistprovider.h",
-        "cppcurrentdocumentfilter.cpp",
-        "cppcurrentdocumentfilter.h",
         "cppcursorinfo.h",
         "cppdoxygen.cpp",
         "cppdoxygen.h",
@@ -91,7 +87,8 @@ QtcPlugin {
         "cppeditorwidget.cpp",
         "cppeditorwidget.h",
         "cppeditor.qrc",
-        "cppeditor_global.h", "cppeditortr.h",
+        "cppeditor_global.h",
+        "cppeditortr.h",
         "cppeditorconstants.h",
         "cppeditordocument.cpp",
         "cppeditordocument.h",
@@ -111,6 +108,8 @@ QtcPlugin {
         "cppfollowsymbolundercursor.h",
         "cppfunctiondecldeflink.cpp",
         "cppfunctiondecldeflink.h",
+        "cppfunctionparamrenaminghandler.cpp",
+        "cppfunctionparamrenaminghandler.h",
         "cpphighlighter.cpp",
         "cpphighlighter.h",
         "cppincludehierarchy.cpp",
@@ -153,7 +152,6 @@ QtcPlugin {
         "cppprojectinfogenerator.h",
         "cppprojectupdater.cpp",
         "cppprojectupdater.h",
-        "cppprojectupdaterinterface.h",
         "cppquickfix.cpp",
         "cppquickfix.h",
         "cppquickfixassistant.cpp",
@@ -224,21 +222,19 @@ QtcPlugin {
         "searchsymbols.h",
         "semantichighlighter.cpp",
         "semantichighlighter.h",
-        "senddocumenttracker.cpp",
-        "senddocumenttracker.h",
         "symbolfinder.cpp",
         "symbolfinder.h",
         "symbolsfindfilter.cpp",
         "symbolsfindfilter.h",
         "typehierarchybuilder.cpp",
         "typehierarchybuilder.h",
-        "wrappablelineedit.cpp", // FIXME: Is this used?
+        "wrappablelineedit.cpp",
         "wrappablelineedit.h",
     ]
 
     Group {
         name: "TestCase"
-        condition: qtc.testsEnabled || project.withAutotests
+        condition: qtc.withPluginTests || qtc.withAutotests
         files: [
             "cpptoolstestcase.cpp",
             "cpptoolstestcase.h",
@@ -270,6 +266,8 @@ QtcPlugin {
             "cpppointerdeclarationformatter_test.h",
             "cppquickfix_test.cpp",
             "cppquickfix_test.h",
+            "cpprenaming_test.cpp",
+            "cpprenaming_test.h",
             "cppsourceprocessor_test.cpp",
             "cppsourceprocessor_test.h",
             "cppsourceprocessertesthelper.cpp",

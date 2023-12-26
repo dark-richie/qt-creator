@@ -5,7 +5,8 @@
 #include "designerconstants.h"
 #include "resourcehandler.h"
 
-#include <utils/fileutils.h>
+#include <utils/filepath.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 
 #include <QApplication>
@@ -27,7 +28,7 @@ namespace Internal {
 FormWindowFile::FormWindowFile(QDesignerFormWindowInterface *form, QObject *parent)
   : m_formWindow(form)
 {
-    setMimeType(Designer::Constants::FORM_MIMETYPE);
+    setMimeType(Utils::Constants::FORM_MIMETYPE);
     setParent(parent);
     setId(Utils::Id(Designer::Constants::K_DESIGNER_XML_EDITOR_ID));
     // Designer needs UTF-8 regardless of settings.
@@ -82,22 +83,17 @@ Core::IDocument::OpenResult FormWindowFile::open(QString *errorString,
     return OpenResult::Success;
 }
 
-bool FormWindowFile::save(QString *errorString, const FilePath &filePath, bool autoSave)
+bool FormWindowFile::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
 {
-    const FilePath &actualName = filePath.isEmpty() ? this->filePath() : filePath;
-
-    if (Designer::Constants::Internal::debug)
-        qDebug() << Q_FUNC_INFO << filePath << "->" << actualName;
-
     QTC_ASSERT(m_formWindow, return false);
 
-    if (actualName.isEmpty())
+    if (filePath.isEmpty())
         return false;
 
     const QString oldFormName = m_formWindow->fileName();
     if (!autoSave)
-        m_formWindow->setFileName(actualName.toString());
-    const bool writeOK = writeFile(actualName, errorString);
+        m_formWindow->setFileName(filePath.toString());
+    const bool writeOK = writeFile(filePath, errorString);
     m_shouldAutoSave = false;
     if (autoSave)
         return writeOK;
@@ -108,7 +104,7 @@ bool FormWindowFile::save(QString *errorString, const FilePath &filePath, bool a
     }
 
     m_formWindow->setDirty(false);
-    setFilePath(actualName);
+    setFilePath(filePath);
     updateIsModified();
 
     return true;

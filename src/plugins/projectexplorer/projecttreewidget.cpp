@@ -24,6 +24,7 @@
 #include <utils/navigationtreeview.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
+#include <utils/stylehelper.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
 
@@ -32,7 +33,6 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPainter>
-#include <QSettings>
 #include <QStyledItemDelegate>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -72,8 +72,18 @@ public:
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        QStyledItemDelegate::paint(painter, option, index);
+        const bool useUnavailableMarker = index.data(Project::UseUnavailableMarkerRole).toBool();
+        if (useUnavailableMarker) {
+            QStyleOptionViewItem opt = option;
+            opt.palette.setColor(QPalette::Text, creatorTheme()->color(Theme::TextColorDisabled));
+            QStyledItemDelegate::paint(painter, opt, index);
+            static const QPixmap pixmap
+                = QApplication::style()->standardIcon(QStyle::SP_BrowserStop).pixmap(10);
+            painter->drawPixmap(option.rect.topLeft(), pixmap);
+            return;
+        }
 
+        QStyledItemDelegate::paint(painter, option, index);
         if (index.data(Project::isParsingRole).toBool()) {
             QStyleOptionViewItem opt = option;
             initStyleOption(&opt, index);
@@ -125,6 +135,7 @@ class ProjectTreeView : public NavigationTreeView
 public:
     ProjectTreeView()
     {
+        setObjectName("projectTreeView"); // used by Squish
         setEditTriggers(QAbstractItemView::EditKeyPressed);
         setContextMenuPolicy(Qt::CustomContextMenu);
         setDragEnabled(true);
@@ -209,7 +220,6 @@ ProjectTreeWidget::ProjectTreeWidget(QWidget *parent) : QWidget(parent)
     m_view->setModel(m_model);
     m_view->setItemDelegate(new ProjectTreeItemDelegate(m_view));
     setFocusProxy(m_view);
-    m_view->installEventFilter(this);
 
     auto layout = new QVBoxLayout();
     layout->addWidget(ItemViewFind::createSearchableWrapper(
@@ -420,7 +430,7 @@ QList<QToolButton *> ProjectTreeWidget::createToolButtons()
     filter->setIcon(Icons::FILTER.icon());
     filter->setToolTip(Tr::tr("Filter Tree"));
     filter->setPopupMode(QToolButton::InstantPopup);
-    filter->setProperty("noArrow", true);
+    filter->setProperty(StyleHelper::C_NO_ARROW, true);
 
     auto filterMenu = new QMenu(filter);
     filterMenu->addAction(m_filterProjectsAction);
@@ -637,7 +647,7 @@ void ProjectTreeWidgetFactory::saveSettings(QtcSettings *settings, int position,
 {
     auto ptw = qobject_cast<ProjectTreeWidget *>(widget);
     Q_ASSERT(ptw);
-    const QString baseKey = kBaseKey + QString::number(position);
+    const Key baseKey = numberedKey(kBaseKey, position);
     settings->setValueWithDefault(baseKey + kProjectFilterKey,
                                   ptw->projectFilter(),
                                   kProjectFilterDefault);
@@ -656,11 +666,11 @@ void ProjectTreeWidgetFactory::saveSettings(QtcSettings *settings, int position,
     settings->setValueWithDefault(baseKey + kSyncKey, ptw->autoSynchronization(), kSyncDefault);
 }
 
-void ProjectTreeWidgetFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
+void ProjectTreeWidgetFactory::restoreSettings(QtcSettings *settings, int position, QWidget *widget)
 {
     auto ptw = qobject_cast<ProjectTreeWidget *>(widget);
     Q_ASSERT(ptw);
-    const QString baseKey = kBaseKey + QString::number(position);
+    const Key baseKey = numberedKey(kBaseKey, position);
     ptw->setProjectFilter(
         settings->value(baseKey + kProjectFilterKey, kProjectFilterDefault).toBool());
     ptw->setGeneratedFilesFilter(

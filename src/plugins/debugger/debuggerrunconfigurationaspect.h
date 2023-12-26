@@ -10,8 +10,6 @@
 
 namespace Debugger {
 
-namespace Internal { class DebuggerLanguageAspect; }
-
 class DEBUGGER_EXPORT DebuggerRunConfigurationAspect
     : public ProjectExplorer::GlobalOrProjectAspect
 {
@@ -19,11 +17,12 @@ public:
     DebuggerRunConfigurationAspect(ProjectExplorer::Target *target);
     ~DebuggerRunConfigurationAspect();
 
-    void fromMap(const QVariantMap &map) override;
-    void toMap(QVariantMap &map) const override;
+    void fromMap(const Utils::Store &map) override;
+    void toMap(Utils::Store &map) const override;
 
     bool useCppDebugger() const;
     bool useQmlDebugger() const;
+    bool usePythonDebugger() const;
     void setUseQmlDebugger(bool value);
     bool useMultiProcess() const;
     void setUseMultiProcess(bool on);
@@ -35,13 +34,15 @@ public:
     {
         bool useCppDebugger;
         bool useQmlDebugger;
+        bool usePythonDebugger;
         bool useMultiProcess;
         QString overrideStartup;
     };
 
 private:
-    Internal::DebuggerLanguageAspect *m_cppAspect;
-    Internal::DebuggerLanguageAspect *m_qmlAspect;
+    Utils::TriStateAspect *m_cppAspect;
+    Utils::TriStateAspect *m_qmlAspect;
+    Utils::TriStateAspect *m_pythonAspect;
     Utils::BoolAspect *m_multiProcessAspect;
     Utils::StringAspect *m_overrideStartupAspect;
     ProjectExplorer::Target *m_target;

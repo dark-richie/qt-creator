@@ -314,7 +314,7 @@ struct BaseClass
 struct DerivedClass : BaseClass
 {
     DerivedClass() : b(2) {}
-    int foo() { return b; }
+    int foo() override { return b; }
     int b;
 };
 
@@ -3984,7 +3984,7 @@ namespace qstring  {
         // Check string "HiDu" QString.
         // Continue.
         delete pstring;
-        dummyStatement(&str, &string, pstring);
+        dummyStatement(&str, &string, &pstring);
     }
 
     void testQString4()
@@ -4204,7 +4204,7 @@ namespace qthread {
 
         void setId(int id) { m_id = id; }
 
-        void run()
+        void run() override
         {
             int j = 2;
             ++j;
@@ -4787,7 +4787,7 @@ namespace namespc {
         {
         public:
             MyFoo() {}
-            virtual void doit(int i)
+            void doit(int i) override
             {
                 // Note there's a local 'n' and one in the base class.
                 n = i;
@@ -4799,7 +4799,7 @@ namespace namespc {
         class MyBar : public MyFoo
         {
         public:
-            virtual void doit(int i)
+            void doit(int i) override
             {
                n = i + 1;
             }
@@ -4810,7 +4810,7 @@ namespace namespc {
             class MyAnon : public MyBar
             {
             public:
-                virtual void doit(int i)
+                void doit(int i) override
                 {
                    n = i + 3;
                 }
@@ -4821,7 +4821,7 @@ namespace namespc {
                 class MyBaz : public MyAnon
                 {
                 public:
-                    virtual void doit(int i)
+                    void doit(int i) override
                     {
                        n = i + 5;
                     }
@@ -5657,8 +5657,8 @@ namespace basic {
         quint64 c = std::numeric_limits<quint64>::max() - quint64(1);
         BREAK_HERE;
         // Check a -1143861252567568256 qint64.
-        // Check b -1143861252567568256 quint64.
-        // Check c -2 quint64.
+        // Check b 17302882821141983360 quint64.
+        // Check c 18446744073709551614 quint64.
         // Continue.
         dummyStatement(&a, &b, &c);
     }
@@ -6549,7 +6549,7 @@ namespace bug5106 {
     {
     public:
             B5106(int c, int a, int b) : A5106(a, b), m_c(c) {Q_UNUSED(m_c)}
-            virtual int test() { return 4; BREAK_HERE; }
+            int test() override { return 4; BREAK_HERE; }
     private:
             int m_c;
     };

@@ -13,6 +13,8 @@ T.TextField {
 
     signal searchChanged(string searchText)
 
+    property bool empty: control.text === ""
+
     function isEmpty() {
         return control.text === ""
     }
@@ -39,6 +41,13 @@ T.TextField {
     readOnly: false
     hoverEnabled: true
     clip: true
+
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Escape && event.modifiers === Qt.NoModifier) {
+            control.clear()
+            event.accepted = true
+        }
+    }
 
     Text {
         id: placeholder
@@ -74,7 +83,7 @@ T.TextField {
         */
     }
 
-    onTextChanged: control.searchChanged(text)
+    onTextChanged: control.searchChanged(control.text)
 
     T.Label {
         id: searchIcon

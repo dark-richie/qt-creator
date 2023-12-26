@@ -14,19 +14,17 @@
 #include <cppeditor/cpptoolsreuse.h>
 #include <cppeditor/cpptoolstestcase.h>
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/toolchain.h>
 
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/environment.h>
-#include <utils/executeondestruction.h>
 #include <utils/fileutils.h>
 
-#include <QEventLoop>
 #include <QSignalSpy>
 #include <QTimer>
 #include <QtTest>
@@ -52,7 +50,7 @@ void ClangToolsUnitTests::initTestCase()
     if (!m_kit)
         QSKIP("This test requires at least one valid kit with a valid Qt");
 
-    const ToolChain *const toolchain = ToolChainKitAspect::cxxToolChain(m_kit);
+    const Toolchain * const toolchain = ToolchainKitAspect::cxxToolchain(m_kit);
     if (!toolchain)
         QSKIP("This test requires that there is a kit with a toolchain.");
 
@@ -89,7 +87,7 @@ void ClangToolsUnitTests::testProject()
     QFETCH(int, expectedDiagCountClazy);
     QFETCH(ClangDiagnosticConfig, diagnosticConfig);
     if (projectFilePath.contains("mingw")) {
-        const auto toolchain = ToolChainKitAspect::cxxToolChain(m_kit);
+        const auto toolchain = ToolchainKitAspect::cxxToolchain(m_kit);
         if (toolchain->typeId() != ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID)
             QSKIP("This test is mingw specific, does not run for other toolchains");
     }

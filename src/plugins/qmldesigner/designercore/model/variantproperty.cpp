@@ -14,7 +14,7 @@ namespace QmlDesigner {
 VariantProperty::VariantProperty() = default;
 
 VariantProperty::VariantProperty(const VariantProperty &property, AbstractView *view)
-    : AbstractProperty(property.name(), property.internalNode(), property.model(), view)
+    : AbstractProperty(property.name(), property.internalNodeSharedPointer(), property.model(), view)
 {
 
 }
@@ -36,27 +36,29 @@ void VariantProperty::setValue(const QVariant &value)
     if (isDynamic())
         qWarning() << "Calling VariantProperty::setValue on dynamic property.";
 
+    if (auto internalProperty = internalNode()->property(name())) {
+        auto variantProperty = internalProperty->to<PropertyType::Variant>();
 
-    if (internalNode()->hasProperty(name())) { //check if oldValue != value
-        Internal::InternalProperty::Pointer internalProperty = internalNode()->property(name());
-        if (internalProperty->isVariantProperty()
-            && internalProperty->toVariantProperty()->value() == value
-            && dynamicTypeName().isEmpty())
-
+        //check if oldValue != value
+        if (variantProperty && variantProperty->value() == value
+            && variantProperty->dynamicTypeName().isEmpty()) {
             return;
+        }
+
+        if (!variantProperty)
+            privateModel()->removePropertyAndRelatedResources(internalProperty);
     }
 
-    if (internalNode()->hasProperty(name()) && !internalNode()->property(name())->isVariantProperty())
-        privateModel()->removeProperty(internalNode()->property(name()));
-
-    privateModel()->setVariantProperty(internalNode(), name(), value);
+    privateModel()->setVariantProperty(internalNodeSharedPointer(), name(), value);
 }
 
 QVariant VariantProperty::value() const
 {
-    if (isValid() && internalNode()->hasProperty(name())
-        && internalNode()->property(name())->isVariantProperty())
-        return internalNode()->variantProperty(name())->value();
+    if (isValid()) {
+        auto property = internalNode()->variantProperty(name());
+        if (property)
+            return property->value();
+    }
 
     return QVariant();
 }
@@ -86,19 +88,18 @@ void VariantProperty::setDynamicTypeNameAndValue(const TypeName &type, const QVa
 
     Internal::WriteLocker locker(model());
 
-    if (internalNode()->hasProperty(name())) { //check if oldValue != value
-        Internal::InternalProperty::Pointer internalProperty = internalNode()->property(name());
-        if (internalProperty->isVariantProperty()
-            && internalProperty->toVariantProperty()->value() == value
-            && internalProperty->toVariantProperty()->dynamicTypeName() == type)
-
+    //check if oldValue != value
+    if (auto internalProperty = internalNode()->property(name())) {
+        auto variantProperty = internalProperty->to<PropertyType::Variant>();
+        if (variantProperty && variantProperty->value() == value
+            && internalProperty->dynamicTypeName() == type)
             return;
+
+        if (!variantProperty)
+            privateModel()->removePropertyAndRelatedResources(internalProperty);
     }
 
-    if (internalNode()->hasProperty(name()) && !internalNode()->property(name())->isVariantProperty())
-        privateModel()->removeProperty(internalNode()->property(name()));
-
-   privateModel()->setDynamicVariantProperty(internalNode(), name(), type, value);
+    privateModel()->setDynamicVariantProperty(internalNodeSharedPointer(), name(), type, value);
 }
 
 void VariantProperty::setDynamicTypeNameAndEnumeration(const TypeName &type, const EnumerationName &enumerationName)

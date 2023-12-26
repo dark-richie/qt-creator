@@ -3,14 +3,14 @@
 
 #include "colorpalettebackend.h"
 
-#include <QDebug>
-#include <QSettings>
-#include <QColorDialog>
-#include <QTimer>
+#include <coreplugin/icore.h>
 
 #include <QApplication>
-#include <QScreen>
+#include <QColorDialog>
+#include <QDebug>
 #include <QPainter>
+#include <QScreen>
+#include <QTimer>
 
 namespace QmlDesigner {
 
@@ -206,19 +206,21 @@ void ColorPaletteBackend::showDialog(QColor color)
 
 void ColorPaletteBackend::eyeDropper()
 {
-    QWidget *widget = QApplication::activeWindow();
+    QWidget *widget = Core::ICore::mainWindow();
     if (!widget)
         return;
+
+    m_eyeDropperActive = true;
+    emit eyeDropperActiveChanged();
 
     if (!m_colorPickingEventFilter)
         m_colorPickingEventFilter = new QColorPickingEventFilter(this);
 
     widget->installEventFilter(m_colorPickingEventFilter);
-
 #ifndef QT_NO_CURSOR
     widget->grabMouse(/*Qt::CrossCursor*/);
 #else
-    w->grabMouse();
+    widget->grabMouse();
 #endif
 #ifdef Q_OS_WIN32 // excludes WinRT
     // On Windows mouse tracking doesn't work over other processes's windows
@@ -233,6 +235,9 @@ void ColorPaletteBackend::eyeDropper()
      * and continuously pushing the mouse button is not necessary.
      */
     widget->setMouseTracking(true);
+
+    QGuiApplication::setOverrideCursor(QCursor());
+
     updateEyeDropperPosition(QCursor::pos());
 }
 
@@ -254,7 +259,12 @@ QImage ColorPaletteBackend::grabScreenRect(const QPoint &p)
     if (!screen)
         screen = QGuiApplication::primaryScreen();
 
-    const QPixmap pixmap = screen->grabWindow(0, p.x(), p.y(), g_screenGrabWidth, g_screenGrabHeight);
+    const QRect screenRect = screen->geometry();
+    const QPixmap pixmap = screen->grabWindow(0,
+                                              p.x() - screenRect.x(),
+                                              p.y() - screenRect.y(),
+                                              g_screenGrabWidth,
+                                              g_screenGrabHeight);
     return pixmap.toImage();
 }
 
@@ -282,7 +292,7 @@ void ColorPaletteBackend::updateEyeDropperPosition(const QPoint &globalPos)
 
 void ColorPaletteBackend::updateCursor(const QImage &image)
 {
-    QWidget *widget = QApplication::activeWindow();
+    QWidget *widget = Core::ICore::mainWindow();
     if (!widget)
         return;
 
@@ -316,15 +326,17 @@ void ColorPaletteBackend::updateCursor(const QImage &image)
     painter.drawRect(centerRect);
 
     painter.end();
-    QCursor cursor(pixmap);
-    widget->setCursor(cursor);
+    QGuiApplication::changeOverrideCursor(QCursor(pixmap));
 }
 
 void ColorPaletteBackend::releaseEyeDropper()
 {
-    QWidget *widget = QApplication::activeWindow();
+    QWidget *widget = Core::ICore::mainWindow();
     if (!widget)
         return;
+
+    m_eyeDropperActive = false;
+    emit eyeDropperActiveChanged();
 
     widget->removeEventFilter(m_colorPickingEventFilter);
     widget->releaseMouse();
@@ -335,19 +347,19 @@ void ColorPaletteBackend::releaseEyeDropper()
     widget->releaseKeyboard();
     widget->setMouseTracking(false);
 
-    widget->unsetCursor();
+    QGuiApplication::restoreOverrideCursor();
 }
 
 bool ColorPaletteBackend::handleEyeDropperMouseMove(QMouseEvent *e)
 {
-    updateEyeDropperPosition(e->globalPos());
+    updateEyeDropperPosition(e->globalPosition().toPoint());
     return true;
 }
 
 bool ColorPaletteBackend::handleEyeDropperMouseButtonRelease(QMouseEvent *e)
 {
     if (e->button() == Qt::LeftButton)
-        emit currentColorChanged(grabScreenColor(e->globalPos()));
+        emit currentColorChanged(grabScreenColor(e->globalPosition().toPoint()));
     else
         emit eyeDropperRejected();
 
@@ -364,14 +376,16 @@ bool ColorPaletteBackend::handleEyeDropperKeyPress(QKeyEvent *e)
     } //else
 #endif
     //if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
-    //    emit currentColorChanged(grabScreenColor(e->globalPos()));
+    //    emit currentColorChanged(grabScreenColor(e->globalPosition().toPoint()));
     //    releaseEyeDropper();
     //}
     e->accept();
     return true;
 }
 
-/// EYE DROPPER
-
+bool ColorPaletteBackend::eyeDropperActive() const
+{
+    return m_eyeDropperActive;
+}
 
 } // namespace QmlDesigner

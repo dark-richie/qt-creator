@@ -326,10 +326,14 @@ void doSemanticHighlighting(
             styles.mainStyle = C_PARAMETER;
         } else if (token.type == "macro") {
             styles.mainStyle = C_MACRO;
-        } else if (token.type == "type" || token.type == "concept") {
+        } else if (token.type == "type") {
             styles.mainStyle = C_TYPE;
+        } else if (token.type == "concept") {
+            styles.mainStyle = C_CONCEPT;
         } else if (token.type == "modifier") {
             styles.mainStyle = C_KEYWORD;
+        } else if (token.type == "label") {
+            styles.mainStyle = C_LABEL;
         } else if (token.type == "typeParameter") {
             // clangd reports both type and non-type template parameters as type parameters,
             // but the latter can be distinguished by the readonly modifier.
@@ -396,7 +400,10 @@ void doSemanticHighlighting(
         }
     };
     auto results = QtConcurrent::blockingMapped<HighlightingResults>(tokens, safeToResult);
-    const QList<BlockRange> ifdefedOutBlocks = cleanupDisabledCode(results, &doc, docContents);
+    const bool handleInactiveCode = clangdMajorVersion < 17;
+    QList<BlockRange> ifdefedOutBlocks;
+    if (handleInactiveCode)
+        ifdefedOutBlocks = cleanupDisabledCode(results, &doc, docContents);
     ExtraHighlightingResultsCollector(promise, results, filePath, ast, &doc, docContents,
                                       clangdVersion).collect();
     Utils::erase(results, [](const HighlightingResult &res) {
@@ -405,10 +412,12 @@ void doSemanticHighlighting(
     });
     if (!promise.isCanceled()) {
         qCInfo(clangdLogHighlight) << "reporting" << results.size() << "highlighting results";
-        QMetaObject::invokeMethod(textDocument, [textDocument, ifdefedOutBlocks, docRevision] {
-            if (textDocument && textDocument->document()->revision() == docRevision)
-                textDocument->setIfdefedOutBlocks(ifdefedOutBlocks);
-        }, Qt::QueuedConnection);
+        if (handleInactiveCode) {
+            QMetaObject::invokeMethod(textDocument, [textDocument, ifdefedOutBlocks, docRevision] {
+                    if (textDocument && textDocument->document()->revision() == docRevision)
+                        textDocument->setIfdefedOutBlocks(ifdefedOutBlocks);
+                }, Qt::QueuedConnection);
+        }
         QList<Range> virtualRanges;
         for (const HighlightingResult &r : results) {
             if (r.textStyles.mainStyle != C_VIRTUAL_METHOD)
@@ -421,8 +430,12 @@ void doSemanticHighlighting(
             if (ClangdClient * const client = ClangModelManagerSupport::clientForFile(filePath))
                 client->setVirtualRanges(filePath, virtualRanges, docRevision);
         }, Qt::QueuedConnection);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+        promise.addResults(results);
+#else
         for (const HighlightingResult &r : results)
             promise.addResult(r);
+#endif
     }
 }
 
@@ -571,10 +584,12 @@ void ExtraHighlightingResultsCollector::insertAngleBracketInfo(int searchStart1,
     result.useTextSyles = true;
     result.textStyles.mainStyle = C_PUNCTUATION;
     Utils::Text::convertPosition(m_doc, absOpeningAngleBracketPos, &result.line, &result.column);
+    ++result.column;
     result.length = 1;
     result.kind = CppEditor::SemanticHighlighter::AngleBracketOpen;
     insertResult(result);
     Utils::Text::convertPosition(m_doc, absClosingAngleBracketPos, &result.line, &result.column);
+    ++result.column;
     result.kind = CppEditor::SemanticHighlighter::AngleBracketClose;
     insertResult(result);
 }
@@ -646,10 +661,12 @@ void ExtraHighlightingResultsCollector::collectFromNode(const ClangdAstNode &nod
         result.textStyles.mainStyle = C_PUNCTUATION;
         result.textStyles.mixinStyles.push_back(C_OPERATOR);
         Utils::Text::convertPosition(m_doc, absQuestionMarkPos, &result.line, &result.column);
+        ++result.column;
         result.length = 1;
         result.kind = CppEditor::SemanticHighlighter::TernaryIf;
         insertResult(result);
         Utils::Text::convertPosition(m_doc, absColonPos, &result.line, &result.column);
+        ++result.column;
         result.kind = CppEditor::SemanticHighlighter::TernaryElse;
         insertResult(result);
         return;
@@ -837,10 +854,12 @@ void ExtraHighlightingResultsCollector::collectFromNode(const ClangdAstNode &nod
             Utils::Text::convertPosition(m_doc,
                                          nodeStartPos + openingBracketOffset,
                                          &result.line, &result.column);
+            ++result.column;
             insertResult(result);
             Utils::Text::convertPosition(m_doc,
                                          nodeStartPos + closingBracketOffset,
                                          &result.line, &result.column);
+            ++result.column;
             insertResult(result);
         }
         return;
@@ -885,6 +904,7 @@ void ExtraHighlightingResultsCollector::collectFromNode(const ClangdAstNode &nod
     const int opStringOffsetInDoc = nodeStartPos + opStringOffset
             + detail.length() - opStringLen;
     Utils::Text::convertPosition(m_doc, opStringOffsetInDoc, &result.line, &result.column);
+    ++result.column;
     result.length = opStringLen;
     if (isArray || isCall)
         result.length = 1;
@@ -906,9 +926,11 @@ void ExtraHighlightingResultsCollector::collectFromNode(const ClangdAstNode &nod
         return;
     Utils::Text::convertPosition(m_doc, nodeStartPos + openingParenOffset,
                                  &result.line, &result.column);
+    ++result.column;
     insertResult(result);
     Utils::Text::convertPosition(m_doc, nodeStartPos + closingParenOffset,
                                  &result.line, &result.column);
+    ++result.column;
     insertResult(result);
 }
 
@@ -938,6 +960,49 @@ void ExtraHighlightingResultsCollector::visitNode(const ClangdAstNode &node)
     }
     }
     m_currentFileStatus = prevFileStatus;
+}
+
+class InactiveRegionsParams : public JsonObject
+{
+public:
+    using JsonObject::JsonObject;
+
+    DocumentUri uri() const { return TextDocumentIdentifier(value("textDocument")).uri(); }
+    QList<Range> inactiveRegions() const {
+        return array<Range>(LanguageServerProtocol::Key{"regions"});
+    }
+};
+
+class InactiveRegionsNotification : public Notification<InactiveRegionsParams>
+{
+public:
+    explicit InactiveRegionsNotification(const InactiveRegionsParams &params)
+        : Notification(inactiveRegionsMethodName(), params) {}
+    using Notification::Notification;
+};
+
+void handleInactiveRegions(LanguageClient::Client *client, const JsonRpcMessage &msg)
+{
+    const auto params = InactiveRegionsNotification(msg.toJsonObject()).params();
+    if (!params)
+        return;
+    TextDocument * const doc = client->documentForFilePath(
+        params->uri().toFilePath(client->hostPathMapper()));
+    if (!doc)
+        return;
+    const QList<Range> inactiveRegions = params->inactiveRegions();
+    QList<BlockRange> ifdefedOutBlocks;
+    for (const Range &r : inactiveRegions) {
+        const int startPos = r.start().toPositionInDocument(doc->document());
+        const int endPos = r.end().toPositionInDocument(doc->document()) + 1;
+        ifdefedOutBlocks.emplaceBack(startPos, endPos);
+    }
+    doc->setIfdefedOutBlocks(ifdefedOutBlocks);
+}
+
+QString inactiveRegionsMethodName()
+{
+    return "textDocument/inactiveRegions";
 }
 
 } // namespace ClangCodeModel::Internal

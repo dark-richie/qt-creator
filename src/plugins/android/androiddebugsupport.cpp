@@ -8,7 +8,7 @@
 #include "androidmanager.h"
 #include "androidqtversion.h"
 
-#include <debugger/debuggerkitinformation.h>
+#include <debugger/debuggerkitaspect.h>
 #include <debugger/debuggerrunconfigurationaspect.h>
 #include <debugger/debuggerruncontrol.h>
 
@@ -17,11 +17,11 @@
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QHostAddress>
 #include <QJsonDocument>
@@ -138,7 +138,7 @@ void AndroidDebugSupport::start()
         FilePath::removeDuplicates(solibSearchPath);
         setSolibSearchPath(solibSearchPath);
         qCDebug(androidDebugSupportLog).noquote() << "SoLibSearchPath: " << solibSearchPath;
-        setSymbolFile(buildDir.pathAppended("app_process"));
+        setSymbolFile(AndroidManager::androidAppProcessDir(target).pathAppended("app_process"));
         setSkipExecutableValidation(true);
         setUseExtendedRemote(true);
         QString devicePreferredAbi = AndroidManager::apkDevicePreferredAbi(target);
@@ -200,11 +200,20 @@ void AndroidDebugSupport::stop()
 
 // AndroidDebugWorkerFactory
 
-AndroidDebugWorkerFactory::AndroidDebugWorkerFactory()
+class AndroidDebugWorkerFactory final : public RunWorkerFactory
 {
-    setProduct<AndroidDebugSupport>();
-    addSupportedRunMode(ProjectExplorer::Constants::DEBUG_RUN_MODE);
-    addSupportedRunConfig(Constants::ANDROID_RUNCONFIG_ID);
+public:
+    AndroidDebugWorkerFactory()
+    {
+        setProduct<AndroidDebugSupport>();
+        addSupportedRunMode(ProjectExplorer::Constants::DEBUG_RUN_MODE);
+        addSupportedRunConfig(Constants::ANDROID_RUNCONFIG_ID);
+    }
+};
+
+void setupAndroidDebugWorker()
+{
+    static AndroidDebugWorkerFactory theAndroidDebugWorkerFactory;
 }
 
 } // Android::Internal

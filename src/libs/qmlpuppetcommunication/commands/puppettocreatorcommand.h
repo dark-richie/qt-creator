@@ -16,10 +16,15 @@ public:
         Edit3DToolState,
         Render3DView,
         ActiveSceneChanged,
+        ActiveSplitChanged,
         RenderModelNodePreviewImage,
         Import3DSupport,
         NodeAtPos,
-        None };
+        BakeLightsProgress,
+        BakeLightsFinished,
+        BakeLightsAborted,
+        None
+    };
 
     PuppetToCreatorCommand(Type type, const QVariant &data);
     PuppetToCreatorCommand() = default;

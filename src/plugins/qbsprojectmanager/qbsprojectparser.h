@@ -30,6 +30,9 @@ public:
     void cancel();
     Utils::Environment environment() const { return m_environment; }
 
+    // FIXME: Why on earth do we not own the FutureInterface?
+    void deleteLaterSafely() { m_fi = nullptr; deleteLater(); }
+
     QbsSession *session() const { return m_session; }
     QJsonObject projectData() const { return m_projectData; }
     ErrorInfo error() const { return m_error; }
@@ -38,6 +41,8 @@ signals:
     void done(bool success);
 
 private:
+    void finish(bool success);
+
     Utils::Environment m_environment;
     const Utils::FilePath m_projectFilePath;
     QbsSession * const m_session;

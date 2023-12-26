@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "gitsettings.h"
 #include "git_global.h"
 
 #include <coreplugin/iversioncontrol.h>
@@ -17,8 +16,6 @@
 namespace VcsBase { class VcsBasePluginState; }
 
 namespace Git::Internal {
-
-class GitClient;
 
 class GITSHARED_EXPORT GitPlugin final : public ExtensionSystem::IPlugin
 {
@@ -34,9 +31,7 @@ public:
     QObject *remoteCommand(const QStringList &options, const QString &workingDirectory,
                            const QStringList &args) final;
 
-    static GitClient *client();
     static Core::IVersionControl *versionControl();
-    static const GitSettings &settings();
     static const VcsBase::VcsBasePluginState &currentState();
 
     static QString msgRepositoryLabel(const Utils::FilePath &repository);
@@ -63,7 +58,6 @@ private slots:
     void testGitRemote_data();
     void testGitRemote();
 #endif
-
 };
 
 } // Git::Internal

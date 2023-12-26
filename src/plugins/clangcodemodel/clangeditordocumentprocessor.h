@@ -19,16 +19,9 @@ public:
 
     void semanticRehighlight() override;
 
-    bool hasProjectPart() const;
-    CppEditor::ProjectPart::ConstPtr projectPart() const;
-    void clearProjectPart();
-
-    ::Utils::Id diagnosticConfigId() const;
-
     void setParserConfig(const CppEditor::BaseEditorDocumentParser::Configuration &config) override;
     CppEditor::BaseEditorDocumentParser::Configuration parserConfig();
 
-public:
     static ClangEditorDocumentProcessor *get(const Utils::FilePath &filePath);
 
 signals:
@@ -36,9 +29,9 @@ signals:
                              const CppEditor::BaseEditorDocumentParser::Configuration &config);
 
 private:
+    void forceUpdate(TextEditor::TextDocument *doc) override;
+
     TextEditor::TextDocument &m_document;
-    CppEditor::ProjectPart::ConstPtr m_projectPart;
-    ::Utils::Id m_diagnosticConfigId;
 };
 
 } // namespace Internal

@@ -11,7 +11,9 @@
 #include <QString>
 #include <QObject>
 
-QT_FORWARD_DECLARE_CLASS(QWidget)
+QT_BEGIN_NAMESPACE
+class QWidget;
+QT_END_NAMESPACE
 
 namespace TextEditor { class TextEditorWidget; }
 
@@ -44,7 +46,8 @@ public:
     virtual void beginOperation() = 0;
     virtual void setCurrentDiffFileIndex(int index) = 0;
     virtual void setDiff(const QList<FileData> &diffFileList) = 0;
-    virtual void endOperation(bool success) = 0;
+    virtual void setMessage(const QString &message) = 0;
+    virtual void endOperation() = 0;
 
     virtual void setSync(bool) = 0;
 
@@ -81,7 +84,8 @@ public:
     void beginOperation() override;
     void setCurrentDiffFileIndex(int index) override;
     void setDiff(const QList<FileData> &diffFileList) override;
-    void endOperation(bool success) override;
+    void setMessage(const QString &message) override;
+    void endOperation() override;
 
     void setSync(bool sync) override;
 
@@ -104,7 +108,8 @@ public:
     void beginOperation() override;
     void setCurrentDiffFileIndex(int index) override;
     void setDiff(const QList<FileData> &diffFileList) override;
-    void endOperation(bool success) override;
+    void setMessage(const QString &message) override;
+    void endOperation() override;
 
     void setSync(bool sync) override;
 

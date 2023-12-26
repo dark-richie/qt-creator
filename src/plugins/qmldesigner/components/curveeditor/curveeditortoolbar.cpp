@@ -8,7 +8,9 @@
 #include "coreplugin/actionmanager/actionmanager.h"
 #include "coreplugin/icontext.h"
 #include "theme.h"
-#include "utils/id.h"
+
+#include <utils/id.h>
+#include <utils/stylehelper.h>
 
 #include <QAction>
 #include <QHBoxLayout>
@@ -58,7 +60,9 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
     , m_startSpin(nullptr)
     , m_endSpin(nullptr)
     , m_currentSpin(new QSpinBox)
-
+    , m_stepAction(nullptr)
+    , m_splineAction(nullptr)
+    , m_unifyAction(nullptr)
 {
     setFloatable(false);
     setFixedHeight(Theme::toolbarSize());
@@ -66,29 +70,28 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
 
     addSpace(5);
 
-    QAction *tangentLinearAction = addAction(Theme::iconFromName(Theme::linear_medium), "Linear");
-    QAction *tangentStepAction = addAction(Theme::iconFromName(Theme::step_medium), "Step");
-    QAction *tangentSplineAction = addAction(Theme::iconFromName(Theme::bezier_medium), "Spline");
+    QAction *tangentLinearAction = addAction(Theme::iconFromName(Theme::linear_medium), tr("Linear"));
+    m_stepAction = addAction(Theme::iconFromName(Theme::step_medium), tr(m_stepLabel));
+    m_splineAction = addAction(Theme::iconFromName(Theme::bezier_medium), tr(m_splineLabel));
+    m_unifyAction = addAction(Theme::iconFromName(Theme::unify_medium), tr(m_unifyLabel));
 
-    QAction *tangentUnifyAction = addAction(Theme::iconFromName(Theme::unify_medium), tr("Unify"));
-
-    auto setLinearInterpolation = [this]() {
+    auto setLinearInterpolation = [this] {
         emit interpolationClicked(Keyframe::Interpolation::Linear);
     };
-    auto setStepInterpolation = [this]() {
+    auto setStepInterpolation = [this] {
         emit interpolationClicked(Keyframe::Interpolation::Step);
     };
-    auto setSplineInterpolation = [this]() {
+    auto setSplineInterpolation = [this] {
         emit interpolationClicked(Keyframe::Interpolation::Bezier);
     };
-    auto toggleUnifyKeyframe = [this]() {
+    auto toggleUnifyKeyframe = [this] {
         emit unifyClicked();
     };
 
     connect(tangentLinearAction, &QAction::triggered, setLinearInterpolation);
-    connect(tangentStepAction, &QAction::triggered, setStepInterpolation);
-    connect(tangentSplineAction, &QAction::triggered, setSplineInterpolation);
-    connect(tangentUnifyAction, &QAction::triggered, toggleUnifyKeyframe);
+    connect(m_stepAction, &QAction::triggered, setStepInterpolation);
+    connect(m_splineAction, &QAction::triggered, setSplineInterpolation);
+    connect(m_unifyAction, &QAction::triggered, toggleUnifyKeyframe);
 
     auto validateStart = [this](int val) -> bool {
         if (m_endSpin==nullptr)
@@ -154,8 +157,8 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
 
     m_zoomSlider = new QSlider(Qt::Horizontal);
     m_zoomSlider->setRange(0, 100);
-    m_zoomSlider->setProperty("panelwidget", true);
-    m_zoomSlider->setProperty("panelwidget_singlerow", true);
+    Utils::StyleHelper::setPanelWidget(m_zoomSlider);
+    Utils::StyleHelper::setPanelWidgetSingleRow(m_zoomSlider);
     m_zoomSlider->setFixedWidth(120);
 
     connect(m_zoomSlider, &QSlider::valueChanged, [this](int value) {
@@ -167,7 +170,7 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
                                  tr("Zoom Out"),
                                  QKeySequence(QKeySequence::ZoomOut));
 
-    connect(zoomOut, &QAction::triggered, [this]() {
+    connect(zoomOut, &QAction::triggered, [this] {
         m_zoomSlider->setValue(m_zoomSlider->value() - m_zoomSlider->pageStep());
     });
 
@@ -176,7 +179,7 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
                                 tr("Zoom In"),
                                 QKeySequence(QKeySequence::ZoomIn));
 
-    connect(zoomIn, &QAction::triggered, [this]() {
+    connect(zoomIn, &QAction::triggered, [this] {
         m_zoomSlider->setValue(m_zoomSlider->value() + m_zoomSlider->pageStep());
     });
 
@@ -185,6 +188,25 @@ CurveEditorToolBar::CurveEditorToolBar(CurveEditorModel *model, QWidget* parent)
     addAction(zoomIn);
 
     addSpace(5);
+}
+
+void CurveEditorToolBar::setIsMcuProject(bool isMcu)
+{
+    m_stepAction->setDisabled(isMcu);
+    m_splineAction->setDisabled(isMcu);
+    m_unifyAction->setDisabled(isMcu);
+
+    static constexpr const char* notSupportedString = QT_TR_NOOP("Not supported for MCUs");
+
+    if (isMcu) {
+        m_stepAction->setText(tr(notSupportedString));
+        m_splineAction->setText(tr(notSupportedString));
+        m_unifyAction->setText(tr(notSupportedString));
+    } else {
+        m_stepAction->setText(tr(m_stepLabel));
+        m_splineAction->setText(tr(m_splineLabel));
+        m_unifyAction->setText(tr(m_unifyLabel));
+    }
 }
 
 void CurveEditorToolBar::setZoom(double zoom)

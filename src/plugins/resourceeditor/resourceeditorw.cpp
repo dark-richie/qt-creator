@@ -15,6 +15,7 @@
 #include <coreplugin/icore.h>
 
 #include <utils/fileutils.h>
+#include <utils/mimeconstants.h>
 #include <utils/reloadpromptutils.h>
 #include <utils/stringutils.h>
 
@@ -33,7 +34,7 @@ ResourceEditorDocument::ResourceEditorDocument(QObject *parent) :
     m_model(new RelativeResourceModel(this))
 {
     setId(ResourceEditor::Constants::RESOURCEEDITOR_ID);
-    setMimeType(QLatin1String(ResourceEditor::Constants::C_RESOURCE_MIMETYPE));
+    setMimeType(Utils::Constants::RESOURCE_MIMETYPE);
     connect(m_model, &RelativeResourceModel::dirtyChanged,
             this, &ResourceEditorDocument::dirtyChanged);
     connect(m_model, &ResourceModel::contentsChanged,
@@ -79,7 +80,7 @@ ResourceEditorW::ResourceEditorW(const Core::Context &context,
     connect(m_resourceEditor, &QrcEditor::itemActivated,
             this, &ResourceEditorW::openFile);
     connect(m_resourceEditor->commandHistory(), &QUndoStack::indexChanged,
-            m_resourceDocument, [this]() { m_resourceDocument->setShouldAutoSave(true); });
+            m_resourceDocument, [this] { m_resourceDocument->setShouldAutoSave(true); });
     if (debugResourceEditorW)
         qDebug() <<  "ResourceEditorW::ResourceEditorW()";
 }
@@ -120,17 +121,16 @@ Core::IDocument::OpenResult ResourceEditorDocument::open(QString *errorString,
     return OpenResult::Success;
 }
 
-bool ResourceEditorDocument::save(QString *errorString, const FilePath &filePath, bool autoSave)
+bool ResourceEditorDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
 {
     if (debugResourceEditorW)
-        qDebug() << ">ResourceEditorW::save: " << filePath;
+        qDebug() << ">ResourceEditorW::saveImpl: " << filePath;
 
-    const FilePath &actualName = filePath.isEmpty() ? this->filePath() : filePath;
-    if (actualName.isEmpty())
+    if (filePath.isEmpty())
         return false;
 
     m_blockDirtyChanged = true;
-    m_model->setFilePath(actualName);
+    m_model->setFilePath(filePath);
     if (!m_model->save()) {
         *errorString = m_model->errorMessage();
         m_model->setFilePath(this->filePath());
@@ -146,7 +146,7 @@ bool ResourceEditorDocument::save(QString *errorString, const FilePath &filePath
         return true;
     }
 
-    setFilePath(actualName);
+    setFilePath(filePath);
     m_blockDirtyChanged = false;
 
     emit changed();

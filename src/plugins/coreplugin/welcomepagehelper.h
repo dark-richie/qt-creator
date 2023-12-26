@@ -12,6 +12,7 @@
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QTimer>
 
 #include <functional>
 #include <optional>
@@ -24,7 +25,16 @@ namespace WelcomePageHelpers {
 
 constexpr int HSpacing = 20;
 constexpr int ItemGap = 4;
-CORE_EXPORT QFont brandFont();
+
+constexpr int GridItemGap = 3 * ItemGap;
+constexpr int GridItemWidth = 240 + GridItemGap;               // Extra GridItemGap as "spacing"
+constexpr int GridItemHeight = GridItemWidth;
+constexpr QSize GridItemImageSize(GridItemWidth - GridItemGap
+                                      - 2 * (GridItemGap + 1), // Horizontal margins + 1 pixel
+                                  GridItemHeight - GridItemGap
+                                      - GridItemGap - 1        // Upper margin + 1 pixel
+                                      - 67);                   // Bottom margin (for title + tags)
+
 CORE_EXPORT QWidget *panelBar(QWidget *parent = nullptr);
 
 } // namespace WelcomePageHelpers
@@ -32,7 +42,7 @@ CORE_EXPORT QWidget *panelBar(QWidget *parent = nullptr);
 class CORE_EXPORT SearchBox : public WelcomePageFrame
 {
 public:
-    explicit SearchBox(QWidget *parent);
+    explicit SearchBox(QWidget *parent = nullptr);
 
     Utils::FancyLineEdit *m_lineEdit = nullptr;
 };
@@ -48,6 +58,8 @@ protected:
 
 class CORE_EXPORT SectionGridView : public GridView
 {
+    Q_OBJECT
+
 public:
     explicit SectionGridView(QWidget *parent);
 
@@ -58,6 +70,10 @@ public:
     int heightForWidth(int width) const override;
 
     void wheelEvent(QWheelEvent *e) override;
+    bool event(QEvent *e) override;
+
+signals:
+    void itemsFitChanged(bool fit);
 
 private:
     std::optional<int> m_maxRows;
@@ -93,8 +109,6 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     void setPixmapFunction(const PixmapFunction &fetchPixmapAndUpdatePixmapCache);
 
-    static const QSize defaultImageSize;
-
     void setOwnsItems(bool owns);
 
 private:
@@ -118,14 +132,10 @@ protected:
 
 private:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const final;
-    void timerEvent(QTimerEvent *event) final;
-
-    void delayedUpdateFilter();
 
     QString m_searchString;
     QStringList m_filterTags;
     QStringList m_filterStrings;
-    int m_timerId = 0;
 };
 
 class CORE_EXPORT ListItemDelegate : public QStyledItemDelegate
@@ -135,11 +145,6 @@ public:
     ListItemDelegate();
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override;
-
-    static constexpr int GridItemGap = 3 * WelcomePageHelpers::ItemGap;
-    static constexpr int GridItemWidth = 240 + GridItemGap;
-    static constexpr int GridItemHeight = GridItemWidth;
-    static constexpr int TagsSeparatorY = GridItemHeight - GridItemGap - 52;
 
 signals:
     void tagClicked(const QString &tag);
@@ -159,6 +164,7 @@ protected:
     const QColor backgroundPrimaryColor;
     const QColor backgroundSecondaryColor;
     const QColor foregroundPrimaryColor;
+    const QColor foregroundSecondaryColor;
     const QColor hoverColor;
     const QColor textColor;
 
@@ -201,6 +207,7 @@ public:
 
     void setItemDelegate(QAbstractItemDelegate *delegate);
     void setPixmapFunction(const Core::ListModel::PixmapFunction &pixmapFunction);
+    void setSearchStringDelayed(const QString &searchString);
     void setSearchString(const QString &searchString);
 
     Core::ListModel *addSection(const Section &section, const QList<Core::ListItem *> &items);
@@ -218,6 +225,20 @@ private:
     QPointer<QWidget> m_zoomedInWidget;
     Core::ListModel::PixmapFunction m_pixmapFunction;
     QAbstractItemDelegate *m_itemDelegate = nullptr;
+    QTimer m_searchTimer;
+    QString m_delayedSearchString;
+};
+
+class CORE_EXPORT ResizeSignallingWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit ResizeSignallingWidget(QWidget *parent = nullptr);
+    void resizeEvent(QResizeEvent *event) override;
+
+signals:
+    void resized(const QSize &size, const QSize &oldSize);
 };
 
 } // namespace Core

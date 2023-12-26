@@ -3,22 +3,18 @@
 
 #pragma once
 
-#include <coreplugin/locator/basefilefilter.h>
+#include <coreplugin/locator/ilocatorfilter.h>
 
-namespace ProjectExplorer {
-namespace Internal {
+namespace ProjectExplorer::Internal {
 
-class AllProjectsFilter : public Core::BaseFileFilter
+class AllProjectsFilter : public Core::ILocatorFilter
 {
-    Q_OBJECT
-
 public:
     AllProjectsFilter();
-    void prepareSearch(const QString &entry) override;
 
 private:
-    void invalidateCache();
+    Core::LocatorMatcherTasks matchers() final { return {m_cache.matcher()}; }
+    Core::LocatorFileCache m_cache;
 };
 
-} // namespace Internal
-} // namespace ProjectExplorer
+} // namespace ProjectExplorer::Internal

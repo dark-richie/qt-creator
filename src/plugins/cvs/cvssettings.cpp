@@ -5,6 +5,7 @@
 
 #include "cvstr.h"
 
+#include <coreplugin/dialogs/ioptionspage.h>
 #include <coreplugin/icore.h>
 
 #include <utils/hostosinfo.h>
@@ -17,32 +18,32 @@ using namespace Utils;
 
 namespace Cvs::Internal {
 
-// CvsSettings
+CvsSettings &settings()
+{
+    static CvsSettings theSettings;
+    return theSettings;
+}
 
 CvsSettings::CvsSettings()
 {
+    setAutoApply(false);
     setSettingsGroup("CVS");
 
-    registerAspect(&binaryPath);
     binaryPath.setDefaultValue("cvs" QTC_HOST_EXE_SUFFIX);
-    binaryPath.setDisplayStyle(StringAspect::PathChooserDisplay);
     binaryPath.setExpectedKind(PathChooser::ExistingCommand);
-    binaryPath.setHistoryCompleter(QLatin1String("Cvs.Command.History"));
+    binaryPath.setHistoryCompleter("Cvs.Command.History");
     binaryPath.setDisplayName(Tr::tr("CVS Command"));
     binaryPath.setLabelText(Tr::tr("CVS command:"));
 
-    registerAspect(&cvsRoot);
     cvsRoot.setDisplayStyle(StringAspect::LineEditDisplay);
     cvsRoot.setSettingsKey("Root");
     cvsRoot.setLabelText(Tr::tr("CVS root:"));
 
-    registerAspect(&diffOptions);
     diffOptions.setDisplayStyle(StringAspect::LineEditDisplay);
     diffOptions.setSettingsKey("DiffOptions");
     diffOptions.setDefaultValue("-du");
     diffOptions.setLabelText("Diff options:");
 
-    registerAspect(&describeByCommitId);
     describeByCommitId.setSettingsKey("DescribeByCommitId");
     describeByCommitId.setDefaultValue(true);
     describeByCommitId.setLabelText(Tr::tr("Describe all files matching commit id"));
@@ -50,16 +51,40 @@ CvsSettings::CvsSettings()
         "displayed when clicking on a revision number in the annotation view "
         "(retrieved via commit ID). Otherwise, only the respective file will be displayed."));
 
-    registerAspect(&diffIgnoreWhiteSpace);
     diffIgnoreWhiteSpace.setSettingsKey("DiffIgnoreWhiteSpace");
 
-    registerAspect(&diffIgnoreBlankLines);
     diffIgnoreBlankLines.setSettingsKey("DiffIgnoreBlankLines");
+
+    setLayouter([this] {
+        using namespace Layouting;
+        return Column {
+            Group {
+                title(Tr::tr("Configuration")),
+                Form {
+                    binaryPath, br,
+                    cvsRoot
+                }
+            },
+            Group {
+                title(Tr::tr("Miscellaneous")),
+                Column {
+                    Form {
+                        timeout, br,
+                        diffOptions,
+                    },
+                    describeByCommitId,
+                }
+            },
+            st
+        };
+    });
+
+    readSettings();
 }
 
 QStringList CvsSettings::addOptions(const QStringList &args) const
 {
-    const QString cvsRoot = this->cvsRoot.value();
+    const QString cvsRoot = this->cvsRoot();
     if (cvsRoot.isEmpty())
         return args;
 
@@ -70,38 +95,20 @@ QStringList CvsSettings::addOptions(const QStringList &args) const
     return rc;
 }
 
-CvsSettingsPage::CvsSettingsPage(CvsSettings *settings)
+// CvsSettingsPage
+
+class CvsSettingsPage final : Core::IOptionsPage
 {
-    setId(VcsBase::Constants::VCS_ID_CVS);
-    setDisplayName(Tr::tr("CVS"));
-    setCategory(VcsBase::Constants::VCS_SETTINGS_CATEGORY);
-    setSettings(settings);
+public:
+    CvsSettingsPage()
+    {
+        setId(VcsBase::Constants::VCS_ID_CVS);
+        setDisplayName(Tr::tr("CVS"));
+        setCategory(VcsBase::Constants::VCS_SETTINGS_CATEGORY);
+        setSettingsProvider([] { return &settings(); });
+    }
+};
 
-    setLayouter([settings](QWidget *widget) {
-        CvsSettings &s = *settings;
-        using namespace Layouting;
-
-        Column {
-            Group {
-                title(Tr::tr("Configuration")),
-                Form {
-                    s.binaryPath,
-                    s.cvsRoot
-                }
-            },
-            Group {
-                title(Tr::tr("Miscellaneous")),
-                Column {
-                    Form {
-                        s.timeout,
-                        s.diffOptions,
-                    },
-                    s.describeByCommitId,
-                }
-            },
-            st
-        }.attachTo(widget);
-    });
-}
+const CvsSettingsPage settingsPage;
 
 } // Cvs::Internal

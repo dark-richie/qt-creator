@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include <coreplugin/find/searchresultitem.h>
 #include <cppeditor/baseeditordocumentparser.h>
 #include <cppeditor/cppcodemodelsettings.h>
 #include <cppeditor/cursorineditor.h>
 #include <languageclient/client.h>
 #include <utils/link.h>
+#include <utils/searchresultitem.h>
 
 #include <QVersionNumber>
 
@@ -36,6 +36,8 @@ Q_DECLARE_LOGGING_CATEGORY(clangdLogAst);
 void setupClangdConfigFile();
 
 enum class FollowTo { SymbolDef, SymbolType };
+
+class ClangdFollowSymbol;
 
 class ClangdClient : public LanguageClient::Client
 {
@@ -72,7 +74,7 @@ public:
             const Utils::LinkHandler &callback);
     void switchHeaderSource(const Utils::FilePath &filePath, bool inNextSplit);
 
-    void findLocalUsages(TextEditor::TextDocument *document, const QTextCursor &cursor,
+    void findLocalUsages(CppEditor::CppEditorWidget *editorWidget, const QTextCursor &cursor,
                          CppEditor::RenameCallback &&callback);
 
     void gatherHelpItemForTooltip(
@@ -117,9 +119,13 @@ public:
             const LanguageServerProtocol::Position &position,
             const SymbolInfoHandler &handler);
 
+#ifdef WITH_TESTS
+    ClangdFollowSymbol *currentFollowSymbolOperation();
+#endif
+
 signals:
     void indexingFinished();
-    void foundReferences(const QList<Core::SearchResultItem> &items);
+    void foundReferences(const Utils::SearchResultItems &items);
     void findUsagesDone();
     void helpItemGathered(const Core::HelpItem &helpItem);
     void highlightingResultsReady(const TextEditor::HighlightingResults &results,
@@ -135,13 +141,17 @@ private:
     QTextCursor adjustedCursorForHighlighting(const QTextCursor &cursor,
                                               TextEditor::TextDocument *doc) override;
     const CustomInspectorTabs createCustomInspectorTabs() override;
-    TextEditor::RefactoringChangesData *createRefactoringChangesBackend() const override;
+    TextEditor::RefactoringFilePtr createRefactoringFile(
+        const Utils::FilePath &filePath) const override;
     LanguageClient::DiagnosticManager *createDiagnosticManager() override;
     LanguageClient::LanguageClientOutlineItem *createOutlineItem(
         const LanguageServerProtocol::DocumentSymbol &symbol) override;
     bool referencesShadowFile(const TextEditor::TextDocument *doc,
                               const Utils::FilePath &candidate) override;
     bool fileBelongsToProject(const Utils::FilePath &filePath) const override;
+    QList<Utils::Text::Range> additionalDocumentHighlights(
+        TextEditor::TextEditorWidget *editorWidget, const QTextCursor &cursor) override;
+
 
     class Private;
     class VirtualFunctionAssistProcessor;

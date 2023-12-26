@@ -10,7 +10,7 @@
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deploymentdata.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
@@ -57,9 +57,10 @@ FilePath ITestConfiguration::executableFilePath() const
     if (!hasExecutable())
         return {};
 
-    const Environment env = m_runnable.environment.hasChanges()
-            ? m_runnable.environment : Environment::systemEnvironment();
-    return env.searchInPath(m_runnable.command.executable().path());
+    const Environment env = m_runnable.environment.appliedToEnvironment(
+        m_runnable.command.executable().deviceEnvironment());
+
+    return m_runnable.command.executable().searchInDirectories(env.path());
 }
 
 Environment ITestConfiguration::filteredEnvironment(const Environment &original) const
@@ -213,7 +214,7 @@ void TestConfiguration::completeTestInformation(TestRunMode runMode)
             continue;
         }
 
-        const Runnable runnable = runConfig->runnable();
+        const ProcessRunData runnable = runConfig->runnable();
         // not the best approach - but depending on the build system and whether the executables
         // are going to get installed or not we have to soften the condition...
         const FilePath currentExecutable = ensureExeEnding(runnable.command.executable());
@@ -245,7 +246,7 @@ void TestConfiguration::completeTestInformation(TestRunMode runMode)
         // we failed to find a valid runconfiguration - but we've got the executable already
         if (auto rc = target->activeRunConfiguration()) {
             if (isLocal(target)) { // FIXME for now only Desktop support
-                const Runnable runnable = rc->runnable();
+                const ProcessRunData runnable = rc->runnable();
                 m_runnable.environment = runnable.environment;
                 m_deducedConfiguration = true;
                 m_deducedFrom = rc->displayName();
@@ -282,11 +283,6 @@ void TestConfiguration::setProjectFile(const FilePath &projectFile)
     m_projectFile = projectFile;
 }
 
-void TestConfiguration::setBuildDirectory(const FilePath &buildDirectory)
-{
-    m_buildDir = buildDirectory;
-}
-
 void TestConfiguration::setInternalTarget(const QString &target)
 {
     m_buildTargets.clear();
@@ -306,11 +302,6 @@ void TestConfiguration::setOriginalRunConfiguration(RunConfiguration *runConfig)
 bool DebuggableTestConfiguration::isDebugRunMode() const
 {
     return m_runMode == TestRunMode::Debug || m_runMode == TestRunMode::DebugWithoutDeploy;
-}
-
-ITestFramework *TestConfiguration::framework() const
-{
-    return static_cast<ITestFramework *>(testBase());
 }
 
 } // namespace Autotest

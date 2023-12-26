@@ -10,7 +10,11 @@
 #include "resultparser.h"
 
 #include <git/gitclient.h>
+
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectpanelfactory.h>
+#include <projectexplorer/projectsettingswidget.h>
+
 #include <utils/infolabel.h>
 #include <utils/qtcassert.h>
 
@@ -91,7 +95,7 @@ void GitLabProjectSettings::load()
     if (!m_id.isValid() || m_host.isEmpty())
         m_linked = false;
     else
-        m_linked = GitLabPlugin::globalParameters()->serverForId(m_id).id.isValid();
+        m_linked = gitLabParameters().serverForId(m_id).id.isValid();
 }
 
 void GitLabProjectSettings::save()
@@ -107,10 +111,33 @@ void GitLabProjectSettings::save()
     m_project->setNamedSettings(PSK_LAST_REQ, m_lastRequest);
 }
 
-GitLabProjectSettingsWidget::GitLabProjectSettingsWidget(ProjectExplorer::Project *project,
-                                                         QWidget *parent)
-    : ProjectExplorer::ProjectSettingsWidget(parent)
-    , m_projectSettings(GitLabPlugin::projectSettings(project))
+class GitLabProjectSettingsWidget : public ProjectExplorer::ProjectSettingsWidget
+{
+public:
+    explicit GitLabProjectSettingsWidget(ProjectExplorer::Project *project);
+
+private:
+    enum CheckMode { Connection, Link };
+
+    void unlink();
+    void checkConnection(CheckMode mode);
+    void onConnectionChecked(const Project &project, const Utils::Id &serverId,
+                             const QString &remote, const QString &projName);
+    void updateUi();
+    void updateEnabledStates();
+
+    GitLabProjectSettings *m_projectSettings = nullptr;
+    QComboBox *m_linkedGitLabServer = nullptr;
+    QComboBox *m_hostCB = nullptr;
+    QPushButton *m_linkWithGitLab = nullptr;
+    QPushButton *m_unlink = nullptr;
+    QPushButton *m_checkConnection = nullptr;
+    Utils::InfoLabel *m_infoLabel = nullptr;
+    CheckMode m_checkMode = Connection;
+};
+
+GitLabProjectSettingsWidget::GitLabProjectSettingsWidget(ProjectExplorer::Project *project)
+    : m_projectSettings(GitLabPlugin::projectSettings(project))
 {
     setUseGlobalSettingsCheckBoxVisible(false);
     setUseGlobalSettingsLabelVisible(true);
@@ -157,7 +184,7 @@ GitLabProjectSettingsWidget::GitLabProjectSettingsWidget(ProjectExplorer::Projec
     connect(m_hostCB, &QComboBox::currentIndexChanged, this, [this] {
         m_infoLabel->setVisible(false);
     });
-    connect(GitLabPlugin::optionsPage(), &GitLabOptionsPage::settingsChanged,
+    connect(&gitLabParameters(), &GitLabParameters::changed,
             this, &GitLabProjectSettingsWidget::updateUi);
     updateUi();
 }
@@ -239,20 +266,20 @@ void GitLabProjectSettingsWidget::onConnectionChecked(const Project &project,
 void GitLabProjectSettingsWidget::updateUi()
 {
     m_linkedGitLabServer->clear();
-    const QList<GitLabServer> allServers = GitLabPlugin::allGitLabServers();
+    const QList<GitLabServer> allServers = gitLabParameters().gitLabServers;
     for (const GitLabServer &server : allServers) {
         const QString display = server.host + " (" + server.description + ')';
         m_linkedGitLabServer->addItem(display, QVariant::fromValue(server));
     }
 
     const Utils::FilePath projectDirectory = m_projectSettings->project()->projectDirectory();
-    const auto *gitClient = Git::Internal::GitClient::instance();
-    const Utils::FilePath repository = gitClient
-            ? gitClient->findRepositoryForDirectory(projectDirectory) : Utils::FilePath();
+    const Utils::FilePath repository =
+        Git::Internal::gitClient().findRepositoryForDirectory(projectDirectory);
 
     m_hostCB->clear();
     if (!repository.isEmpty()) {
-        const QMap<QString, QString> remotes = gitClient->synchronousRemotesList(repository);
+        const QMap<QString, QString> remotes =
+            Git::Internal::gitClient().synchronousRemotesList(repository);
         for (auto it = remotes.begin(), end = remotes.end(); it != end; ++it) {
             const QString display = it.key() + " (" + it.value() + ')';
             m_hostCB->addItem(display, QVariant::fromValue(it.value()));
@@ -262,13 +289,13 @@ void GitLabProjectSettingsWidget::updateUi()
     const Utils::Id id = m_projectSettings->currentServer();
     const QString serverHost = m_projectSettings->currentServerHost();
     if (id.isValid()) {
-        const GitLabServer server = GitLabPlugin::gitLabServerForId(id);
+        const GitLabServer server = gitLabParameters().serverForId(id);
         auto [remoteHost, projName, port] = GitLabProjectSettings::remotePartsFromRemote(serverHost);
         if (server.id.isValid() && server.host == remoteHost) { // found config
             m_projectSettings->setLinked(true);
             m_hostCB->setCurrentIndex(m_hostCB->findData(QVariant::fromValue(serverHost)));
             m_linkedGitLabServer->setCurrentIndex(
-                        m_linkedGitLabServer->findData(QVariant::fromValue(server)));
+                m_linkedGitLabServer->findData(QVariant::fromValue(server)));
             GitLabPlugin::linkedStateChanged(true);
         } else {
             m_projectSettings->setLinked(false);
@@ -291,9 +318,8 @@ void GitLabProjectSettingsWidget::updateEnabledStates()
     m_checkConnection->setEnabled(isGitRepository && hasGitLabServers);
     if (!isGitRepository) {
         const Utils::FilePath projectDirectory = m_projectSettings->project()->projectDirectory();
-        const auto *gitClient = Git::Internal::GitClient::instance();
-        const Utils::FilePath repository = gitClient
-                ? gitClient->findRepositoryForDirectory(projectDirectory) : Utils::FilePath();
+        const Utils::FilePath repository =
+            Git::Internal::gitClient().findRepositoryForDirectory(projectDirectory);
         if (repository.isEmpty())
             m_infoLabel->setText(Tr::tr("Not a git repository."));
         else
@@ -301,6 +327,24 @@ void GitLabProjectSettingsWidget::updateEnabledStates()
         m_infoLabel->setType(Utils::InfoLabel::None);
         m_infoLabel->setVisible(true);
     }
+}
+
+class GitlabProjectPanelFactory final : public ProjectExplorer::ProjectPanelFactory
+{
+public:
+    GitlabProjectPanelFactory()
+    {
+        setPriority(999);
+        setDisplayName(Tr::tr("GitLab"));
+        setCreateWidgetFunction([](ProjectExplorer::Project *project) {
+            return new GitLabProjectSettingsWidget(project);
+        });
+    }
+};
+
+void setupGitlabProjectPanel()
+{
+    static GitlabProjectPanelFactory theGitlabProjectPanelFactory;
 }
 
 } // namespace GitLab

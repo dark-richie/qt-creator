@@ -20,10 +20,15 @@ class BindingModel;
 class ConnectionModel;
 class DynamicPropertiesModel;
 class BackendModel;
+class ConnectionViewQuickWidget;
+class PropertyTreeModel;
+class PropertyListProxyModel;
 
-class  ConnectionView : public AbstractView
+class ConnectionView : public AbstractView
 {
     Q_OBJECT
+
+    Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged)
 
 public:
     ConnectionView(ExternalDependenciesInterface &externalDependencies);
@@ -34,6 +39,7 @@ public:
     void modelAboutToBeDetached(Model *model) override;
 
     void nodeCreated(const ModelNode &createdNode) override;
+    void nodeAboutToBeRemoved(const ModelNode &removedNode) override;
     void nodeRemoved(const ModelNode &removedNode, const NodeAbstractProperty &parentProperty, PropertyChangeFlags propertyChange) override;
     void nodeReparented(const ModelNode &node, const NodeAbstractProperty &newPropertyParent,
                         const NodeAbstractProperty &oldPropertyParent, AbstractView::PropertyChangeFlags propertyChange) override;
@@ -46,11 +52,8 @@ public:
 
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
-    void auxiliaryDataChanged(const ModelNode &node,
-                              AuxiliaryDataKeyView key,
-                              const QVariant &data) override;
 
-    void importsChanged(const QList<Import> &addedImports, const QList<Import> &removedImports) override;
+    void importsChanged(const Imports &addedImports, const Imports &removedImports) override;
 
     void currentStateChanged(const ModelNode &node) override;
 
@@ -58,26 +61,35 @@ public:
     bool hasWidget() const override;
     bool isWidgetEnabled();
 
-    QTableView *connectionTableView() const;
-    QTableView *bindingTableView() const;
-    QTableView *dynamicPropertiesTableView() const;
-    QTableView *backendView() const;
-
     DynamicPropertiesModel *dynamicPropertiesModel() const;
 
-    ConnectionViewWidget *connectionViewWidget() const;
     ConnectionModel *connectionModel() const;
     BindingModel *bindingModel() const;
     BackendModel *backendModel() const;
 
+    int currentIndex() const;
+    void setCurrentIndex(int i);
+
     static ConnectionView *instance();
 
-private: //variables
-    QPointer<ConnectionViewWidget> m_connectionViewWidget;
+    void customNotification(const AbstractView *view,
+                            const QString &identifier,
+                            const QList<ModelNode> &nodeList,
+                            const QList<QVariant> &data) override;
+
+signals:
+    void currentIndexChanged();
+
+private:
     ConnectionModel *m_connectionModel;
     BindingModel *m_bindingModel;
     DynamicPropertiesModel *m_dynamicPropertiesModel;
     BackendModel *m_backendModel;
+    PropertyTreeModel *m_propertyTreeModel;
+    PropertyListProxyModel *m_propertyListProxyModel;
+    int m_currentIndex = 0;
+
+    QPointer<ConnectionViewQuickWidget> m_connectionViewQuickWidget;
 };
 
 } // namespace QmlDesigner

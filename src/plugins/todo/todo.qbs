@@ -22,8 +22,6 @@ QtcPlugin {
         "keyworddialog.h",
         "lineparser.cpp",
         "lineparser.h",
-        "optionsdialog.cpp",
-        "optionsdialog.h",
         "todoprojectsettingswidget.cpp",
         "todoprojectsettingswidget.h",
         "qmljstodoitemsscanner.cpp",
@@ -46,7 +44,6 @@ QtcPlugin {
         "todooutputtreeviewdelegate.cpp",
         "todooutputtreeviewdelegate.h",
         "todoplugin.cpp",
-        "todoplugin.h",
         "todoplugin.qrc",
         "todotr.h",
     ]

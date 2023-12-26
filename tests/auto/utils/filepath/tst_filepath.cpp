@@ -4,19 +4,22 @@
 #include <QRandomGenerator>
 #include <QtTest>
 
+#include <utils/algorithm.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
 #include <utils/link.h>
 
-using namespace Utils;
-
+QT_BEGIN_NAMESPACE
 namespace QTest {
 template<>
-char *toString(const FilePath &filePath)
+char *toString(const Utils::FilePath &filePath)
 {
     return qstrdup(filePath.toString().toLocal8Bit().constData());
 }
 } // namespace QTest
+QT_END_NAMESPACE
+
+namespace Utils {
 
 class tst_filepath : public QObject
 {
@@ -108,6 +111,11 @@ private slots:
     void tmp_data();
 
     void searchInWithFilter();
+
+    void sort();
+    void sort_data();
+
+    void isRootPath();
 
 private:
     QTemporaryDir tempDir;
@@ -617,15 +625,15 @@ void tst_filepath::toString_data()
                                                   << "c:/__qtc_devices__/docker"
                                                   << "c:/__qtc_devices__/docker";
     QTest::newRow("qtc-root-folder") << "docker"
-                                     << "alpine:latest"
+                                     << "alpine.latest"
                                      << "/"
-                                     << "docker://alpine:latest/"
-                                     << "docker://alpine:latest/";
+                                     << "docker://alpine.latest/"
+                                     << "docker://alpine.latest/";
     QTest::newRow("qtc-root-folder-rel") << "docker"
-                                         << "alpine:latest"
+                                         << "alpine.latest"
                                          << ""
-                                         << "docker://alpine:latest"
-                                         << "docker://alpine:latest";
+                                         << "docker://alpine.latest"
+                                         << "docker://alpine.latest";
 }
 
 void tst_filepath::toString()
@@ -684,14 +692,14 @@ void tst_filepath::toFSPathString_data()
                                               << QDir::rootPath() + "__qtc_devices__/docker";
     QTest::newRow("qtc-root-folder")
         << "docker"
-        << "alpine:latest"
-        << "/" << QDir::rootPath() + "__qtc_devices__/docker/alpine:latest/"
-        << "docker://alpine:latest/";
+        << "alpine.latest"
+        << "/" << QDir::rootPath() + "__qtc_devices__/docker/alpine.latest/"
+        << "docker://alpine.latest/";
     QTest::newRow("qtc-root-folder-rel")
         << "docker"
-        << "alpine:latest"
-        << "" << QDir::rootPath() + "__qtc_devices__/docker/alpine:latest"
-        << "docker://alpine:latest";
+        << "alpine.latest"
+        << "" << QDir::rootPath() + "__qtc_devices__/docker/alpine.latest"
+        << "docker://alpine.latest";
 }
 
 void tst_filepath::toFSPathString()
@@ -733,7 +741,12 @@ public:
     ExpectedPass expectedPass = PassEverywhere;
 };
 
-Q_DECLARE_METATYPE(FromStringData);
+} // Utils
+
+
+Q_DECLARE_METATYPE(Utils::FromStringData);
+
+namespace Utils {
 
 void tst_filepath::fromString_data()
 {
@@ -1091,37 +1104,11 @@ void tst_filepath::linkFromString_data()
     QTest::addColumn<int>("column");
 
     QTest::newRow("no-line-no-column")
-        << QString("someFile.txt") << FilePath("someFile.txt") << -1 << -1;
-    QTest::newRow(": at end") << QString::fromLatin1("someFile.txt:") << FilePath("someFile.txt")
-                              << 0 << -1;
-    QTest::newRow("+ at end") << QString::fromLatin1("someFile.txt+") << FilePath("someFile.txt")
-                              << 0 << -1;
-    QTest::newRow(": for column") << QString::fromLatin1("someFile.txt:10:")
-                                  << FilePath("someFile.txt") << 10 << -1;
-    QTest::newRow("+ for column") << QString::fromLatin1("someFile.txt:10+")
-                                  << FilePath("someFile.txt") << 10 << -1;
-    QTest::newRow(": and + at end")
-        << QString::fromLatin1("someFile.txt:+") << FilePath("someFile.txt") << 0 << -1;
-    QTest::newRow("empty line") << QString::fromLatin1("someFile.txt:+10")
-                                << FilePath("someFile.txt") << 0 << 9;
-    QTest::newRow(":line-no-column") << QString::fromLatin1("/some/path/file.txt:42")
-                                     << FilePath("/some/path/file.txt") << 42 << -1;
-    QTest::newRow("+line-no-column") << QString::fromLatin1("/some/path/file.txt+42")
-                                     << FilePath("/some/path/file.txt") << 42 << -1;
+        << QString("someFile.txt") << FilePath("someFile.txt") << 0 << -1;
     QTest::newRow(":line-:column") << QString::fromLatin1("/some/path/file.txt:42:3")
                                    << FilePath("/some/path/file.txt") << 42 << 2;
-    QTest::newRow(":line-+column") << QString::fromLatin1("/some/path/file.txt:42+33")
-                                   << FilePath("/some/path/file.txt") << 42 << 32;
-    QTest::newRow("+line-:column") << QString::fromLatin1("/some/path/file.txt+142:30")
-                                   << FilePath("/some/path/file.txt") << 142 << 29;
-    QTest::newRow("+line-+column") << QString::fromLatin1("/some/path/file.txt+142+33")
-                                   << FilePath("/some/path/file.txt") << 142 << 32;
-    QTest::newRow("( at end") << QString::fromLatin1("/some/path/file.txt(")
-                              << FilePath("/some/path/file.txt") << -1 << -1;
-    QTest::newRow("(42 at end") << QString::fromLatin1("/some/path/file.txt(42")
-                                << FilePath("/some/path/file.txt") << 42 << -1;
     QTest::newRow("(42) at end") << QString::fromLatin1("/some/path/file.txt(42)")
-                                 << FilePath("/some/path/file.txt") << 42 << -1;
+                                 << FilePath("/some/path/file.txt") << 42 << 0;
 }
 
 void tst_filepath::pathAppended()
@@ -1323,6 +1310,14 @@ void tst_filepath::startsWithDriveLetter_data()
     QTest::newRow("simple-win") << FilePath::fromString("c:/a") << true;
     QTest::newRow("simple-linux") << FilePath::fromString("/c:/a") << false;
     QTest::newRow("relative") << FilePath("a/b") << false;
+
+    QTest::newRow("remote-slash") << FilePath::fromString("docker://1234/") << false;
+    QTest::newRow("remote-single-letter") << FilePath::fromString("docker://1234/c") << false;
+    QTest::newRow("remote-drive") << FilePath::fromString("docker://1234/c:") << true;
+    QTest::newRow("remote-invalid-drive") << FilePath::fromString("docker://1234/c:a") << true;
+    QTest::newRow("remote-with-path") << FilePath::fromString("docker://1234/c:/a") << true;
+    QTest::newRow("remote-z") << FilePath::fromString("docker://1234/z:") << true;
+    QTest::newRow("remote-1") << FilePath::fromString("docker://1234/1:") << false;
 }
 
 void tst_filepath::startsWithDriveLetter()
@@ -1657,6 +1652,81 @@ void tst_filepath::tmp()
     }
 }
 
-QTEST_GUILESS_MAIN(tst_filepath)
+void tst_filepath::sort()
+{
+    QFETCH(QStringList, input);
+
+    FilePaths filePaths = Utils::transform(input, &FilePath::fromString);
+    QStringList sorted = input;
+    sorted.sort();
+
+    FilePath::sort(filePaths);
+    QStringList sortedPaths = Utils::transform(filePaths, &FilePath::toString);
+
+    QCOMPARE(sortedPaths, sorted);
+}
+
+void tst_filepath::isRootPath()
+{
+    FilePath localRoot = FilePath::fromString(QDir::rootPath());
+    QVERIFY(localRoot.isRootPath());
+
+    FilePath localNonRoot = FilePath::fromString(QDir::rootPath() + "x");
+    QVERIFY(!localNonRoot.isRootPath());
+
+    if (HostOsInfo::isWindowsHost()) {
+        FilePath remoteWindowsRoot = FilePath::fromString("device://test/c:/");
+        QVERIFY(remoteWindowsRoot.isRootPath());
+
+        FilePath remoteWindowsRoot1 = FilePath::fromString("device://test/c:");
+        QVERIFY(remoteWindowsRoot1.isRootPath());
+
+        FilePath remoteWindowsNotRoot = FilePath::fromString("device://test/c:/x");
+        QVERIFY(!remoteWindowsNotRoot.isRootPath());
+    } else {
+        FilePath remoteRoot = FilePath::fromString("device://test/");
+        QVERIFY(remoteRoot.isRootPath());
+
+        FilePath remotePath = FilePath::fromString("device://test/x");
+        QVERIFY(!remotePath.isRootPath());
+    }
+}
+void tst_filepath::sort_data()
+{
+    QTest::addColumn<QStringList>("input");
+
+    QTest::addRow("empty") << QStringList{};
+
+    QTest::addRow("one") << QStringList{"foo"};
+    QTest::addRow("two") << QStringList{"foo", "bar"};
+    QTest::addRow("three") << QStringList{"foo", "bar", "baz"};
+
+    QTest::addRow("one-absolute") << QStringList{"/foo"};
+    QTest::addRow("two-absolute") << QStringList{"/foo", "/bar"};
+
+    QTest::addRow("one-relative") << QStringList{"foo"};
+
+    QTest::addRow("one-absolute-one-relative") << QStringList{"/foo", "bar"};
+
+    QTest::addRow("host") << QStringList{"ssh://test/blah", "ssh://gulp/blah", "ssh://zzz/blah"};
+
+    QTest::addRow("scheme") << QStringList{"ssh://test/blah",
+                                           "ssh://gulp/blah",
+                                           "ssh://zzz/blah",
+                                           "aaa://gulp/blah",
+                                           "xyz://test/blah"};
+
+    QTest::addRow("others") << QStringList{"a://a//a",
+                                           "a://b//a",
+                                           "a://a//b",
+                                           "a://b//b",
+                                           "b://b//b"};
+    QTest::addRow("others-reversed")
+        << QStringList{"b://b//b", "a://b//b", "a://a//b", "a://b//a", "a://a//a"};
+}
+
+} // Utils
+
+QTEST_GUILESS_MAIN(Utils::tst_filepath)
 
 #include "tst_filepath.moc"

@@ -1,20 +1,27 @@
-// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*!
-    \previouspage creator-build-settings.html
     \page creator-build-settings-cmake.html
-    \nextpage creator-build-settings-qmake.html
+    \previouspage creator-reference.html
+
+    \ingroup creator-reference-build-configurations
 
     \title CMake Build Configuration
+
+    \brief Settings for building applications with CMake.
+
+    Specify build settings for the selected \l{glossary-buildandrun-kit}{kit} in
+    \uicontrol Projects > \uicontrol {Build & Run} > \uicontrol Build >
+    \uicontrol {Build Settings}.
 
     Configuring medium-sized to large CMake projects in \QC can be a
     challenge due to the number of variables that you need to pass to
     CMake to configure the project correctly. To make this easier,
     \QC creates an initial configuration for you based on the kit
     settings and displays it in \uicontrol {Initial Configuration} in
-    the \l{Specifying Build Settings}{Build Settings} of the project.
-    Alternatively, you can use CMake presets to configure CMake.
+    the \uicontrol {Build Settings} of the project.
+    Or, you can use CMake presets to configure CMake.
 
     The \uicontrol Configure field displays the effective CMake call that
     \QC constructs using the values of the \uicontrol {Build directory} and
@@ -29,6 +36,9 @@
 
     Select \uicontrol {Kit Configuration} to edit the CMake settings for the
     build and run kit selected for the project.
+
+    You can use \l{CMake Presets}{CMake presets} files to specify common
+    configure, build, and test options and share them with others.
 
     \section1 Initial Configuration
 
@@ -56,224 +66,6 @@
     select \uicontrol Help in the context menu or see
     \l{CMake: cmake-variables(7)}. For more information about Qt-specific
     variables, see \l{CMake Variable Reference}.
-
-    \section1 CMake Presets
-
-    You can use CMake presets files to specify common configure, build, and test
-    options and share them with others. \c CMakePresets.json has options for
-    project-wide builds, whereas \c CMakeUserPresets.json has options for
-    your local builds.
-
-    Create the presets files in the format described in
-    \l{https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html}
-    {cmake-presets(7)} and store them in project's root directory.
-
-    \QC supports presets up to version 3 (introduced in CMake 3.21), but does not
-    enforce version checking. It reads and uses all the fields from version 3 if
-    present. It does not support test presets.
-
-    You can import the presets the first time you \l {Opening Projects}
-    {open a project}, when no \c CMakeLists.txt.user file exists or you have
-    disabled all kits in the project. To update changes to the
-    \c CMakePresets.json file, delete the \c CMakeLists.txt.user file.
-
-    \image qtcreator-cmake-presets-configure.webp {Opening a project that has CMake presets}
-
-    You can view the presets in the \uicontrol {Initial Configuration} field and
-    in the environment configuration field below it.
-
-    \image qtcreator-cmake-presets-environment.webp {CMake environment configuration}
-
-    \section2 Configure Presets
-
-    The following configure presets instruct CMake to use the default generator
-    on the platform and specify the build directory for all build types.
-    \c NOT_COMMON_VALUE is displayed in \uicontrol {Initial Parameters}
-    and \c AN_ENVIRONMENT_FLAG in the environment configuration field.
-
-    \badcode
-    {
-      "version": 1,
-      "configurePresets": [
-        {
-          "name": "preset",
-          "displayName": "preset",
-          "binaryDir": "${sourceDir}/build/preset",
-          "cacheVariables": {
-            "NOT_COMMON_VALUE": "NOT_COMMON_VALUE"
-            },
-          "environment": {
-            "AN_ENVIRONMENT_FLAG": "1"
-          }
-        }
-      ]
-    }
-    \endcode
-
-    \section2 MinGW Example
-
-    The following example configures a Qt project with:
-
-    \list
-        \li MinGW compiler
-        \li build directory – \c <sourceDir>/build-release
-        \li build type – \c CMAKE_BUILD_TYPE as \c Release
-        \li generator – MinGW Makefiles
-        \li path to a CMake executable
-        \li path to the Qt installation via \c CMAKE_PREFIX_PATH
-    \endlist
-
-    \badcode
-    {
-      "version": 1,
-      "configurePresets": [
-        {
-          "name": "mingw",
-          "displayName": "MinGW 11.2.0",
-          "generator": "MinGW Makefiles",
-          "binaryDir": "${sourceDir}/build-release",
-          "cmakeExecutable": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
-          "cacheVariables": {
-            "CMAKE_BUILD_TYPE": "Release",
-            "CMAKE_PREFIX_PATH": "C:/Qt/6.4.0/mingw_64"
-          },
-          "environment": {
-            "PATH": "C:/Qt/Tools/mingw1120_64/bin;$penv{PATH}"
-          }
-        }
-      ]
-    }
-    \endcode
-
-    To speed up the process on Windows, specify the \c CMAKE_C_COMPILER and
-    \c CMAKE_CXX_COMPILER in the \c cacheVariables section.
-
-    \section2 Ninja Generator Example
-
-    The following configure and build presets set Ninja Multi-Config as the
-    generator, add \c Debug and \c Release build steps, and specify the path
-    to \c ninja.exe as a value of the \c CMAKE_MAKE_PROGRAM variable:
-
-    \badcode
-    {
-      "version": 2,
-      "configurePresets": [
-        {
-          "name": "ninja-nmc",
-          "displayName": "Ninja Multi-Config MinGW",
-          "generator": "Ninja Multi-Config",
-          "binaryDir": "${sourceDir}/build",
-          "cacheVariables": {
-            "CMAKE_BUILD_TYPE": "Debug;Release",
-            "CMAKE_PREFIX_PATH": "C:/Qt/6.4.0/mingw_64"
-            "CMAKE_MAKE_PROGRAM": "C:/Qt/Tools/Ninja/ninja.exe"
-          },
-          "environment": {
-            "PATH": "c:/Qt/Tools/mingw1120_64/bin;$penv{PATH}"
-          }
-        }
-      ],
-      "buildPresets": [
-        {
-          "name": "release",
-          "displayName": "Ninja Release",
-          "configurePreset": "ninja-nmc",
-          "configuration": "Release"
-        },
-        {
-          "name": "debug",
-          "displayName": "Ninja Debug",
-          "configurePreset": "ninja-nmc",
-          "configuration": "Debug"
-        }
-      ]
-    }
-    \endcode
-
-    This example assumes that the CMake executable path is set in
-    \uicontrol Edit > \uicontrol Preferences > \uicontrol CMake >
-    \uicontrol Tools.
-
-    \section2 MSVC Example
-
-    When using MSVC compilers with NMAKE Makefiles, Ninja, or Ninja
-    Multi-Config generators, you can use the \c external strategy for
-    the \c architecture and \c toolset fields. This lets \QC set up
-    the Visual C++ environment before invoking CMake.
-
-    For example:
-
-    \badcode
-    "generator": "Ninja Multi-Config",
-    "toolset": {
-      "value": "v142,host=x64",
-      "strategy": "external"
-    },
-    "architecture": {
-      "value": "x64",
-      "strategy": "external"
-    },
-    \endcode
-
-    If you use MSVC compilers with non-VS generators and have several compilers
-    in the \c PATH, you might also have to specify the compiler to use in
-    \c cacheVariables or \c environmentVariables:
-
-    \badcode
-    "generator": "Ninja Multi-Config",
-    "toolset": {
-      "value": "v142,host=x64",
-      "strategy": "external"
-    },
-    "architecture": {
-      "value": "x64",
-      "strategy": "external"
-    },
-    "cacheVariables": {
-      "CMAKE_C_COMPILER": "cl.exe",
-      "CMAKE_CXX_COMPILER": "cl.exe"
-    }
-    \endcode
-
-    \section2 Using Conditions
-
-    The following configure presets are used if they match \c condition. That is,
-    if the \c hostSystemName equals \c Linux, the \c linux presets are used and
-    if it equals \c Windows, the \c windows presets are used.
-
-    \badcode
-    {
-      "version": 3,
-      "configurePresets": [
-        {
-          "name": "linux",
-          "displayName": "Linux GCC",
-          "binaryDir": "${sourceDir}/build",
-          "cacheVariables": {
-            "CMAKE_PREFIX_PATH": "$env{HOME}/Qt/6.4.0/gcc_64"
-          },
-          "condition": {
-            "type": "equals",
-            "lhs": "${hostSystemName}",
-            "rhs": "Linux"
-          }
-        },
-        {
-          "name": "windows",
-          "displayName": "Windows MSVC",
-          "binaryDir": "${sourceDir}/build",
-          "cacheVariables": {
-            "CMAKE_PREFIX_PATH": "$env{SYSTEMDRIVE}/Qt/6.4.0/msvc2019_64"
-          },
-          "condition": {
-            "type": "equals",
-            "lhs": "${hostSystemName}",
-            "rhs": "Windows"
-          }
-        }
-      ]
-    }
-    \endcode
 
     \section1 Multi-Config Support
 
@@ -303,7 +95,8 @@
     the selection, click anywhere in the view.
 
     To change the environment variable values for the CMake build environment,
-    select \uicontrol {Batch Edit}. For more information, see \l{Batch Editing}.
+    select \uicontrol {Batch Edit}. For more information, see
+    \l{Batch edit environment settings}.
 
     To build using the current configuration, select \uicontrol {Run CMake}.
     While building, the button text changes to \uicontrol {Stop CMake}. Select
@@ -352,9 +145,8 @@
 
     To view all variables, select the \uicontrol Advanced check box.
 
-    To view all variables by default, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol CMake > \uicontrol General >
-    \uicontrol {Show advanced options by default}.
+    To view all variables by default, select \preferences > \uicontrol CMake >
+    \uicontrol General > \uicontrol {Show advanced options by default}.
 
     \image qtcreator-preferences-cmake-general.webp "General tab in CMake Preferences"
 
@@ -367,8 +159,8 @@
     stored in the CMakeLists.txt.user file, so deleting a build directory
     does not delete the initial configuration.
 
-    To be asked before \QC resets the changes, select \uicontrol Edit >
-    \uicontrol Preferences > \uicontrol CMake > \uicontrol General >
+    To be asked before \QC resets the changes, select \preferences >
+    \uicontrol CMake > \uicontrol General >
     \uicontrol {Ask before re-configuring with initial parameters}.
 
     \section1 Viewing CMake Output
@@ -408,10 +200,16 @@
     You can add arguments to pass to CMake and the generator and targets for
     the build command in \uicontrol {Build Steps}.
 
-    \image qtcreator-cmake-build-steps.png {CMake build steps}
+    \image qtcreator-cmake-build-steps.webp {CMake build steps}
 
     \note While the other CMake generators are installed together with Qt,
     you usually need to install Ninja yourself.
+
+    To install the application to a staging directory when cross-compiling,
+    select the \uicontrol {Stage for installation} check box and specify
+    the path to a directory in the \uicontrol {Staging directory} field.
+    The packaging tool constructs the package from the contents of the
+    directory.
 
     \section1 Using Ninja as a CMake Generator
 
@@ -427,7 +225,7 @@
             \image qtcreator-cmake-kit-configuration.png {Kit CMake Configuration dialog}
         \li Select \uicontrol Change next to the \uicontrol {CMake generator}
             field to open the \uicontrol {CMake Generator} dialog.
-            \image qtcreator-cmake-generator.png {CMake Generator dialog}
+            \image qtcreator-cmake-generator.webp {CMake Generator dialog}
         \li In \uicontrol Generator, select \uicontrol Ninja.
         \li Select \uicontrol OK to save your changes and close the dialog.
         \li Select \uicontrol Close to close the
@@ -442,10 +240,10 @@
 
     \section1 Using CMake with Conan
 
-    \QC can automatically set up the \l {Setting Up Conan}
-    {Conan package manager} for use with CMake.
+    \QC can automatically set up the \l {Conan Package Manager} for use with
+    CMake.
 
-    Select \uicontrol Edit > \uicontrol Preferences > \uicontrol CMake
+    Select \preferences > \uicontrol CMake
     \uicontrol General > \uicontrol {Package manager auto setup} to set the
     value of the \c CMAKE_PROJECT_INCLUDE_BEFORE variable to the path to a
     CMake script that installs dependencies from a \c conanfile.txt,
@@ -463,7 +261,10 @@
     When building with CMake, you can add arguments to pass to CMake and the
     generator and targets for the clean command in \uicontrol {Clean Steps}.
 
-    \image qtcreator-cmake-clean-steps.png
+    \image qtcreator-cmake-clean-steps.webp {CMake clean steps}
 
     The build errors and warnings are parsed and displayed in \l Issues.
+
+    \sa {Activate kits for a project}, {Configure projects for building},
+    {Configure projects for running}, {Open projects}, {CMake}
 */

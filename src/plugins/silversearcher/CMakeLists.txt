@@ -2,12 +2,12 @@ add_qtc_plugin(SilverSearcher
   PLUGIN_DEPENDS Core TextEditor
   SOURCES
     findinfilessilversearcher.cpp findinfilessilversearcher.h
-    silversearcheroutputparser.cpp silversearcheroutputparser.h
-    silversearcherplugin.cpp silversearcherplugin.h
+    silversearcherparser.cpp silversearcherparser.h
+    silversearcherplugin.cpp
     silversearchertr.h
 )
 
 extend_qtc_plugin(SilverSearcher CONDITION WITH_TESTS
   SOURCES
-    outputparser_test.cpp outputparser_test.h
+    silversearcherparser_test.cpp silversearcherparser_test.h
 )

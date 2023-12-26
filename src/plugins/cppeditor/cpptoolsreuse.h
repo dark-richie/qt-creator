@@ -12,6 +12,8 @@
 #include <texteditor/quickfix.h>
 #include <texteditor/texteditor.h>
 
+#include <utils/searchresultitem.h>
+
 #include <cplusplus/ASTVisitor.h>
 #include <cplusplus/CppDocument.h>
 #include <cplusplus/Token.h>
@@ -23,12 +25,15 @@ class LookupContext;
 } // namespace CPlusPlus
 
 namespace TextEditor { class AssistInterface; }
+namespace Utils { namespace Text { class Range; } }
 
 namespace CppEditor {
-
+class CppEditorWidget;
 class CppRefactoringFile;
 class ProjectInfo;
 class CppCompletionAssistProcessor;
+
+enum class FollowSymbolMode { Exact, Fuzzy };
 
 void CPPEDITOR_EXPORT moveCursorToEndOfIdentifier(QTextCursor *tc);
 void CPPEDITOR_EXPORT moveCursorToStartOfIdentifier(QTextCursor *tc);
@@ -51,6 +56,8 @@ const CPlusPlus::Macro CPPEDITOR_EXPORT *findCanonicalMacro(const QTextCursor &c
 
 bool CPPEDITOR_EXPORT isInCommentOrString(const TextEditor::AssistInterface *interface,
                                           CPlusPlus::LanguageFeatures features);
+bool CPPEDITOR_EXPORT isInCommentOrString(const QTextCursor &cursor,
+                                          CPlusPlus::LanguageFeatures features);
 TextEditor::QuickFixOperations CPPEDITOR_EXPORT
 quickFixOperations(const TextEditor::AssistInterface *interface);
 
@@ -67,7 +74,17 @@ void CPPEDITOR_EXPORT openEditor(const Utils::FilePath &filePath, bool inNextSpl
 class CppCodeModelSettings;
 CppCodeModelSettings CPPEDITOR_EXPORT *codeModelSettings();
 
-bool CPPEDITOR_EXPORT preferLowerCaseFileNames();
+QString CPPEDITOR_EXPORT preferredCxxHeaderSuffix(ProjectExplorer::Project *project);
+QString CPPEDITOR_EXPORT preferredCxxSourceSuffix(ProjectExplorer::Project *project);
+bool CPPEDITOR_EXPORT preferLowerCaseFileNames(ProjectExplorer::Project *project);
+
+
+QList<Utils::Text::Range> CPPEDITOR_EXPORT symbolOccurrencesInText(
+    const QTextDocument &doc, QStringView text, int offset, const QString &symbolName);
+Utils::SearchResultItems CPPEDITOR_EXPORT
+symbolOccurrencesInDeclarationComments(const Utils::SearchResultItems &symbolOccurrencesInCode);
+QList<Utils::Text::Range> CPPEDITOR_EXPORT symbolOccurrencesInDeclarationComments(
+    CppEditorWidget *editorWidget, const QTextCursor &cursor);
 
 UsePrecompiledHeaders CPPEDITOR_EXPORT getPchUsage();
 

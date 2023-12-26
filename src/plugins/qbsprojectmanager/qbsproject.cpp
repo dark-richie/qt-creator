@@ -13,6 +13,7 @@
 #include "qbsprojectmanagerconstants.h"
 #include "qbsprojectmanagertr.h"
 #include "qbsprojectparser.h"
+#include "qbsrequest.h"
 #include "qbssession.h"
 #include "qbssettings.h"
 
@@ -23,9 +24,7 @@
 #include <coreplugin/messagemanager.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 #include <coreplugin/vcsmanager.h>
-#include <cppeditor/cppeditorconstants.h>
-#include <cppeditor/cppmodelmanager.h>
-#include <cppeditor/cppprojectupdater.h>
+#include <cppeditor/cppprojectfile.h>
 #include <cppeditor/generatedcodemodelsupport.h>
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildmanager.h>
@@ -34,21 +33,23 @@
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/headerpath.h>
 #include <projectexplorer/kit.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectupdater.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/taskhub.h>
 #include <projectexplorer/toolchain.h>
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/environment.h>
+#include <utils/mimeconstants.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 #include <qmljs/qmljsmodelmanagerinterface.h>
 #include <qmljstools/qmljsmodelmanager.h>
 #include <qtsupport/qtcppkitinfo.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -56,7 +57,6 @@
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QSet>
-#include <QTimer>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -98,7 +98,7 @@ private:
 // --------------------------------------------------------------------
 
 QbsProject::QbsProject(const FilePath &fileName)
-    : Project(Constants::MIME_TYPE, fileName)
+    : Project(Utils::Constants::QBS_MIMETYPE, fileName)
 {
     setId(Constants::PROJECT_ID);
     setProjectLanguages(Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
@@ -151,7 +151,8 @@ static bool supportsNodeAction(ProjectAction action, const Node *node)
 QbsBuildSystem::QbsBuildSystem(QbsBuildConfiguration *bc)
     : BuildSystem(bc->target()),
       m_session(new QbsSession(this)),
-      m_cppCodeModelUpdater(new CppEditor::CppProjectUpdater),
+      m_cppCodeModelUpdater(
+        ProjectUpdaterFactory::createProjectUpdater(ProjectExplorer::Constants::CXX_LANGUAGE_ID)),
       m_buildConfiguration(bc)
 {
     connect(m_session, &QbsSession::newGeneratedFilesForSources, this,
@@ -199,6 +200,7 @@ QbsBuildSystem::QbsBuildSystem(QbsBuildConfiguration *bc)
 
 QbsBuildSystem::~QbsBuildSystem()
 {
+    m_parseRequest.reset();
     delete m_cppCodeModelUpdater;
     delete m_qbsProjectParser;
     if (m_qbsUpdateFutureInterface) {
@@ -424,21 +426,6 @@ QString QbsBuildSystem::profile() const
     return QbsProfileManager::ensureProfileForKit(target()->kit());
 }
 
-bool QbsBuildSystem::checkCancelStatus()
-{
-    const CancelStatus cancelStatus = m_cancelStatus;
-    m_cancelStatus = CancelStatusNone;
-    if (cancelStatus != CancelStatusCancelingForReparse)
-        return false;
-    qCDebug(qbsPmLog) << "Cancel request while parsing, starting re-parse";
-    m_qbsProjectParser->deleteLater();
-    m_qbsProjectParser = nullptr;
-    m_treeCreationWatcher = nullptr;
-    m_guard = {};
-    parseCurrentBuildConfiguration();
-    return true;
-}
-
 void QbsBuildSystem::updateAfterParse()
 {
     qCDebug(qbsPmLog) << "Updating data after parse";
@@ -454,11 +441,6 @@ void QbsBuildSystem::updateAfterParse()
         m_guard = {};
         emitBuildSystemUpdated();
     });
-}
-
-void QbsBuildSystem::delayedUpdateAfterParse()
-{
-    QTimer::singleShot(0, this, &QbsBuildSystem::updateAfterParse);
 }
 
 void QbsBuildSystem::updateProjectNodes(const std::function<void ()> &continuation)
@@ -512,9 +494,6 @@ void QbsBuildSystem::handleQbsParsingDone(bool success)
 
     qCDebug(qbsPmLog) << "Parsing done, success:" << success;
 
-    if (checkCancelStatus())
-        return;
-
     generateErrors(m_qbsProjectParser->error());
 
     bool dataChanged = false;
@@ -540,7 +519,7 @@ void QbsBuildSystem::handleQbsParsingDone(bool success)
         m_qbsUpdateFutureInterface->reportCanceled();
     }
 
-    m_qbsProjectParser->deleteLater();
+    m_qbsProjectParser->deleteLaterSafely();
     m_qbsProjectParser = nullptr;
     m_qbsUpdateFutureInterface->reportFinished();
     delete m_qbsUpdateFutureInterface;
@@ -549,9 +528,9 @@ void QbsBuildSystem::handleQbsParsingDone(bool success)
     if (dataChanged) {
         updateAfterParse();
         return;
-    }
-    else if (envChanged)
+    } else if (envChanged) {
         updateCppCodeModel();
+    }
     if (success)
         m_guard.markAsSuccess();
     m_guard = {};
@@ -570,14 +549,7 @@ void QbsBuildSystem::changeActiveTarget(Target *t)
 
 void QbsBuildSystem::triggerParsing()
 {
-    // Qbs does update the build graph during the build. So we cannot
-    // start to parse while a build is running or we will lose information.
-    if (BuildManager::isBuilding(project())) {
-        scheduleParsing();
-        return;
-    }
-
-    parseCurrentBuildConfiguration();
+    scheduleParsing();
 }
 
 void QbsBuildSystem::delayParsing()
@@ -591,28 +563,19 @@ ExtraCompiler *QbsBuildSystem::findExtraCompiler(const ExtraCompilerFilter &filt
     return Utils::findOrDefault(m_extraCompilers, filter);
 }
 
-void QbsBuildSystem::parseCurrentBuildConfiguration()
+void QbsBuildSystem::scheduleParsing()
 {
-    m_parsingScheduled = false;
-    if (m_cancelStatus == CancelStatusCancelingForReparse)
-        return;
+    m_parseRequest.reset(new QbsRequest);
+    m_parseRequest->setParseData(this);
+    connect(m_parseRequest.get(), &QbsRequest::done, this, [this] {
+        m_parseRequest.release()->deleteLater();
+    });
+    m_parseRequest->start();
+}
 
-    // The CancelStatusCancelingAltoghether type can only be set by a build job, during
-    // which no other parse requests come through to this point (except by the build job itself,
-    // but of course not while canceling is in progress).
-    QTC_ASSERT(m_cancelStatus == CancelStatusNone, return);
-
-    // New parse requests override old ones.
-    // NOTE: We need to wait for the current operation to finish, since otherwise there could
-    //       be a conflict. Consider the case where the old qbs::ProjectSetupJob is writing
-    //       to the build graph file when the cancel request comes in. If we don't wait for
-    //       acknowledgment, it might still be doing that when the new one already reads from the
-    //       same file.
-    if (m_qbsProjectParser) {
-        m_cancelStatus = CancelStatusCancelingForReparse;
-        m_qbsProjectParser->cancel();
-        return;
-    }
+void QbsBuildSystem::startParsing()
+{
+    QTC_ASSERT(!m_qbsProjectParser, return);
 
     QVariantMap config = m_buildConfiguration->qbsConfiguration();
     if (!config.contains(Constants::QBS_INSTALL_ROOT_KEY)) {
@@ -641,7 +604,6 @@ void QbsBuildSystem::parseCurrentBuildConfiguration()
 void QbsBuildSystem::cancelParsing()
 {
     QTC_ASSERT(m_qbsProjectParser, return);
-    m_cancelStatus = CancelStatusCancelingAltoghether;
     m_qbsProjectParser->cancel();
 }
 
@@ -710,20 +672,21 @@ void QbsBuildSystem::updateDocuments()
 
 static QString getMimeType(const QJsonObject &sourceArtifact)
 {
+    using namespace Utils::Constants;
     const auto tags = sourceArtifact.value("file-tags").toArray();
     if (tags.contains("hpp")) {
         if (CppEditor::ProjectFile::isAmbiguousHeader(sourceArtifact.value("file-path").toString()))
-            return QString(CppEditor::Constants::AMBIGUOUS_HEADER_MIMETYPE);
-        return QString(CppEditor::Constants::CPP_HEADER_MIMETYPE);
+            return QString(AMBIGUOUS_HEADER_MIMETYPE);
+        return QString(CPP_HEADER_MIMETYPE);
     }
     if (tags.contains("cpp"))
-        return QString(CppEditor::Constants::CPP_SOURCE_MIMETYPE);
+        return QString(CPP_SOURCE_MIMETYPE);
     if (tags.contains("c"))
-        return QString(CppEditor::Constants::C_SOURCE_MIMETYPE);
+        return QString(C_SOURCE_MIMETYPE);
     if (tags.contains("objc"))
-        return QString(CppEditor::Constants::OBJECTIVE_C_SOURCE_MIMETYPE);
+        return QString(OBJECTIVE_C_SOURCE_MIMETYPE);
     if (tags.contains("objcpp"))
-        return QString(CppEditor::Constants::OBJECTIVE_CPP_SOURCE_MIMETYPE);
+        return QString(OBJECTIVE_CPP_SOURCE_MIMETYPE);
     return {};
 }
 
@@ -744,6 +707,7 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
     };
     const QJsonValue &enableExceptions = getCppProp("enableExceptions");
     const QJsonValue &enableRtti = getCppProp("enableRtti");
+    const QString warningLevel = getCppProp("warningLevel").toString();
     QStringList commonFlags = arrayToStringList(getCppProp("platformCommonCompilerFlags"));
     commonFlags << arrayToStringList(getCppProp("commonCompilerFlags"))
                 << arrayToStringList(getCppProp("platformDriverFlags"))
@@ -773,6 +737,10 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
             if (!machineType.isEmpty())
                 commonFlags << ("-march=" + machineType);
         }
+        if (warningLevel == "all")
+            commonFlags << "-Wall" << "-Wextra";
+        else if (warningLevel == "none")
+            commonFlags << "-w";
         const QStringList targetOS = arrayToStringList(properties.value("qbs.targetOS"));
         if (targetOS.contains("unix")) {
             const QVariant positionIndependentCode = getCppProp("positionIndependentCode");
@@ -837,6 +805,10 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
             else if (exceptionModel == "externc")
                 commonFlags << "/EHs";
         }
+        if (warningLevel == "all")
+            commonFlags << "/Wall";
+        else if (warningLevel == "none")
+            commonFlags << "/w";
         cFlags = cxxFlags = commonFlags;
         cFlags << "/TC";
         cxxFlags << "/TP";
@@ -855,8 +827,8 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
 static RawProjectPart generateProjectPart(
         const QJsonObject &product,
         const QJsonObject &group,
-        const std::shared_ptr<const ToolChain> &cToolChain,
-        const std::shared_ptr<const ToolChain> &cxxToolChain,
+        const std::shared_ptr<const Toolchain> &cToolChain,
+        const std::shared_ptr<const Toolchain> &cxxToolChain,
         QtMajorVersion qtVersion,
         QString cPch,
         QString cxxPch,
@@ -980,8 +952,8 @@ static RawProjectPart generateProjectPart(
 
 static RawProjectParts generateProjectParts(
         const QJsonObject &projectData,
-        const std::shared_ptr<const ToolChain> &cToolChain,
-        const std::shared_ptr<const ToolChain> &cxxToolChain,
+        const std::shared_ptr<const Toolchain> &cToolChain,
+        const std::shared_ptr<const Toolchain> &cxxToolChain,
         QtMajorVersion qtVersion
         )
 {
@@ -1033,10 +1005,10 @@ void QbsBuildSystem::updateCppCodeModel()
 
     const QtSupport::CppKitInfo kitInfo(kit());
     QTC_ASSERT(kitInfo.isValid(), return);
-    const auto cToolchain = std::shared_ptr<ToolChain>(kitInfo.cToolChain
-            ? kitInfo.cToolChain->clone() : nullptr);
-    const auto cxxToolchain = std::shared_ptr<ToolChain>(kitInfo.cxxToolChain
-            ? kitInfo.cxxToolChain->clone() : nullptr);
+    const auto cToolchain = std::shared_ptr<Toolchain>(kitInfo.cToolchain
+            ? kitInfo.cToolchain->clone() : nullptr);
+    const auto cxxToolchain = std::shared_ptr<Toolchain>(kitInfo.cxxToolchain
+            ? kitInfo.cxxToolchain->clone() : nullptr);
 
     m_cppCodeModelUpdater->update({project(), kitInfo, activeParseEnvironment(), {},
             [projectData, kitInfo, cToolchain, cxxToolchain] {

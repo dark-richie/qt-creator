@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "vcsbasediffeditorcontroller.h"
-#include "vcsplugin.h"
 
-#include <utils/asynctask.h>
+#include <extensionsystem/pluginmanager.h>
+
+#include <utils/async.h>
 #include <utils/environment.h>
 #include <utils/futuresynchronizer.h>
-#include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 using namespace DiffEditor;
+using namespace Tasking;
 using namespace Utils;
 
 namespace VcsBase {
@@ -23,7 +24,6 @@ public:
     VcsBaseDiffEditorController *q;
     Environment m_processEnvironment;
     FilePath m_vcsBinary;
-    const Tasking::TreeStorage<QString> m_inputStorage;
 };
 
 /////////////////////
@@ -38,33 +38,21 @@ VcsBaseDiffEditorController::~VcsBaseDiffEditorController()
     delete d;
 }
 
-Tasking::TreeStorage<QString> VcsBaseDiffEditorController::inputStorage() const
+GroupItem VcsBaseDiffEditorController::postProcessTask(const Storage<QString> &inputStorage)
 {
-    return d->m_inputStorage;
+    const auto onSetup = [inputStorage](Async<QList<FileData>> &async) {
+        async.setFutureSynchronizer(ExtensionSystem::PluginManager::futureSynchronizer());
+        async.setConcurrentCallData(&DiffUtils::readPatchWithPromise, *inputStorage);
+    };
+    const auto onDone = [this](const Async<QList<FileData>> &async, DoneWith result) {
+        setDiffFiles(result == DoneWith::Success && async.isResultAvailable()
+                     ? async.result() : QList<FileData>());
+        // TODO: We should set the right starting line here
+    };
+    return AsyncTask<QList<FileData>>(onSetup, onDone);
 }
 
-Tasking::TaskItem VcsBaseDiffEditorController::postProcessTask()
-{
-    using namespace Tasking;
-
-    const auto setupDiffProcessor = [this](AsyncTask<QList<FileData>> &async) {
-        const QString *storage = inputStorage().activeStorage();
-        QTC_ASSERT(storage, qWarning("Using postProcessTask() requires putting inputStorage() "
-                                     "into task tree's root group."));
-        const QString inputData = storage ? *storage : QString();
-        async.setConcurrentCallData(&DiffUtils::readPatchWithPromise, inputData);
-        async.setFutureSynchronizer(Internal::VcsPlugin::futureSynchronizer());
-    };
-    const auto onDiffProcessorDone = [this](const AsyncTask<QList<FileData>> &async) {
-        setDiffFiles(async.isResultAvailable() ? async.result() : QList<FileData>());
-    };
-    const auto onDiffProcessorError = [this](const AsyncTask<QList<FileData>> &) {
-        setDiffFiles({});
-    };
-    return Async<QList<FileData>>(setupDiffProcessor, onDiffProcessorDone, onDiffProcessorError);
-}
-
-void VcsBaseDiffEditorController::setupCommand(QtcProcess &process, const QStringList &args) const
+void VcsBaseDiffEditorController::setupCommand(Process &process, const QStringList &args) const
 {
     process.setEnvironment(d->m_processEnvironment);
     process.setWorkingDirectory(workingDirectory());

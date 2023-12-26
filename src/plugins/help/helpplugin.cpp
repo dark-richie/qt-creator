@@ -20,8 +20,6 @@
 #include "searchtaskhandler.h"
 #include "topicchooser.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
@@ -40,6 +38,8 @@
 
 #include <extensionsystem/pluginmanager.h>
 
+#include <projectexplorer/kitmanager.h>
+
 #include <texteditor/texteditorconstants.h>
 
 #include <utils/algorithm.h>
@@ -47,6 +47,7 @@
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
 #include <utils/stringutils.h>
+#include <utils/qtcsettings.h>
 #include <utils/theme/theme.h>
 #include <utils/tooltip/tooltip.h>
 
@@ -97,7 +98,7 @@ class HelpPluginPrivate : public QObject
 public:
     HelpPluginPrivate();
 
-    void modeChanged(Utils::Id mode, Utils::Id old);
+    void modeChanged(Id mode, Id old);
 
     void requestContextHelp();
     void showContextHelp(const HelpItem &contextHelp);
@@ -134,7 +135,7 @@ public:
     QRect m_externalWindowState;
 
     DocSettingsPage m_docSettingsPage;
-    FilterSettingsPage m_filterSettingsPage;
+    FilterSettingsPage m_filterSettingsPage{[this] {setupHelpEngineIfNeeded(); }};
     SearchTaskHandler m_searchTaskHandler;
     GeneralSettingsPage m_generalSettingsPage;
 
@@ -182,7 +183,7 @@ HelpPluginPrivate::HelpPluginPrivate()
         auto qtr = new QTranslator(this);
         auto qhelptr = new QTranslator(this);
         const QString creatorTrPath = ICore::resourcePath("translations").toString();
-        const QString qtTrPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+        const QString qtTrPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
         const QString trFile = QLatin1String("assistant_") + locale;
         const QString helpTrFile = QLatin1String("qt_help_") + locale;
         if (qtr->load(trFile, qtTrPath) || qtr->load(trFile, creatorTrPath))
@@ -197,8 +198,6 @@ HelpPluginPrivate::HelpPluginPrivate()
     connect(&m_searchTaskHandler, &SearchTaskHandler::search,
             this, &QDesktopServices::openUrl);
 
-    connect(&m_filterSettingsPage, &FilterSettingsPage::filtersChanged,
-            this, &HelpPluginPrivate::setupHelpEngineIfNeeded);
     connect(Core::HelpManager::Signals::instance(),
             &Core::HelpManager::Signals::documentationChanged,
             this,
@@ -213,62 +212,60 @@ HelpPluginPrivate::HelpPluginPrivate()
         ICore::removeAdditionalContext(Context(kToolTipHelpContext));
     });
 
-    Command *cmd;
-    QAction *action;
-
     // Add Contents, Index, and Context menu items
-    action = new QAction(QIcon::fromTheme("help-contents"), Tr::tr(Constants::SB_CONTENTS), this);
-    cmd = ActionManager::registerAction(action, "Help.ContentsMenu");
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_HELP);
-    connect(action, &QAction::triggered, this, &HelpPluginPrivate::activateContents);
+    ActionBuilder helpContents(this, "Help.ContentsMenu");
+    helpContents.setText(Tr::tr(Constants::SB_CONTENTS));
+    helpContents.setIcon(QIcon::fromTheme("help-contents"));
+    helpContents.addToContainer(Core::Constants::M_HELP,  Core::Constants::G_HELP_HELP);
+    helpContents.addOnTriggered(this, &HelpPluginPrivate::activateContents);
 
-    action = new QAction(Tr::tr(Constants::SB_INDEX), this);
-    cmd = ActionManager::registerAction(action, "Help.IndexMenu");
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_HELP);
-    connect(action, &QAction::triggered, this, &HelpPluginPrivate::activateIndex);
+    ActionBuilder helpIndex(this, "Help.IndexMenu");
+    helpIndex.setText(Tr::tr(Constants::SB_INDEX));
+    helpIndex.addToContainer(Core::Constants::M_HELP, Core::Constants::G_HELP_HELP);
+    helpIndex.addOnTriggered(this, &HelpPluginPrivate::activateIndex);
 
-    action = new QAction(Tr::tr("Context Help"), this);
-    cmd = ActionManager::registerAction(action, Help::Constants::CONTEXT_HELP,
-                                        Context(kToolTipHelpContext, Core::Constants::C_GLOBAL));
-    cmd->setTouchBarIcon(Icons::MACOS_TOUCHBAR_HELP.icon());
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_HELP);
-    ActionManager::actionContainer(Core::Constants::TOUCH_BAR)
-        ->addAction(cmd, Core::Constants::G_TOUCHBAR_HELP);
-    cmd->setDefaultKeySequence(QKeySequence(Qt::Key_F1));
-    connect(action, &QAction::triggered, this, &HelpPluginPrivate::requestContextHelp);
+    ActionBuilder helpContext(this, Help::Constants::CONTEXT_HELP);
+    helpContext.setText(Tr::tr("Context Help"));
+    helpContext.setContext(Context(kToolTipHelpContext, Core::Constants::C_GLOBAL));
+    helpContext.setTouchBarIcon(Icons::MACOS_TOUCHBAR_HELP.icon());
+    helpContext.addToContainer(Core::Constants::M_HELP, Core::Constants::G_HELP_HELP);
+    helpContext.addToContainer(Core::Constants::TOUCH_BAR, Core::Constants::G_TOUCHBAR_HELP);
+    helpContext.setDefaultKeySequence(Qt::Key_F1);
+    helpContext.addOnTriggered(this, &HelpPluginPrivate::requestContextHelp);
+
     ActionContainer *textEditorContextMenu = ActionManager::actionContainer(
         TextEditor::Constants::M_STANDARDCONTEXTMENU);
     if (textEditorContextMenu) {
         textEditorContextMenu->insertGroup(TextEditor::Constants::G_BOM,
                                            Core::Constants::G_HELP);
         textEditorContextMenu->addSeparator(Core::Constants::G_HELP);
-        textEditorContextMenu->addAction(cmd, Core::Constants::G_HELP);
+        helpContext.addToContainer(TextEditor::Constants::M_STANDARDCONTEXTMENU, Core::Constants::G_HELP);
     }
 
-    action = new QAction(Tr::tr("Technical Support..."), this);
-    cmd = ActionManager::registerAction(action, "Help.TechSupport");
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_SUPPORT);
-    connect(action, &QAction::triggered, this, [this] {
+    ActionBuilder techSupport(this, "Help.TechSupport");
+    techSupport.setText(Tr::tr("Technical Support..."));
+    techSupport.addToContainer(Core::Constants::M_HELP, Core::Constants::G_HELP_SUPPORT);
+    techSupport.addOnTriggered(this, [this] {
         showHelpUrl(QUrl("qthelp://org.qt-project.qtcreator/doc/technical-support.html"),
                     Core::HelpManager::HelpModeAlways);
     });
 
-    const QString qdsStandaloneEntry = "QML/Designer/StandAloneMode"; //entry from designer settings
+    const Key qdsStandaloneEntry = "QML/Designer/StandAloneMode"; //entry from designer settings
     const bool isDesigner = Core::ICore::settings()->value(qdsStandaloneEntry, false).toBool();
 
-    action = new QAction(Tr::tr("Report Bug..."), this);
-    cmd = ActionManager::registerAction(action, "Help.ReportBug");
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_SUPPORT);
-    connect(action, &QAction::triggered, this, [isDesigner] {
+    ActionBuilder reportBug(this, "Help.ReportBug");
+    reportBug.setText(Tr::tr("Report Bug..."));
+    reportBug.addToContainer(Core::Constants::M_HELP, Core::Constants::G_HELP_SUPPORT);
+    reportBug.addOnTriggered(this, [isDesigner] {
         const QUrl bugreportUrl = isDesigner ? QString("https://bugreports.qt.io/secure/CreateIssue.jspa?pid=11740") //QDS
                                              : QString("https://bugreports.qt.io/secure/CreateIssue.jspa?pid=10512"); //QtC
         QDesktopServices::openUrl(bugreportUrl);
     });
 
-    action = new QAction(Tr::tr("System Information..."), this);
-    cmd = ActionManager::registerAction(action, "Help.SystemInformation");
-    ActionManager::actionContainer(Core::Constants::M_HELP)->addAction(cmd, Core::Constants::G_HELP_SUPPORT);
-    connect(action, &QAction::triggered, this, &HelpPluginPrivate::slotSystemInformation);
+    ActionBuilder systemInformation(this, "Help.SystemInformation");
+    systemInformation.setText(Tr::tr("System Information..."));
+    systemInformation.addToContainer(Core::Constants::M_HELP, Core::Constants::G_HELP_SUPPORT);
+    systemInformation.addOnTriggered(this, &HelpPluginPrivate::slotSystemInformation);
 
     connect(ModeManager::instance(), &ModeManager::currentModeChanged,
             this, &HelpPluginPrivate::modeChanged);
@@ -287,7 +284,12 @@ void HelpPlugin::extensionsInitialized()
 
 bool HelpPlugin::delayedInitialize()
 {
-    HelpManager::setupHelpManager();
+    if (ProjectExplorer::KitManager::isLoaded()) {
+        HelpManager::setupHelpManager();
+    } else {
+        connect(ProjectExplorer::KitManager::instance(), &ProjectExplorer::KitManager::kitsLoaded,
+                this, &HelpManager::setupHelpManager);
+    }
     return true;
 }
 
@@ -351,7 +353,7 @@ HelpViewer *HelpPluginPrivate::externalHelpViewer()
     m_externalWindow = createHelpWidget(Context(Constants::C_HELP_EXTERNAL),
                                         HelpWidget::ExternalWindow);
     if (m_externalWindowState.isNull()) {
-        QSettings *settings = ICore::settings();
+        QtcSettings *settings = ICore::settings();
         m_externalWindowState = settings->value(kExternalWindowStateKey).toRect();
     }
     if (m_externalWindowState.isNull())
@@ -378,6 +380,13 @@ HelpViewer *HelpPlugin::createHelpViewer()
     connect(LocalHelpManager::instance(), &LocalHelpManager::fontZoomChanged,
             viewer, &HelpViewer::setFontZoom);
 
+    // initialize antialias
+    viewer->setAntialias(LocalHelpManager::antialias());
+    connect(LocalHelpManager::instance(),
+            &LocalHelpManager::antialiasChanged,
+            viewer,
+            &HelpViewer::setAntialias);
+
     viewer->setScrollWheelZoomingEnabled(LocalHelpManager::isScrollWheelZoomingEnabled());
     connect(LocalHelpManager::instance(), &LocalHelpManager::scrollWheelZoomingEnabledChanged,
             viewer, &HelpViewer::setScrollWheelZoomingEnabled);
@@ -403,7 +412,7 @@ void HelpPluginPrivate::showLinksInCurrentViewer(const QMultiMap<QString, QUrl> 
     widget->showLinks(links, key);
 }
 
-void HelpPluginPrivate::modeChanged(Utils::Id mode, Utils::Id old)
+void HelpPluginPrivate::modeChanged(Id mode, Id old)
 {
     Q_UNUSED(old)
     if (mode == m_mode.id()) {
@@ -503,7 +512,7 @@ HelpViewer *HelpPluginPrivate::viewerForContextHelp()
 void HelpPluginPrivate::requestContextHelp()
 {
     // Find out what to show
-    const QVariant tipHelpValue = Utils::ToolTip::contextHelp();
+    const QVariant tipHelpValue = ToolTip::contextHelp();
     const HelpItem tipHelp = tipHelpValue.canConvert<HelpItem>()
                                  ? tipHelpValue.value<HelpItem>()
                                  : HelpItem(tipHelpValue.toString());
@@ -570,7 +579,7 @@ HelpViewer *HelpPluginPrivate::showHelpUrl(const QUrl &url, Core::HelpManager::H
         // QtHelp doesn't know about versions, add the version number and use that
         QUrl versioned = url;
         versioned.setHost(qtcreatorUnversionedID + "."
-                          + QString::fromLatin1(Core::Constants::IDE_VERSION_LONG).remove('.'));
+                          + QCoreApplication::applicationVersion().remove('.'));
 
         return showHelpUrl(versioned, location);
     }

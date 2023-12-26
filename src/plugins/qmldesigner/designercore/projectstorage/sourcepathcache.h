@@ -3,21 +3,25 @@
 
 #pragma once
 
+#include "projectstorage.h"
 #include "projectstorageexceptions.h"
 #include "projectstorageids.h"
 #include "sourcepath.h"
+#include "sourcepathcacheinterface.h"
 #include "sourcepathcachetypes.h"
 #include "sourcepathview.h"
 #include "storagecache.h"
 
+#include <modelfwd.h>
 #include <sqlitetransaction.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace QmlDesigner {
 
-template<typename ProjectStorage, typename Mutex = NonLockingMutex>
-class SourcePathCache
+template<typename ProjectStorage, typename Mutex>
+class SourcePathCache final : public SourcePathCacheInterface
 {
     SourcePathCache(const SourcePathCache &) = default;
     SourcePathCache &operator=(const SourcePathCache &) = default;
@@ -37,7 +41,7 @@ public:
     SourcePathCache(SourcePathCache &&) = default;
     SourcePathCache &operator=(SourcePathCache &&) = default;
 
-    void populateIfEmpty()
+    void populateIfEmpty() override
     {
         if (m_sourcePathCache.isEmpty()) {
             m_sourceContextPathCache.populate();
@@ -45,7 +49,8 @@ public:
         }
     }
 
-    std::pair<SourceContextId, SourceId> sourceContextAndSourceId(SourcePathView sourcePath) const
+    std::pair<SourceContextId, SourceId> sourceContextAndSourceId(
+        SourcePathView sourcePath) const override
     {
         Utils::SmallStringView sourceContextPath = sourcePath.directory();
 
@@ -58,17 +63,18 @@ public:
         return {sourceContextId, sourceId};
     }
 
-    SourceId sourceId(SourcePathView sourcePath) const
+    SourceId sourceId(SourcePathView sourcePath) const override
     {
         return sourceContextAndSourceId(sourcePath).second;
     }
 
-    SourceId sourceId(SourceContextId sourceContextId, Utils::SmallStringView sourceName) const
+    SourceId sourceId(SourceContextId sourceContextId,
+                      Utils::SmallStringView sourceName) const override
     {
         return m_sourcePathCache.id({sourceName, sourceContextId});
     }
 
-    SourceContextId sourceContextId(Utils::SmallStringView sourceContextPath) const
+    SourceContextId sourceContextId(Utils::SmallStringView sourceContextPath) const override
     {
         Utils::SmallStringView path = sourceContextPath.back() == '/'
                                           ? sourceContextPath.mid(0, sourceContextPath.size() - 1)
@@ -77,7 +83,7 @@ public:
         return m_sourceContextPathCache.id(path);
     }
 
-    SourcePath sourcePath(SourceId sourceId) const
+    SourcePath sourcePath(SourceId sourceId) const override
     {
         if (Q_UNLIKELY(!sourceId.isValid()))
             throw NoSourcePathForInvalidSourceId();
@@ -89,7 +95,7 @@ public:
         return SourcePath{sourceContextPath, entry.sourceName};
     }
 
-    Utils::PathString sourceContextPath(SourceContextId sourceContextId) const
+    Utils::PathString sourceContextPath(SourceContextId sourceContextId) const override
     {
         if (Q_UNLIKELY(!sourceContextId.isValid()))
             throw NoSourceContextPathForInvalidSourceContextId();
@@ -97,7 +103,7 @@ public:
         return m_sourceContextPathCache.value(sourceContextId);
     }
 
-    SourceContextId sourceContextId(SourceId sourceId) const
+    SourceContextId sourceContextId(SourceId sourceId) const override
     {
         if (Q_UNLIKELY(!sourceId.isValid()))
             throw NoSourcePathForInvalidSourceId();
@@ -143,7 +149,10 @@ private:
 
     static bool sourceContextLess(Utils::SmallStringView first, Utils::SmallStringView second) noexcept
     {
-        return Utils::reverseCompare(first, second) < 0;
+        return std::lexicographical_compare(first.rbegin(),
+                                            first.rend(),
+                                            second.rbegin(),
+                                            second.rend());
     }
 
     static bool sourceLess(Cache::SourceNameView first, Cache::SourceNameView second) noexcept

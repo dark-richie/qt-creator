@@ -3,10 +3,17 @@
 
 #include "formclasswizard.h"
 #include "formclasswizarddialog.h"
+
 #include <designer/designerconstants.h>
 #include <designer/qtdesignerformclasscodegenerator.h>
-#include <cppeditor/cppeditorconstants.h>
+
+#include <cppeditor/cpptoolsreuse.h>
+
+#include <projectexplorer/projecttree.h>
+
 #include <qtsupport/qtsupportconstants.h>
+
+#include <utils/mimeconstants.h>
 
 #include <QDebug>
 
@@ -22,17 +29,17 @@ FormClassWizard::FormClassWizard()
 
 QString FormClassWizard::headerSuffix() const
 {
-    return preferredSuffix(CppEditor::Constants::CPP_HEADER_MIMETYPE);
+    return CppEditor::preferredCxxHeaderSuffix(ProjectExplorer::ProjectTree::currentProject());
 }
 
 QString FormClassWizard::sourceSuffix() const
 {
-    return preferredSuffix(CppEditor::Constants::CPP_SOURCE_MIMETYPE);
+    return CppEditor::preferredCxxSourceSuffix(ProjectExplorer::ProjectTree::currentProject());
 }
 
 QString FormClassWizard::formSuffix() const
 {
-    return preferredSuffix(Constants::FORM_MIMETYPE);
+    return preferredSuffix(Utils::Constants::FORM_MIMETYPE);
 }
 
 Core::BaseFileWizard *FormClassWizard::create(QWidget *parent, const Core::WizardDialogParameters &parameters) const

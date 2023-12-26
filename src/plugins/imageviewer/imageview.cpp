@@ -9,16 +9,14 @@
 #include "imageviewertr.h"
 #include "multiexportdialog.h"
 
+#include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
 
-#include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcsettings.h>
 
 #include <QClipboard>
-#include <QDir>
-#include <QFileInfo>
 #include <QGraphicsRectItem>
 #include <QGuiApplication>
 #include <QImage>
@@ -40,13 +38,14 @@ const char kSettingsBackground[] = "ShowBackground";
 const char kSettingsOutline[] = "ShowOutline";
 const char kSettingsFitToScreen[] = "FitToScreen";
 
-namespace ImageViewer {
+using namespace Utils;
+
+namespace ImageViewer::Internal {
+
 namespace Constants {
     const qreal DEFAULT_SCALE_FACTOR = 1.2;
     const qreal zoomLevels[] = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0 };
 }
-
-namespace Internal {
 
 static qreal nextLevel(qreal currentLevel)
 {
@@ -157,25 +156,24 @@ QImage ImageView::renderSvg(const QSize &imageSize) const
 
 bool ImageView::exportSvg(const ExportData &ed)
 {
-    const bool result = renderSvg(ed.size).save(ed.fileName);
+    const bool result = renderSvg(ed.size).save(ed.filePath.toFSPathString());
     if (result) {
         const QString message = Tr::tr("Exported \"%1\", %2x%3, %4 bytes")
-            .arg(QDir::toNativeSeparators(ed.fileName))
+            .arg(ed.filePath.toUserOutput())
             .arg(ed.size.width()).arg(ed.size.height())
-            .arg(QFileInfo(ed.fileName).size());
+            .arg(ed.filePath.fileSize());
         Core::MessageManager::writeDisrupting(message);
     } else {
-        const QString message = Tr::tr("Could not write file \"%1\".").arg(QDir::toNativeSeparators(ed.fileName));
+        const QString message = Tr::tr("Could not write file \"%1\".").arg(ed.filePath.toUserOutput());
         QMessageBox::critical(this, Tr::tr("Export Image"), message);
     }
     return result;
 }
 
 #ifndef QT_NO_SVG
-static QString suggestedExportFileName(const QFileInfo &fi)
+static FilePath suggestedExportFileName(const FilePath &fi)
 {
-    return fi.absolutePath() + QLatin1Char('/') + fi.baseName()
-        + QStringLiteral(".png");
+    return fi.absolutePath().pathAppended(fi.baseName() + ".png");
 }
 #endif
 
@@ -195,11 +193,11 @@ void ImageView::exportImage()
     auto svgItem = qgraphicsitem_cast<QGraphicsSvgItem *>(m_imageItem);
     QTC_ASSERT(svgItem, return);
 
-    const QFileInfo origFi = m_file->filePath().toFileInfo();
+    const FilePath origPath = m_file->filePath();
     ExportDialog exportDialog(this);
-    exportDialog.setWindowTitle(Tr::tr("Export %1").arg(origFi.fileName()));
+    exportDialog.setWindowTitle(Tr::tr("Export %1").arg(origPath.fileName()));
     exportDialog.setExportSize(svgSize());
-    exportDialog.setExportFileName(suggestedExportFileName(origFi));
+    exportDialog.setExportFileName(suggestedExportFileName(origPath));
 
     while (exportDialog.exec() == QDialog::Accepted && !exportSvg(exportDialog.exportData())) {}
 #endif // !QT_NO_SVG
@@ -210,14 +208,13 @@ void ImageView::exportMultiImages()
 #ifndef QT_NO_SVG
     QTC_ASSERT(qgraphicsitem_cast<QGraphicsSvgItem *>(m_imageItem), return);
 
-    const QFileInfo origFi = m_file->filePath().toFileInfo();
+    const FilePath origPath = m_file->filePath();
     const QSize size = svgSize();
-    const QString title =
-        Tr::tr("Export a Series of Images from %1 (%2x%3)")
-          .arg(origFi.fileName()).arg(size.width()).arg(size.height());
+    const QString title = Tr::tr("Export a Series of Images from %1 (%2x%3)")
+          .arg(origPath.fileName()).arg(size.width()).arg(size.height());
     MultiExportDialog multiExportDialog;
     multiExportDialog.setWindowTitle(title);
-    multiExportDialog.setExportFileName(suggestedExportFileName(origFi));
+    multiExportDialog.setExportFileName(suggestedExportFileName(origPath));
     multiExportDialog.setSvgSize(size);
     multiExportDialog.suggestSizes();
 
@@ -319,8 +316,9 @@ void ImageView::setFitToScreen(bool fit)
     emit fitToScreenChanged(m_settings.fitToScreen);
 }
 
-void ImageView::readSettings(Utils::QtcSettings *settings)
+void ImageView::readSettings()
 {
+    QtcSettings *settings = Core::ICore::settings();
     const Settings def;
     settings->beginGroup(kSettingsGroup);
     m_settings.showBackground = settings->value(kSettingsBackground, def.showBackground).toBool();
@@ -329,8 +327,9 @@ void ImageView::readSettings(Utils::QtcSettings *settings)
     settings->endGroup();
 }
 
-void ImageView::writeSettings(Utils::QtcSettings *settings) const
+void ImageView::writeSettings() const
 {
+    QtcSettings *settings = Core::ICore::settings();
     const Settings def;
     settings->beginGroup(kSettingsGroup);
     settings->setValueWithDefault(kSettingsBackground,
@@ -369,5 +368,4 @@ void ImageView::hideEvent(QHideEvent *)
     m_file->updateVisibility();
 }
 
-} // namespace Internal
-} // namespace ImageView
+} // namespace ImageView::Internal

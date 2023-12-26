@@ -45,12 +45,12 @@ QString MercurialEditorWidget::changeUnderCursor(const QTextCursor &cursorIn) co
         if (exactIdentifier40.match(change).hasMatch())
             return change;
     }
-    return QString();
+    return {};
 }
 
-VcsBase::BaseAnnotationHighlighter *MercurialEditorWidget::createAnnotationHighlighter(const QSet<QString> &changes) const
+VcsBase::BaseAnnotationHighlighterCreator MercurialEditorWidget::annotationHighlighterCreator() const
 {
-    return new MercurialAnnotationHighlighter(changes);
+    return VcsBase::getAnnotationHighlighterCreator<MercurialAnnotationHighlighter>();
 }
 
 QString MercurialEditorWidget::decorateVersion(const QString &revision) const

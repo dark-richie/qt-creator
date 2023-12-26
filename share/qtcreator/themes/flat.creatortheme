@@ -33,6 +33,7 @@ graniteGrey=ff343434
 ashGrey=ff434343
 midnightGrey=ff333333
 dawnGrey=ff2a2a2a
+coalGrey=ff282828
 offBlack=ff202020
 nearBlack=ff1b1b1b
 fullBlack=ff000000
@@ -74,7 +75,47 @@ DSstateBackgroundColor_hover=ashGrey
 DSstateControlBackgroundColor_globalHover=ashGrey
 DSstateControlBackgroundColor_hover=raincloudGrey
 DSpanelBackground=dawnGrey
-;END NEW FOR QtDS 4.0
+
+;4.3
+DSpopoutBackground=offBlack
+DSpopoutControlBackground_idle=offBlack
+DSpopoutControlBackground_hover=dawnGrey
+DSpopoutControlBackground_globalHover=dawnGrey
+DSpopoutControlBackground_interaction=highlightBlue
+DSpopoutControlBackground_disabled=offBlack
+DSpopoutPopupBackground=nearBlack
+
+DSpopoutControlBorder_idle=midnightGrey
+DSpopoutControlBorder_hover=raincloudGrey
+DSpopoutControlBorder_interaction=highlightBlue
+DSpopoutControlBorder_disabled=offBlack
+
+DSpopoutButtonBackground_idle=offBlack
+DSpopoutButtonBackground_hover=dawnGrey
+DSpopoutButtonBackground_interaction=highlightBlue
+DSpopoutButtonBackground_disabled=offBlack
+
+DSpopoutButtonBorder_idle=slateGrey
+DSpopoutButtonBorder_hover=lightWhite
+DSpopoutButtonBorder_interaction=highlightBlue
+DSpopoutButtonBorder_disabled=offBlack
+
+;4.4
+DSconnectionCodeEditor=midnightGrey
+DSconnectionEditorMicroToolbar=coalGrey
+DSconnectionEditorButtonBackground_hover=midnightGrey
+DSconnectionEditorButtonBorder_hover=duskGrey
+DSpillText=fullWhite
+DSpillTextSelected=fullBlack
+DspillTextEdit=fullWhite
+DSpillDefaultBackgroundIdle=graniteGrey
+DSpillDefaultBackgroundHover=raincloudGrey
+DSpillOperatorBackgroundIdle=ff6b2a7b
+DSpillOperatorBackgroundHover=ff7e478b
+DSpillLiteralBackgroundIdle=ff447953
+DSpillLiteralBackgroundHover=ff61866B
+
+;END NEW FOR QtDS 4
 
 DSwelcomeScreenBackground=ff242424
 DSsubPanelBackground=ff1c1c1c
@@ -137,6 +178,7 @@ DSsliderHandleInteraction=ff2aafd3
 
 DSscrollBarTrack=dawnGrey
 DSscrollBarHandle=offBlack
+DSscrollBarHandle_idle=slateGrey
 
 DSsectionHeadBackground=midnightGrey
 
@@ -226,6 +268,7 @@ DSBackgroundColorNormal=normalBackground
 DStoolbarBackground=midnightGrey
 
 ;DS controls theme END
+
 
 BackgroundColorAlternate=alternateBackground
 BackgroundColorDark=shadowBackground
@@ -362,6 +405,27 @@ Debugger_WatchItem_ValueChanged=ffbf0303
 
 Debugger_Breakpoint_TextMarkColor=ffff4040
 
+; Qt Creator Color Tokens - light mode
+Token_Basic_Black=ff131313
+Token_Basic_White=fff2f2f2
+Token_Accent_Default=ff28c878
+Token_Accent_Muted=ff23b26a
+Token_Accent_Subtle=ff1f9b5d
+Token_Background_Default=fff4f4f4
+Token_Background_Muted=ffe7e7e7
+Token_Background_Hover=ffdddddd
+Token_Background_Subtle=ffcfcfcf
+Token_Text_Default=ff393939
+Token_Text_Muted=ff787878
+Token_Text_Subtle=ffb2b2b2
+Token_Stroke_Strong=ff464646
+Token_Stroke_Muted=ff838383
+Token_Stroke_Subtle=ffd7d7d7
+Token_Notification_Alert=ffeb991f
+Token_Notification_Success=ff23b26a
+Token_Notification_Neutral=ff0e7887
+Token_Notification_Danger=ffdc1343
+
 Welcome_TextColor=ff000000
 Welcome_ForegroundPrimaryColor=shadowBackground
 Welcome_ForegroundSecondaryColor=ff939393
@@ -392,6 +456,7 @@ VcsBase_FileUnmerged_TextColor=ffee0000
 Bookmarks_TextMarkColor=ffa0a0ff
 
 TextEditor_SearchResult_ScrollBarColor=ff00c000
+TextEditor_Selection_ScrollBarColor=ffcccccc
 TextEditor_CurrentLine_ScrollBarColor=ff404040
 
 ProjectExplorer_TaskError_TextMarkColor=error

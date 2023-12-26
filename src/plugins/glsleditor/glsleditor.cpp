@@ -37,12 +37,12 @@
 
 #include <utils/algorithm.h>
 #include <utils/changeset.h>
+#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/uncommentselection.h>
 
 #include <QCoreApplication>
-#include <QSettings>
 #include <QComboBox>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -167,8 +167,7 @@ GlslEditorWidget::GlslEditorWidget()
     connect(&m_updateDocumentTimer, &QTimer::timeout,
             this, &GlslEditorWidget::updateDocumentNow);
 
-    connect(this, &QPlainTextEdit::textChanged,
-            [this]() { m_updateDocumentTimer.start(); });
+    connect(this, &QPlainTextEdit::textChanged, [this] { m_updateDocumentTimer.start(); });
 
     m_outlineCombo = new QComboBox;
     m_outlineCombo->setMinimumContentsLength(22);
@@ -269,10 +268,8 @@ void GlslEditorWidget::updateDocumentNow()
         for (const DiagnosticMessage &m : messages) {
             if (! m.line())
                 continue;
-            else if (errors.contains(m.line()))
+            if (!Utils::insert(errors, m.line()))
                 continue;
-
-            errors.insert(m.line());
 
             QTextCursor cursor(document()->findBlockByNumber(m.line() - 1));
             cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
@@ -320,19 +317,19 @@ int languageVariant(const QString &type)
         isVertex = true;
         isFragment = true;
     } else if (type == QLatin1String("text/x-glsl") ||
-               type == QLatin1String("application/x-glsl")) {
+               type == QLatin1String(Utils::Constants::GLSL_MIMETYPE)) {
         isVertex = true;
         isFragment = true;
         isDesktop = true;
-    } else if (type == QLatin1String("text/x-glsl-vert")) {
+    } else if (type == QLatin1String(Utils::Constants::GLSL_VERT_MIMETYPE)) {
         isVertex = true;
         isDesktop = true;
-    } else if (type == QLatin1String("text/x-glsl-frag")) {
+    } else if (type == QLatin1String(Utils::Constants::GLSL_FRAG_MIMETYPE)) {
         isFragment = true;
         isDesktop = true;
-    } else if (type == QLatin1String("text/x-glsl-es-vert")) {
+    } else if (type == QLatin1String(Utils::Constants::GLSL_ES_VERT_MIMETYPE)) {
         isVertex = true;
-    } else if (type == QLatin1String("text/x-glsl-es-frag")) {
+    } else if (type == QLatin1String(Utils::Constants::GLSL_ES_FRAG_MIMETYPE)) {
         isFragment = true;
     }
     if (isDesktop)
@@ -368,11 +365,11 @@ GlslEditorFactory::GlslEditorFactory()
 {
     setId(Constants::C_GLSLEDITOR_ID);
     setDisplayName(::Core::Tr::tr(Constants::C_GLSLEDITOR_DISPLAY_NAME));
-    addMimeType(Constants::GLSL_MIMETYPE);
-    addMimeType(Constants::GLSL_MIMETYPE_VERT);
-    addMimeType(Constants::GLSL_MIMETYPE_FRAG);
-    addMimeType(Constants::GLSL_MIMETYPE_VERT_ES);
-    addMimeType(Constants::GLSL_MIMETYPE_FRAG_ES);
+    addMimeType(Utils::Constants::GLSL_MIMETYPE);
+    addMimeType(Utils::Constants::GLSL_VERT_MIMETYPE);
+    addMimeType(Utils::Constants::GLSL_FRAG_MIMETYPE);
+    addMimeType(Utils::Constants::GLSL_ES_VERT_MIMETYPE);
+    addMimeType(Utils::Constants::GLSL_ES_FRAG_MIMETYPE);
 
     setDocumentCreator([]() { return new TextDocument(Constants::C_GLSLEDITOR_ID); });
     setEditorWidgetCreator([]() { return new GlslEditorWidget; });

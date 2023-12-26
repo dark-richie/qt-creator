@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include "android_global.h"
-
 #include <utils/fileutils.h>
 #include <utils/wizard.h>
 
@@ -21,7 +19,7 @@ public:
     QString buildKey() const;
     void setBuildKey(const QString &buildKey);
 
-    void accept();
+    void accept() override;
     bool copyGradle();
 
     void setDirectory(const Utils::FilePath &directory);

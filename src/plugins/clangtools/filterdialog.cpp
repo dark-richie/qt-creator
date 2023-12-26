@@ -86,7 +86,7 @@ FilterDialog::FilterDialog(const Checks &checks, QWidget *parent)
     m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_view->setIndentation(0);
 
-    using namespace Utils::Layouting;
+    using namespace Layouting;
 
     Column {
         Tr::tr("Select the diagnostics to display."),
@@ -96,7 +96,7 @@ FilterDialog::FilterDialog(const Checks &checks, QWidget *parent)
     }.attachTo(this);
 
     connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this, [=] {
-        const bool hasSelection = !m_view->selectionModel()->selectedRows().isEmpty();
+        const bool hasSelection = !this->m_view->selectionModel()->selectedRows().isEmpty();
         buttonBox->button(QDialogButtonBox::Ok)->setEnabled(hasSelection);
     });
 

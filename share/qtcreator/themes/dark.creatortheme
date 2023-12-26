@@ -35,6 +35,7 @@ graniteGrey=ff343434
 ashGrey=ff434343
 midnightGrey=ff333333
 dawnGrey=ff2a2a2a
+coalGrey=ff282828
 offBlack=ff202020
 nearBlack=ff1b1b1b
 fullBlack=ff000000
@@ -75,9 +76,47 @@ DSstateBackgroundColor_hover=ashGrey
 DSstateControlBackgroundColor_globalHover=ashGrey
 DSstateControlBackgroundColor_hover=raincloudGrey
 DSpanelBackground=dawnGrey
-;END NEW FOR QtDS 4.0
 
-DSpanelBackground=dawnGrey
+;4.3
+DSpopoutBackground=offBlack
+DSpopoutControlBackground_idle=offBlack
+DSpopoutControlBackground_hover=dawnGrey
+DSpopoutControlBackground_globalHover=dawnGrey
+DSpopoutControlBackground_interaction=highlightBlue
+DSpopoutControlBackground_disabled=offBlack
+DSpopoutPopupBackground=nearBlack
+
+DSpopoutControlBorder_idle=midnightGrey
+DSpopoutControlBorder_hover=raincloudGrey
+DSpopoutControlBorder_interaction=highlightBlue
+DSpopoutControlBorder_disabled=offBlack
+
+DSpopoutButtonBackground_idle=offBlack
+DSpopoutButtonBackground_hover=dawnGrey
+DSpopoutButtonBackground_interaction=highlightBlue
+DSpopoutButtonBackground_disabled=offBlack
+
+DSpopoutButtonBorder_idle=slateGrey
+DSpopoutButtonBorder_hover=lightWhite
+DSpopoutButtonBorder_interaction=highlightBlue
+DSpopoutButtonBorder_disabled=offBlack
+
+;4.4
+DSconnectionCodeEditor=midnightGrey
+DSconnectionEditorMicroToolbar=coalGrey
+DSconnectionEditorButtonBackground_hover=midnightGrey
+DSconnectionEditorButtonBorder_hover=duskGrey
+DSpillText=fullWhite
+DSpillTextSelected=fullBlack
+DspillTextEdit=fullWhite
+DSpillDefaultBackgroundIdle=graniteGrey
+DSpillDefaultBackgroundHover=raincloudGrey
+DSpillOperatorBackgroundIdle=ff6b2a7b
+DSpillOperatorBackgroundHover=ff7e478b
+DSpillLiteralBackgroundIdle=ff447953
+DSpillLiteralBackgroundHover=ff61866B
+
+;END NEW FOR QtDS 4
 
 DSwelcomeScreenBackground=ff242424
 DSsubPanelBackground=ff1c1c1c
@@ -140,6 +179,7 @@ DSsliderHandleInteraction=ff2aafd3
 
 DSscrollBarTrack=dawnGrey
 DSscrollBarHandle=offBlack
+DSscrollBarHandle_idle=slateGrey
 
 DSsectionHeadBackground=midnightGrey
 
@@ -229,6 +269,7 @@ DSBackgroundColorNormal=normalBackground
 DStoolbarBackground=midnightGrey
 
 ;DS controls theme END
+
 
 BackgroundColorAlternate=alternateBackground
 BackgroundColorDark=shadowBackground
@@ -365,6 +406,27 @@ Debugger_WatchItem_ValueChanged=ffff6666
 
 Debugger_Breakpoint_TextMarkColor=ffff4040
 
+; Qt Creator Color Tokens - dark mode
+Token_Basic_Black=ff131313
+Token_Basic_White=fff8f8f8
+Token_Accent_Default=ff23b26a
+Token_Accent_Muted=ff1f9b5d
+Token_Accent_Subtle=ff1a8550
+Token_Background_Default=ff1f1f1f
+Token_Background_Muted=ff262626
+Token_Background_Hover=ff313131
+Token_Background_Subtle=ff3c3c3c
+Token_Text_Default=fff2f2f2
+Token_Text_Muted=ff909090
+Token_Text_Subtle=ff595959
+Token_Stroke_Strong=ffeeeeee
+Token_Stroke_Muted=ff727272
+Token_Stroke_Subtle=ff3a3a3a
+Token_Notification_Alert=ffc98f38
+Token_Notification_Success=ff1f9b5d
+Token_Notification_Neutral=ff016876
+Token_Notification_Danger=ffb22245
+
 Welcome_TextColor=text
 Welcome_ForegroundPrimaryColor=ffa3a3a3
 Welcome_ForegroundSecondaryColor=ff808080
@@ -395,6 +457,7 @@ VcsBase_FileUnmerged_TextColor=ffff4040
 Bookmarks_TextMarkColor=ff8080ff
 
 TextEditor_SearchResult_ScrollBarColor=ff00c000
+TextEditor_Selection_ScrollBarColor=ff888888
 TextEditor_CurrentLine_ScrollBarColor=ffffffff
 
 ProjectExplorer_TaskError_TextMarkColor=error
@@ -440,26 +503,26 @@ QmlDesigner_FormeditorBackgroundColor=qmlDesignerButtonColor
 QmlDesigner_AlternateBackgroundColor=qmlDesignerButtonColor
 QmlDesigner_ScrollBarHandleColor=ff505050
 
-TerminalForeground=ffffffff
+TerminalForeground=ffffff
 TerminalBackground=normalBackground
-TerminalSelection=7fffffff
+TerminalSelection=3fd1d1d1
 TerminalFindMatch=7fffff00
-TerminalAnsi0=000000
-TerminalAnsi1=8b1b10
-TerminalAnsi2=4aa32e
-TerminalAnsi3=9a9a2f
-TerminalAnsi4=0058D1
+TerminalAnsi0=151515
+TerminalAnsi1=ac4142
+TerminalAnsi2=7e8e50
+TerminalAnsi3=e5b567
+TerminalAnsi4=6c99bb
 TerminalAnsi5=a320ac
-TerminalAnsi6=49a3b0
-TerminalAnsi7=bfbfbf
-TerminalAnsi8=666666
-TerminalAnsi9=d22d1f
-TerminalAnsi10=62d63f
-TerminalAnsi11=e5e54b
-TerminalAnsi12=003EFF
-TerminalAnsi13=d22dde
-TerminalAnsi14=69e2e4
-TerminalAnsi15=e5e5e6
+TerminalAnsi6=7dd6cf
+TerminalAnsi7=d0d0d0
+TerminalAnsi8=505050
+TerminalAnsi9=d05e5b
+TerminalAnsi10=a7b773
+TerminalAnsi11=ffd184
+TerminalAnsi12=94c8ea
+TerminalAnsi13=f257fb
+TerminalAnsi14=a1fcf7
+TerminalAnsi15=ffffff
 
 [Flags]
 ComboBoxDrawTextShadow=false

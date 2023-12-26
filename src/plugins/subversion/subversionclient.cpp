@@ -12,8 +12,7 @@
 #include <utils/commandline.h>
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <vcsbase/vcsbaseconstants.h>
 #include <vcsbase/vcsbasediffeditorcontroller.h>
@@ -35,27 +34,22 @@ using namespace VcsBase;
 namespace Subversion {
 namespace Internal {
 
-static SubversionSettings *s_settings = nullptr;
-
 class SubversionLogConfig : public VcsBaseEditorConfig
 {
     Q_OBJECT
 public:
-    SubversionLogConfig(SubversionSettings &settings, QToolBar *toolBar) :
-        VcsBaseEditorConfig(toolBar)
+    explicit SubversionLogConfig(QToolBar *toolBar)
+        : VcsBaseEditorConfig(toolBar)
     {
         mapSetting(addToggleButton("--verbose", Tr::tr("Verbose"),
                                    Tr::tr("Show files changed in each revision")),
-                   &settings.logVerbose);
+                   &settings().logVerbose);
     }
 };
 
-SubversionClient::SubversionClient(SubversionSettings *settings) : VcsBaseClient(settings)
+SubversionClient::SubversionClient() : VcsBaseClient(&Internal::settings())
 {
-    s_settings = settings;
-    setLogConfigCreator([settings](QToolBar *toolBar) {
-        return new SubversionLogConfig(*settings, toolBar);
-    });
+    setLogConfigCreator([](QToolBar *toolBar) { return new SubversionLogConfig(toolBar); });
 }
 
 bool SubversionClient::doCommit(const FilePath &repositoryRoot,
@@ -95,18 +89,18 @@ Id SubversionClient::vcsEditorKind(VcsCommandTag cmd) const
     case VcsBaseClient::LogCommand: return Constants::SUBVERSION_LOG_EDITOR_ID;
     case VcsBaseClient::AnnotateCommand: return Constants::SUBVERSION_BLAME_EDITOR_ID;
     default:
-        return Id();
+        return {};
     }
 }
 
 // Add authorization options to the command line arguments.
 CommandLine &operator<<(Utils::CommandLine &command, SubversionClient::AddAuthOptions)
 {
-    if (!s_settings->hasAuthentication())
+    if (!settings().hasAuthentication())
         return command;
 
-    const QString userName = s_settings->userName.value();
-    const QString password = s_settings->password.value();
+    const QString userName = settings().userName();
+    const QString password = settings().password();
 
     if (userName.isEmpty())
         return command;
@@ -169,26 +163,23 @@ SubversionDiffEditorController::SubversionDiffEditorController(IDocument *docume
 
     using namespace Tasking;
 
-    const TreeStorage<QString> diffInputStorage = inputStorage();
+    const Storage<QString> diffInputStorage;
 
-    const auto setupDescription = [this](QtcProcess &process) {
+    const auto onDescriptionSetup = [this](Process &process) {
         if (m_changeNumber == 0)
-            return TaskAction::StopWithDone;
+            return SetupResult::StopWithSuccess;
         setupCommand(process, {"log", "-r", QString::number(m_changeNumber)});
         CommandLine command = process.commandLine();
         command << SubversionClient::AddAuthOptions();
         process.setCommand(command);
         setDescription(Tr::tr("Waiting for data..."));
-        return TaskAction::Continue;
+        return SetupResult::Continue;
     };
-    const auto onDescriptionDone = [this](const QtcProcess &process) {
-        setDescription(process.cleanedStdOut());
-    };
-    const auto onDescriptionError = [this](const QtcProcess &) {
-        setDescription({});
+    const auto onDescriptionDone = [this](const Process &process, DoneWith result) {
+        setDescription(result == DoneWith::Success ? process.cleanedStdOut() : QString());
     };
 
-    const auto setupDiff = [this](QtcProcess &process) {
+    const auto onDiffSetup = [this](Process &process) {
         QStringList args = QStringList{"diff"} << "--internal-diff";
         if (ignoreWhitespace())
             args << "-x" << "-uw";
@@ -202,20 +193,20 @@ SubversionDiffEditorController::SubversionDiffEditorController(IDocument *docume
         command << SubversionClient::AddAuthOptions();
         process.setCommand(command);
     };
-    const auto onDiffDone = [diffInputStorage](const QtcProcess &process) {
+    const auto onDiffDone = [diffInputStorage](const Process &process) {
         *diffInputStorage = process.cleanedStdOut();
     };
 
     const Group root {
-        Storage(diffInputStorage),
+        diffInputStorage,
         parallel,
         Group {
-            optional,
-            Process(setupDescription, onDescriptionDone, onDescriptionError)
+            finishAllAndSuccess,
+            ProcessTask(onDescriptionSetup, onDescriptionDone)
         },
         Group {
-            Process(setupDiff, onDiffDone),
-            postProcessTask()
+            ProcessTask(onDiffSetup, onDiffDone, CallDoneIf::Success),
+            postProcessTask(diffInputStorage)
         }
     };
     setReloadRecipe(root);
@@ -240,13 +231,12 @@ void SubversionDiffEditorController::setChangeNumber(int changeNumber)
 SubversionDiffEditorController *SubversionClient::findOrCreateDiffEditor(const QString &documentId,
     const FilePath &source, const QString &title, const FilePath &workingDirectory)
 {
-    auto &settings = static_cast<SubversionSettings &>(this->settings());
     IDocument *document = DiffEditorController::findOrCreateDocument(documentId, title);
     auto controller = qobject_cast<SubversionDiffEditorController *>(
                 DiffEditorController::controller(document));
     if (!controller) {
         controller = new SubversionDiffEditorController(document);
-        controller->setVcsBinary(settings.binaryPath.filePath());
+        controller->setVcsBinary(settings().binaryPath());
         controller->setProcessEnvironment(processEnvironment());
         controller->setWorkingDirectory(workingDirectory);
     }
@@ -277,8 +267,7 @@ void SubversionClient::log(const FilePath &workingDir,
                            bool enableAnnotationContextMenu,
                            const std::function<void(Utils::CommandLine &)> &addAuthOptions)
 {
-    auto &settings = static_cast<SubversionSettings &>(this->settings());
-    const int logCount = settings.logCount.value();
+    const int logCount = settings().logCount();
     QStringList svnExtraOptions = extraOptions;
     if (logCount > 0)
         svnExtraOptions << QLatin1String("-l") << QString::number(logCount);

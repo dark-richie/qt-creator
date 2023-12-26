@@ -3,19 +3,14 @@
 
 #include "genericproject.h"
 
-#include "genericbuildconfiguration.h"
-#include "genericmakestep.h"
 #include "genericprojectconstants.h"
 #include "genericprojectmanagertr.h"
 
+#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
-
-#include <cppeditor/cppprojectupdaterinterface.h>
-
-#include <extensionsystem/pluginmanager.h>
 
 #include <projectexplorer/abi.h>
 #include <projectexplorer/buildinfo.h>
@@ -24,22 +19,26 @@
 #include <projectexplorer/customexecutablerunconfiguration.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/headerpath.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
+#include <projectexplorer/projectnodes.h>
+#include <projectexplorer/projecttree.h>
+#include <projectexplorer/projectupdater.h>
 #include <projectexplorer/selectablefilesmodel.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/taskhub.h>
 
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtcppkitinfo.h>
-#include <qtsupport/qtkitinformation.h>
+#include <qtsupport/qtkitaspect.h>
 
 #include <utils/algorithm.h>
 #include <utils/filesystemwatcher.h>
 #include <utils/fileutils.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -55,8 +54,7 @@ using namespace Core;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace GenericProjectManager {
-namespace Internal {
+namespace GenericProjectManager::Internal {
 
 enum RefreshOptions {
     Files         = 0x01,
@@ -64,13 +62,13 @@ enum RefreshOptions {
     Everything    = Files | Configuration
 };
 
-////////////////////////////////////////////////////////////////////////////////////
 //
 // GenericProjectFile
 //
-////////////////////////////////////////////////////////////////////////////////////
 
-class GenericProjectFile : public Core::IDocument
+class GenericProject;
+
+class GenericProjectFile final : public IDocument
 {
 public:
     GenericProjectFile(GenericProject *parent, const FilePath &fileName, RefreshOptions options)
@@ -86,7 +84,7 @@ public:
         return BehaviorSilent;
     }
 
-    bool reload(QString *errorString, ReloadFlag flag, ChangeType type) override;
+    bool reload(QString *errorString, ReloadFlag flag, ChangeType type) final;
 
 private:
     GenericProject *m_project = nullptr;
@@ -94,13 +92,11 @@ private:
 };
 
 
-////////////////////////////////////////////////////////////////////////////////////
 //
 // GenericBuildSystem
 //
-////////////////////////////////////////////////////////////////////////////////////
 
-class GenericBuildSystem : public BuildSystem
+class GenericBuildSystem final : public BuildSystem
 {
 public:
     explicit GenericBuildSystem(Target *target);
@@ -135,7 +131,7 @@ public:
     SourceFiles processEntries(const QStringList &paths,
                                QHash<QString, QString> *map = nullptr) const;
 
-    Utils::FilePath findCommonSourceRoot();
+    FilePath findCommonSourceRoot();
     void refreshCppCodeModel();
     void updateDeploymentData();
 
@@ -152,50 +148,53 @@ private:
     SourceFiles m_files;
     QHash<QString, QString> m_rawListEntries;
     QStringList m_rawProjectIncludePaths;
-    ProjectExplorer::HeaderPaths m_projectIncludePaths;
+    HeaderPaths m_projectIncludePaths;
     QStringList m_cxxflags;
     QStringList m_cflags;
 
-    CppEditor::CppProjectUpdaterInterface *m_cppCodeModelUpdater = nullptr;
+    ProjectUpdater *m_cppCodeModelUpdater = nullptr;
 
     FileSystemWatcher m_deployFileWatcher;
 };
 
-////////////////////////////////////////////////////////////////////////////////////
 //
 // GenericProject
 //
-////////////////////////////////////////////////////////////////////////////////////
 
 static bool writeFile(const QString &filePath, const QString &contents)
 {
-    Utils::FileSaver saver(Utils::FilePath::fromString(filePath),
-                           QIODevice::Text | QIODevice::WriteOnly);
+    FileSaver saver(FilePath::fromString(filePath),
+                    QIODevice::Text | QIODevice::WriteOnly);
     return saver.write(contents.toUtf8()) && saver.finalize();
 }
 
-GenericProject::GenericProject(const Utils::FilePath &fileName)
-    : Project(Constants::GENERICMIMETYPE, fileName)
+class GenericProject final : public Project
 {
-    setId(Constants::GENERICPROJECT_ID);
-    setProjectLanguages(Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
-    setDisplayName(fileName.completeBaseName());
-    setBuildSystemCreator([](Target *t) { return new GenericBuildSystem(t); });
-}
+    Q_OBJECT
+
+public:
+    explicit GenericProject(const FilePath &filePath)
+        : Project(Constants::GENERICMIMETYPE, filePath)
+    {
+        setId(Constants::GENERICPROJECT_ID);
+        setProjectLanguages(Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
+        setDisplayName(filePath.completeBaseName());
+        setBuildSystemCreator([](Target *t) { return new GenericBuildSystem(t); });
+    }
+
+    void editFilesTriggered();
+    void removeFilesTriggered(const FilePaths &filesToRemove);
+
+private:
+    RestoreResult fromMap(const Store &map, QString *errorMessage) final;
+    DeploymentKnowledge deploymentKnowledge() const final;
+    void configureAsExampleProject(Kit *kit) final;
+};
 
 GenericBuildSystem::GenericBuildSystem(Target *target)
     : BuildSystem(target)
 {
-    QObject *projectUpdaterFactory = ExtensionSystem::PluginManager::getObjectByName(
-        "CppProjectUpdaterFactory");
-    if (projectUpdaterFactory) {
-        const bool successFullyCreatedProjectUpdater
-            = QMetaObject::invokeMethod(projectUpdaterFactory,
-                                        "create",
-                                        Q_RETURN_ARG(CppEditor::CppProjectUpdaterInterface *,
-                                                     m_cppCodeModelUpdater));
-        QTC_CHECK(successFullyCreatedProjectUpdater);
-    }
+    m_cppCodeModelUpdater = ProjectUpdaterFactory::createCppProjectUpdater();
 
     connect(target->project(), &Project::projectFileIsDirty, this, [this](const FilePath &p) {
         if (p.endsWith(".files"))
@@ -289,7 +288,7 @@ bool GenericBuildSystem::saveRawList(const QStringList &rawList, const QString &
     const FilePath filePath = FilePath::fromString(fileName);
     FileChangeBlocker changeGuard(filePath);
     // Make sure we can open the file for writing
-    Utils::FileSaver saver(filePath, QIODevice::Text);
+    FileSaver saver(filePath, QIODevice::Text);
     if (!saver.hasError()) {
         QTextStream stream(saver.file());
         for (const QString &filePath : rawList)
@@ -330,8 +329,9 @@ bool GenericBuildSystem::addFiles(Node *, const FilePaths &filePaths_, FilePaths
     QSet<QString> toAdd;
 
     for (const QString &filePath : filePaths) {
-        const QString directory = QFileInfo(filePath).absolutePath();
-        if (!includes.contains(directory))
+        const QFileInfo fi(filePath);
+        const QString directory = fi.absolutePath();
+        if (fi.fileName() == "include" && !includes.contains(directory))
             toAdd << directory;
     }
 
@@ -397,7 +397,7 @@ static QStringList readFlags(const QString &filePath)
 {
     const QStringList lines = readLines(filePath);
     if (lines.isEmpty())
-        return QStringList();
+        return {};
     QStringList flags;
     for (const auto &line : lines)
         flags.append(ProcessArgs::splitArgs(line, HostOsInfo::hostOs()));
@@ -416,7 +416,7 @@ void GenericBuildSystem::parse(RefreshOptions options)
         m_rawProjectIncludePaths = readLines(m_includesFileName);
         QStringList normalPaths;
         QStringList frameworkPaths;
-        const auto baseDir = Utils::FilePath::fromString(m_includesFileName).parentDir();
+        const auto baseDir = FilePath::fromString(m_includesFileName).parentDir();
         for (const QString &rawPath : std::as_const(m_rawProjectIncludePaths)) {
             if (rawPath.startsWith("-F"))
                 frameworkPaths << rawPath.mid(2);
@@ -511,11 +511,11 @@ GenericBuildSystem::SourceFiles GenericBuildSystem::processEntries(
 {
     const BuildConfiguration *const buildConfig = target()->activeBuildConfiguration();
 
-    const Utils::Environment buildEnv = buildConfig ? buildConfig->environment()
-                                                    : Utils::Environment::systemEnvironment();
+    const Environment buildEnv = buildConfig ? buildConfig->environment()
+                                             : Environment::systemEnvironment();
 
-    const Utils::MacroExpander *expander = buildConfig ? buildConfig->macroExpander()
-                                                       : target()->macroExpander();
+    const MacroExpander *expander = buildConfig ? buildConfig->macroExpander()
+                                                : target()->macroExpander();
 
     const QDir projectDir(projectDirectory().toString());
 
@@ -530,7 +530,7 @@ GenericBuildSystem::SourceFiles GenericBuildSystem::processEntries(
         trimmedPath = buildEnv.expandVariables(trimmedPath);
         trimmedPath = expander->expand(trimmedPath);
 
-        trimmedPath = Utils::FilePath::fromUserInput(trimmedPath).toString();
+        trimmedPath = FilePath::fromUserInput(trimmedPath).toString();
 
         QStringList tagsForFile;
         const int tagListPos = trimmedPath.indexOf('|');
@@ -587,7 +587,7 @@ void GenericBuildSystem::refreshCppCodeModel()
 void GenericBuildSystem::updateDeploymentData()
 {
     static const QString fileName("QtCreatorDeployment.txt");
-    Utils::FilePath deploymentFilePath;
+    FilePath deploymentFilePath;
     BuildConfiguration *bc = target()->activeBuildConfiguration();
     if (bc)
         deploymentFilePath = bc->buildDirectory().pathAppended(fileName);
@@ -618,7 +618,7 @@ void GenericBuildSystem::removeFiles(const FilePaths &filesToRemove)
     }
 }
 
-Project::RestoreResult GenericProject::fromMap(const QVariantMap &map, QString *errorMessage)
+Project::RestoreResult GenericProject::fromMap(const Store &map, QString *errorMessage)
 {
     const RestoreResult result = Project::fromMap(map, errorMessage);
     if (result != RestoreResult::Ok)
@@ -647,12 +647,12 @@ Project::RestoreResult GenericProject::fromMap(const QVariantMap &map, QString *
     return RestoreResult::Ok;
 }
 
-ProjectExplorer::DeploymentKnowledge GenericProject::deploymentKnowledge() const
+DeploymentKnowledge GenericProject::deploymentKnowledge() const
 {
     return DeploymentKnowledge::Approximative;
 }
 
-void GenericProject::configureAsExampleProject(ProjectExplorer::Kit *kit)
+void GenericProject::configureAsExampleProject(Kit *kit)
 {
     QList<BuildInfo> infoList;
     const QList<Kit *> kits(kit != nullptr ? QList<Kit *>({kit}) : KitManager::kits());
@@ -662,7 +662,7 @@ void GenericProject::configureAsExampleProject(ProjectExplorer::Kit *kit)
                 BuildInfo buildInfo;
                 buildInfo.displayName = Tr::tr("Build %1").arg(i + 1);
                 buildInfo.factory = factory;
-                buildInfo.kitId = kit->id();
+                buildInfo.kitId = k->id();
                 buildInfo.buildDirectory = projectFilePath();
                 infoList << buildInfo;
             }
@@ -701,5 +701,38 @@ void GenericProject::removeFilesTriggered(const FilePaths &filesToRemove)
         static_cast<GenericBuildSystem *>(t->buildSystem())->removeFiles(filesToRemove);
 }
 
-} // namespace Internal
-} // namespace GenericProjectManager
+void setupGenericProject(QObject *guard)
+{
+    namespace PEC = ProjectExplorer::Constants;
+
+    ProjectManager::registerProjectType<GenericProject>(Constants::GENERICMIMETYPE);
+
+    ActionBuilder editAction(guard, "GenericProjectManager.EditFiles");
+    editAction.setContext(Constants::GENERICPROJECT_ID);
+    editAction.setText(Tr::tr("Edit Files..."));
+    editAction.setCommandAttribute(Command::CA_Hide);
+    editAction.addToContainer(PEC::M_PROJECTCONTEXT, PEC::G_PROJECT_FILES);
+    editAction.addOnTriggered([] {
+        if (auto genericProject = qobject_cast<GenericProject *>(ProjectTree::currentProject()))
+            genericProject->editFilesTriggered();
+    });
+
+    ActionBuilder removeDirAction(guard, "GenericProject.RemoveDir");
+    removeDirAction.setContext(PEC::C_PROJECT_TREE);
+    removeDirAction.setText(Tr::tr("Remove Directory"));
+    removeDirAction.addToContainer(PEC::M_FOLDERCONTEXT, PEC::G_FOLDER_OTHER);
+    removeDirAction.addOnTriggered([] {
+        const auto folderNode = ProjectTree::currentNode()->asFolderNode();
+        QTC_ASSERT(folderNode, return);
+        const auto project = qobject_cast<GenericProject *>(folderNode->getProject());
+        QTC_ASSERT(project, return);
+        const FilePaths filesToRemove = transform(
+            folderNode->findNodes([](const Node *node) { return node->asFileNode(); }),
+            [](const Node *node) { return node->filePath();});
+        project->removeFilesTriggered(filesToRemove);
+    });
+}
+
+} // GenericProjectManager::Internal
+
+#include "genericproject.moc"

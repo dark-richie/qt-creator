@@ -20,13 +20,13 @@
 #include "progressmanager.h"
 #include "semantichighlightsupport.h"
 
-#include <app/app_version.h>
-
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
 #include <coreplugin/messagemanager.h>
 #include <coreplugin/progressmanager/progressmanager.h>
+
+#include <extensionsystem/pluginmanager.h>
 
 #include <languageserverprotocol/completion.h>
 #include <languageserverprotocol/diagnostics.h>
@@ -52,10 +52,12 @@
 #include <texteditor/texteditoractionhandler.h>
 #include <texteditor/texteditorsettings.h>
 
+#include <utils/appinfo.h>
 #include <utils/mimeutils.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <QDebug>
+#include <QGuiApplication>
 #include <QJsonDocument>
 #include <QLoggingCategory>
 #include <QMessageBox>
@@ -146,8 +148,8 @@ public:
     {
         using namespace ProjectExplorer;
 
-        m_clientInfo.setName(Core::Constants::IDE_DISPLAY_NAME);
-        m_clientInfo.setVersion(Core::Constants::IDE_VERSION_DISPLAY);
+        m_clientInfo.setName(QGuiApplication::applicationDisplayName());
+        m_clientInfo.setVersion(Utils::appInfo().displayVersion);
 
         m_clientProviders.completionAssistProvider = new LanguageClientCompletionAssistProvider(q);
         m_clientProviders.functionHintProvider = new FunctionHintAssistProvider(q);
@@ -164,7 +166,7 @@ public:
         connect(m_clientInterface, &InterfaceController::messageReceived, q, &Client::handleMessage);
         connect(m_clientInterface, &InterfaceController::error, q, &Client::setError);
         connect(m_clientInterface, &InterfaceController::finished, q, &Client::finished);
-        connect(m_clientInterface, &InterfaceController::started, this, [this]() {
+        connect(m_clientInterface, &InterfaceController::started, this, [this] {
             LanguageClientManager::clientStarted(q);
         });
         connect(Core::EditorManager::instance(),
@@ -194,14 +196,13 @@ public:
         // temporary container needed since m_resetAssistProvider is changed in resetAssistProviders
         for (TextDocument *document : m_resetAssistProvider.keys())
             resetAssistProviders(document);
-        if (!LanguageClientManager::isShuttingDown()) {
+        if (!ExtensionSystem::PluginManager::isShuttingDown()) {
             // prevent accessing deleted editors on Creator shutdown
             const QList<Core::IEditor *> &editors = Core::DocumentModel::editorsForOpenedDocuments();
             for (Core::IEditor *editor : editors) {
                 if (auto textEditor = qobject_cast<BaseTextEditor *>(editor)) {
                     TextEditorWidget *widget = textEditor->editorWidget();
-                    widget->setRefactorMarkers(
-                        RefactorMarker::filterOutType(widget->refactorMarkers(), m_id));
+                    widget->clearRefactorMarkers(m_id);
                     widget->removeHoverHandler(&m_hoverHandler);
                 }
             }
@@ -276,10 +277,14 @@ public:
         {
             QObject::disconnect(contentsChangedConnection);
             QObject::disconnect(filePathChangedConnection);
+            QObject::disconnect(aboutToSaveConnection);
+            QObject::disconnect(savedConnection);
             delete document;
         }
         QMetaObject::Connection contentsChangedConnection;
         QMetaObject::Connection filePathChangedConnection;
+        QMetaObject::Connection aboutToSaveConnection;
+        QMetaObject::Connection savedConnection;
         QTextDocument *document = nullptr;
     };
     QMap<TextEditor::TextDocument *, OpenedDocument> m_openedDocument;
@@ -311,6 +316,7 @@ public:
     AssistProviders m_clientProviders;
     QMap<TextEditor::TextDocument *, AssistProviders> m_resetAssistProvider;
     QHash<TextEditor::TextEditorWidget *, LanguageServerProtocol::MessageId> m_highlightRequests;
+    QHash<QString, Client::CustomMethodHandler> m_customHandlers;
     static const int MaxRestarts = 5;
     int m_restartsLeft = MaxRestarts;
     QTimer m_restartCountResetTimer;
@@ -322,6 +328,7 @@ public:
     ProjectExplorer::Project *m_project = nullptr;
     QSet<TextEditor::IAssistProcessor *> m_runningAssistProcessors;
     SymbolSupport m_symbolSupport;
+    MessageId m_runningFindLinkRequest;
     ProgressManager m_progressManager;
     bool m_activateDocAutomatically = false;
     SemanticTokenSupport m_tokenSupport;
@@ -354,6 +361,7 @@ void Client::setName(const QString &name)
 QString Client::name() const
 {
     if (d->m_project && !d->m_project->displayName().isEmpty())
+        //: <language client> for <project>
         return Tr::tr("%1 for %2").arg(d->m_displayName, d->m_project->displayName());
     return d->m_displayName;
 }
@@ -367,6 +375,14 @@ static ClientCapabilities generateClientCapabilities()
 {
     ClientCapabilities capabilities;
     WorkspaceClientCapabilities workspaceCapabilities;
+    WorkspaceClientCapabilities::WorkspaceEditCapabilities workspaceEditCapabilities;
+    workspaceEditCapabilities.setDocumentChanges(true);
+    using ResourceOperationKind
+        = WorkspaceClientCapabilities::WorkspaceEditCapabilities::ResourceOperationKind;
+    workspaceEditCapabilities.setResourceOperations({ResourceOperationKind::Create,
+                                                     ResourceOperationKind::Rename,
+                                                     ResourceOperationKind::Delete});
+    workspaceCapabilities.setWorkspaceEdit(workspaceEditCapabilities);
     workspaceCapabilities.setWorkspaceFolders(true);
     workspaceCapabilities.setApplyEdit(true);
     DynamicRegistrationCapabilities allowDynamicRegistration;
@@ -509,17 +525,19 @@ void Client::initialize()
     if (d->m_project)
         params.setRootUri(hostPathToServerUri(d->m_project->projectDirectory()));
 
+    auto projectFilter = [this](Project *project) { return canOpenProject(project); };
+    auto toWorkSpaceFolder = [this](Project *pro) {
+        return WorkSpaceFolder(hostPathToServerUri(pro->projectDirectory()), pro->displayName());
+    };
     const QList<WorkSpaceFolder> workspaces
-        = Utils::transform(ProjectManager::projects(), [this](Project *pro) {
-              return WorkSpaceFolder(hostPathToServerUri(pro->projectDirectory()),
-                                     pro->displayName());
-          });
+        = Utils::transform(Utils::filtered(ProjectManager::projects(), projectFilter),
+                           toWorkSpaceFolder);
     if (workspaces.isEmpty())
         params.setWorkSpaceFolders(nullptr);
     else
         params.setWorkSpaceFolders(workspaces);
     InitializeRequest initRequest(params);
-    initRequest.setResponseCallback([this](const InitializeRequest::Response &initResponse){
+    initRequest.setResponseCallback([this](const InitializeRequest::Response &initResponse) {
         d->initializeCallback(initResponse);
     });
     if (std::optional<ResponseHandler> responseHandler = initRequest.responseHandler())
@@ -551,11 +569,19 @@ Client::State Client::state() const
 QString Client::stateString() const
 {
     switch (d->m_state){
+    //: language client state
     case Uninitialized: return Tr::tr("uninitialized");
+    //: language client state
     case InitializeRequested: return Tr::tr("initialize requested");
+    //: language client state
+    case FailedToInitialize: return Tr::tr("failed to initialize");
+    //: language client state
     case Initialized: return Tr::tr("initialized");
+    //: language client state
     case ShutdownRequested: return Tr::tr("shutdown requested");
+    //: language client state
     case Shutdown: return Tr::tr("shut down");
+    //: language client state
     case Error: return Tr::tr("error");
     }
     return {};
@@ -564,6 +590,11 @@ QString Client::stateString() const
 bool Client::reachable() const
 {
     return d->m_state == Initialized;
+}
+
+void Client::resetRestartCounter()
+{
+    d->m_restartsLeft = ClientPrivate::MaxRestarts;
 }
 
 void Client::setClientInfo(const LanguageServerProtocol::ClientInfo &clientInfo)
@@ -637,6 +668,22 @@ void Client::openDocument(TextEditor::TextDocument *document)
                       if (isSupportedDocument(document))
                           openDocument(document);
                   });
+    d->m_openedDocument[document].savedConnection
+        = connect(document,
+                  &TextDocument::saved,
+                  this,
+                  [this, document](const FilePath &saveFilePath) {
+                      if (saveFilePath == document->filePath())
+                          documentContentsSaved(document);
+                  });
+    d->m_openedDocument[document].aboutToSaveConnection
+        = connect(document,
+                  &TextDocument::aboutToSave,
+                  this,
+                  [this, document](const FilePath &saveFilePath) {
+                      if (saveFilePath == document->filePath())
+                          documentWillSave(document);
+                  });
     if (!d->m_documentVersions.contains(filePath))
         d->m_documentVersions[filePath] = 0;
     d->sendOpenNotification(filePath, document->mimeType(), document->plainText(),
@@ -656,8 +703,30 @@ void Client::openDocument(TextEditor::TextDocument *document)
 void Client::sendMessage(const JsonRpcMessage &message, SendDocUpdates sendUpdates,
                          Schedule semanticTokensSchedule)
 {
+    QScopeGuard guard([responseHandler = message.responseHandler()](){
+        if (responseHandler) {
+            static ResponseError<std::nullptr_t> error;
+            if (!error.isValid()) {
+                error.setCode(-32803); // RequestFailed
+                error.setMessage("The server is currently in an unreachable state.");
+            }
+            QJsonObject response;
+            response[idKey] = responseHandler->id;
+            response[errorKey] = QJsonObject(error);
+            responseHandler->callback(JsonRpcMessage(response));
+        }
+    });
+
     QTC_ASSERT(d->m_clientInterface, return);
+    if (d->m_state == Shutdown || d->m_state == ShutdownRequested) {
+        auto key = message.toJsonObject().contains(methodKey) ? QString(methodKey) : QString(idKey);
+        const QString method = message.toJsonObject()[key].toString();
+        qCDebug(LOGLSPCLIENT) << "Ignoring message " << method << " because client is shutting down";
+        return;
+    }
     QTC_ASSERT(d->m_state == Initialized, return);
+    guard.dismiss();
+
     if (sendUpdates == SendDocUpdates::Send)
         d->sendPostponedDocumentUpdates(semanticTokensSchedule);
     if (std::optional<ResponseHandler> responseHandler = message.responseHandler())
@@ -816,7 +885,7 @@ void ClientPrivate::requestDocumentHighlightsNow(TextEditor::TextEditorWidget *w
             q->cancelRequest(m_highlightRequests.take(widget));
     });
     request.setResponseCallback(
-        [widget, this, uri, connection]
+        [widget, this, uri, connection, adjustedCursor]
         (const DocumentHighlightsRequest::Response &response)
         {
             m_highlightRequests.remove(widget);
@@ -841,6 +910,30 @@ void ClientPrivate::requestDocumentHighlightsNow(TextEditor::TextEditorWidget *w
                 selection.cursor.setPosition(start);
                 selection.cursor.setPosition(end, QTextCursor::KeepAnchor);
                 selections << selection;
+            }
+            if (!selections.isEmpty()) {
+                const QList<Text::Range> extraRanges = q->additionalDocumentHighlights(
+                    widget, adjustedCursor);
+                for (const Text::Range &range : extraRanges) {
+                    QTextEdit::ExtraSelection selection{widget->textCursor(), format};
+                    const Text::Position &startPos = range.begin;
+                    const Text::Position &endPos = range.end;
+                    const int start = Text::positionInText(document, startPos.line,
+                                                           startPos.column + 1);
+                    const int end = Text::positionInText(document, endPos.line,
+                                                         endPos.column + 1);
+                    if (start < 0 || end < 0 || start >= end)
+                        continue;
+                    selection.cursor.setPosition(start);
+                    selection.cursor.setPosition(end, QTextCursor::KeepAnchor);
+                    static const auto cmp = [](const QTextEdit::ExtraSelection &s1,
+                                        const QTextEdit::ExtraSelection &s2) {
+                        return s1.cursor.position() < s2.cursor.position();
+                    };
+                    const auto it = std::lower_bound(selections.begin(), selections.end(),
+                                                     selection, cmp);
+                    selections.insert(it, selection);
+                }
             }
             widget->setExtraSelections(id, selections);
         });
@@ -880,6 +973,10 @@ void Client::activateEditor(Core::IEditor *editor)
             optionalActions |= TextEditor::TextEditorActionHandler::FindUsage;
         if (symbolSupport().supportsRename(widget->textDocument()))
             optionalActions |= TextEditor::TextEditorActionHandler::RenameSymbol;
+        if (symbolSupport().supportsFindLink(widget->textDocument(), LinkTarget::SymbolDef))
+            optionalActions |= TextEditor::TextEditorActionHandler::FollowSymbolUnderCursor;
+        if (symbolSupport().supportsFindLink(widget->textDocument(), LinkTarget::SymbolTypeDef))
+            optionalActions |= TextEditor::TextEditorActionHandler::FollowTypeUnderCursor;
         if (CallHierarchyFactory::supportsCallHierarchy(this, textEditor->document()))
             optionalActions |= TextEditor::TextEditorActionHandler::CallHierarchy;
         widget->setOptionalActions(optionalActions);
@@ -898,8 +995,7 @@ void Client::deactivateDocument(TextEditor::TextDocument *document)
             TextEditor::TextEditorWidget *widget = textEditor->editorWidget();
             widget->removeHoverHandler(&d->m_hoverHandler);
             widget->setExtraSelections(TextEditor::TextEditorWidget::CodeSemanticsSelection, {});
-            widget->setRefactorMarkers(
-                TextEditor::RefactorMarker::filterOutType(widget->refactorMarkers(), id()));
+            widget->clearRefactorMarkers(id());
             updateEditorToolBar(editor);
         }
     }
@@ -967,6 +1063,8 @@ void Client::setShadowDocument(const Utils::FilePath &filePath, const QString &c
     if (shadowIt == d->m_shadowDocuments.end()) {
         shadowIt = d->m_shadowDocuments.insert(filePath, {content, {}});
     } else  {
+        if (shadowIt.value().first == content)
+            return;
         shadowIt.value().first = content;
         if (!shadowIt.value().second.isEmpty()) {
             VersionedTextDocumentIdentifier docId(hostPathToServerUri(filePath));
@@ -1082,6 +1180,8 @@ void Client::documentContentsChanged(TextEditor::TextDocument *document,
 {
     if (!d->m_openedDocument.contains(document) || !reachable())
         return;
+    if (d->m_runningFindLinkRequest.isValid())
+        cancelRequest(d->m_runningFindLinkRequest);
     if (d->m_diagnosticManager)
         d->m_diagnosticManager->disableDiagnostics(document);
     const QString method(DidChangeTextDocumentNotification::methodName);
@@ -1146,7 +1246,7 @@ void Client::documentContentsChanged(TextEditor::TextDocument *document,
         TextEditorWidget *widget = editor->editorWidget();
         QTC_ASSERT(widget, continue);
         delete d->m_documentHighlightsTimer.take(widget);
-        widget->setRefactorMarkers(RefactorMarker::filterOutType(widget->refactorMarkers(), id()));
+        widget->clearRefactorMarkers(id());
     }
     d->m_documentUpdateTimer.start();
 }
@@ -1222,6 +1322,8 @@ TextEditor::HighlightingResult createHighlightingResult(const SymbolInformation 
 
 void Client::cursorPositionChanged(TextEditor::TextEditorWidget *widget)
 {
+    if (d->m_runningFindLinkRequest.isValid())
+        cancelRequest(d->m_runningFindLinkRequest);
     TextEditor::TextDocument *document = widget->textDocument();
     if (d->m_documentsToUpdate.find(document) != d->m_documentsToUpdate.end())
         return; // we are currently changing this document so postpone the DocumentHighlightsRequest
@@ -1242,6 +1344,25 @@ void Client::cursorPositionChanged(TextEditor::TextEditorWidget *widget)
 SymbolSupport &Client::symbolSupport()
 {
     return d->m_symbolSupport;
+}
+
+void Client::findLinkAt(TextEditor::TextDocument *document,
+                        const QTextCursor &cursor,
+                        Utils::LinkHandler callback,
+                        const bool resolveTarget,
+                        LinkTarget target)
+{
+    if (d->m_runningFindLinkRequest.isValid())
+        cancelRequest(d->m_runningFindLinkRequest);
+    d->m_runningFindLinkRequest = symbolSupport().findLinkAt(
+        document,
+        cursor,
+        [this, callback](const Link &link) {
+            d->m_runningFindLinkRequest = {};
+            callback(link);
+        },
+        resolveTarget,
+        target);
 }
 
 void Client::requestCodeActions(const LanguageServerProtocol::DocumentUri &uri,
@@ -1351,13 +1472,14 @@ ProjectExplorer::Project *Client::project() const
 
 void Client::setCurrentProject(ProjectExplorer::Project *project)
 {
+    QTC_ASSERT(canOpenProject(project), return);
     if (d->m_project == project)
         return;
     if (d->m_project)
         d->m_project->disconnect(this);
     d->m_project = project;
     if (d->m_project) {
-        connect(d->m_project, &ProjectExplorer::Project::destroyed, this, [this]() {
+        connect(d->m_project, &ProjectExplorer::Project::destroyed, this, [this] {
             // the project of the client should already be null since we expect the session and
             // the language client manager to reset it before it gets deleted.
             QTC_ASSERT(d->m_project == nullptr, projectClosed(d->m_project));
@@ -1367,7 +1489,7 @@ void Client::setCurrentProject(ProjectExplorer::Project *project)
 
 void Client::projectOpened(ProjectExplorer::Project *project)
 {
-    if (!d->sendWorkspceFolderChanges())
+    if (!d->sendWorkspceFolderChanges() || !canOpenProject(project))
         return;
     WorkspaceFoldersChangeEvent event;
     event.setAdded({WorkSpaceFolder(hostPathToServerUri(project->projectDirectory()),
@@ -1380,7 +1502,7 @@ void Client::projectOpened(ProjectExplorer::Project *project)
 
 void Client::projectClosed(ProjectExplorer::Project *project)
 {
-    if (d->sendWorkspceFolderChanges()) {
+    if (d->sendWorkspceFolderChanges() && canOpenProject(project)) {
         WorkspaceFoldersChangeEvent event;
         event.setRemoved({WorkSpaceFolder(hostPathToServerUri(project->projectDirectory()),
                                           project->displayName())});
@@ -1398,6 +1520,12 @@ void Client::projectClosed(ProjectExplorer::Project *project)
         }
         d->m_project = nullptr;
     }
+}
+
+bool Client::canOpenProject(ProjectExplorer::Project *project)
+{
+    Q_UNUSED(project);
+    return true;
 }
 
 void Client::updateConfiguration(const QJsonValue &configuration)
@@ -1533,6 +1661,7 @@ void Client::setLogTarget(LogTarget target)
 
 void Client::start()
 {
+    d->m_shutdownTimer.stop();
     LanguageClientManager::addClient(this);
     d->m_clientInterface->start();
 }
@@ -1577,7 +1706,7 @@ bool ClientPrivate::reset()
 void Client::setError(const QString &message)
 {
     log(message);
-    d->m_state = Error;
+    d->m_state = d->m_state < Initialized ? FailedToInitialize : Error;
 }
 
 ProgressManager *Client::progressManager()
@@ -1608,9 +1737,9 @@ void Client::log(const QString &message) const
     }
 }
 
-TextEditor::RefactoringChangesData *Client::createRefactoringChangesBackend() const
+TextEditor::RefactoringFilePtr Client::createRefactoringFile(const FilePath &filePath) const
 {
-    return new TextEditor::RefactoringChangesData;
+    return TextEditor::PlainRefactoringFileFactory().file(filePath);
 }
 
 void Client::setCompletionResultsLimit(int limit)
@@ -1661,27 +1790,35 @@ void ClientPrivate::log(const ShowMessageParams &message)
 LanguageClientValue<MessageActionItem> ClientPrivate::showMessageBox(
     const ShowMessageRequestParams &message)
 {
-    auto box = new QMessageBox();
-    box->setText(message.toString());
-    box->setAttribute(Qt::WA_DeleteOnClose);
+    QMessageBox box;
+    box.setText(message.toString());
     switch (message.type()) {
-    case Error: box->setIcon(QMessageBox::Critical); break;
-    case Warning: box->setIcon(QMessageBox::Warning); break;
-    case Info: box->setIcon(QMessageBox::Information); break;
-    case Log: box->setIcon(QMessageBox::NoIcon); break;
+    case Error:
+        box.setIcon(QMessageBox::Critical);
+        break;
+    case Warning:
+        box.setIcon(QMessageBox::Warning);
+        break;
+    case Info:
+        box.setIcon(QMessageBox::Information);
+        break;
+    case Log:
+        box.setIcon(QMessageBox::NoIcon);
+        break;
     }
+
     QHash<QAbstractButton *, MessageActionItem> itemForButton;
     if (const std::optional<QList<MessageActionItem>> actions = message.actions()) {
-        auto button = box->addButton(QMessageBox::Close);
-        connect(button, &QPushButton::clicked, box, &QMessageBox::reject);
         for (const MessageActionItem &action : *actions) {
-            connect(button, &QPushButton::clicked, box, &QMessageBox::accept);
+            auto button = box.addButton(action.title(), QMessageBox::ActionRole);
+            connect(button, &QPushButton::clicked, &box, &QMessageBox::accept);
             itemForButton.insert(button, action);
         }
     }
-    if (box->exec() == QDialog::Rejected)
+
+    if (box.exec() == QDialog::Rejected || itemForButton.isEmpty())
         return {};
-    const MessageActionItem &item = itemForButton.value(box->clickedButton());
+    const MessageActionItem &item = itemForButton.value(box.clickedButton());
     return item.isValid() ? LanguageClientValue<MessageActionItem>(item)
                           : LanguageClientValue<MessageActionItem>();
 }
@@ -1896,6 +2033,23 @@ void ClientPrivate::handleMethod(const QString &method, const MessageId &id, con
             if (ProgressManager::isProgressEndMessage(*params))
                 emit q->workDone(params->token());
         }
+    } else if (method == ConfigurationRequest::methodName) {
+        ConfigurationRequest::Response response;
+        QJsonArray result;
+        if (QTC_GUARD(id.isValid()))
+            response.setId(id);
+        ConfigurationRequest configurationRequest(message.toJsonObject());
+        if (std::optional<ConfigurationParams> params = configurationRequest.params()) {
+            const QList<ConfigurationParams::ConfigurationItem> items = params->items();
+            for (const ConfigurationParams::ConfigurationItem &item : items) {
+                if (const std::optional<QString> section = item.section())
+                    result.append(m_configuration[*section]);
+                else
+                    result.append({});
+            }
+        }
+        response.setResult(result);
+        sendResponse(response);
     } else if (isRequest) {
         Response<JsonObject, JsonObject> response(id);
         ResponseError<JsonObject> error;
@@ -1903,6 +2057,12 @@ void ClientPrivate::handleMethod(const QString &method, const MessageId &id, con
         error.setMessage(QString("The client cannot handle the method '%1'.").arg(method));
         response.setError(error);
         sendResponse(response);
+    } else {
+        const auto customHandler = m_customHandlers.constFind(method);
+        if (customHandler != m_customHandlers.constEnd()) {
+            (*customHandler)(message);
+            return;
+        }
     }
 
     // we got a request and handled it somewhere above but we missed to generate a response for it
@@ -1955,11 +2115,15 @@ void Client::setDocumentChangeUpdateThreshold(int msecs)
 
 void ClientPrivate::initializeCallback(const InitializeRequest::Response &initResponse)
 {
-    QTC_ASSERT(m_state == Client::InitializeRequested, return);
+    if (m_state != Client::InitializeRequested) {
+        qCWarning(LOGLSPCLIENT) << "Dropping initialize response in unexpected state " << m_state;
+        qCDebug(LOGLSPCLIENT) << initResponse.toJsonObject();
+        return;
+    }
     if (std::optional<ResponseError<InitializeError>> error = initResponse.error()) {
         if (std::optional<InitializeError> data = error->data()) {
             if (data->retry()) {
-                const QString title(Tr::tr("Language Server \"%1\" Initialize Error").arg(m_displayName));
+                const QString title(Tr::tr("Language Server \"%1\" Initialization Error").arg(m_displayName));
                 auto result = QMessageBox::warning(Core::ICore::dialogParent(),
                                                    title,
                                                    error->message(),
@@ -1972,7 +2136,7 @@ void ClientPrivate::initializeCallback(const InitializeRequest::Response &initRe
                 }
             }
         }
-        q->setError(Tr::tr("Initialize error: ") + error->message());
+        q->setError(Tr::tr("Initialization error: %1.").arg(error->message()));
         emit q->finished();
         return;
     }
@@ -2116,6 +2280,16 @@ DocumentUri Client::hostPathToServerUri(const Utils::FilePath &path) const
     return DocumentUri::fromFilePath(path, [&](const Utils::FilePath &clientPath) {
         return d->m_serverDeviceTemplate.withNewPath(clientPath.path());
     });
+}
+
+OsType Client::osType() const
+{
+    return d->m_serverDeviceTemplate.osType();
+}
+
+void Client::registerCustomMethod(const QString &method, const CustomMethodHandler &handler)
+{
+    d->m_customHandlers.insert(method, handler);
 }
 
 } // namespace LanguageClient

@@ -21,7 +21,7 @@ QByteArray loadSource(const QString &fileName)
     QFile inf(QLatin1String(SRCDIR) + QLatin1Char('/') + fileName);
     if (!inf.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qDebug("Cannot open \"%s\"", fileName.toUtf8().constData());
-        return QByteArray();
+        return {};
     }
 
     QTextStream ins(&inf);
@@ -102,40 +102,42 @@ public:
 
     virtual ~MockClient() {}
 
-    virtual void macroAdded(const Macro & macro)
+    void macroAdded(const Macro &macro) override
     {
         m_definedMacros.append(macro.name());
         m_definedMacrosLine.append(macro.line());
     }
 
-    virtual void passedMacroDefinitionCheck(int /*bytesOffset*/,
-                                            int /*utf16charsOffset*/,
-                                            int line,
-                                            const Macro &macro)
+    void passedMacroDefinitionCheck(int /*bytesOffset*/,
+                                    int /*utf16charsOffset*/,
+                                    int line,
+                                    const Macro &macro) override
     {
         m_definitionsResolvedFromLines[macro.name()].append(line);
     }
 
-    virtual void failedMacroDefinitionCheck(int /*offset*/,
-                                            int /*utf16charsOffset*/,
-                                            const ByteArrayRef &name)
+    void failedMacroDefinitionCheck(int /*offset*/,
+                                    int /*utf16charsOffset*/,
+                                    const ByteArrayRef &name) override
     {
         m_unresolvedDefines.insert(name.toByteArray());
     }
 
-    virtual void notifyMacroReference(int bytesOffset, int /*utf16charsOffset*/,
-                                      int line, const Macro &macro)
+    void notifyMacroReference(int bytesOffset,
+                              int /*utf16charsOffset*/,
+                              int line,
+                              const Macro &macro) override
     {
         m_macroUsesLine[macro.name()].append(line);
         m_expandedMacrosOffset.append(bytesOffset);
     }
 
-    virtual void startExpandingMacro(int bytesOffset,
-                                     int /*utf16charsOffset*/,
-                                     int line,
-                                     const Macro &macro,
-                                     const QVector<MacroArgumentReference> &actuals
-                                            = QVector<MacroArgumentReference>())
+    void startExpandingMacro(int bytesOffset,
+                             int /*utf16charsOffset*/,
+                             int line,
+                             const Macro &macro,
+                             const QVector<MacroArgumentReference> &actuals
+                                    = QVector<MacroArgumentReference>()) override
     {
         m_expandedMacros.append(macro.name());
         m_expandedMacrosOffset.append(bytesOffset);
@@ -144,16 +146,16 @@ public:
         m_usedMacros.insert(macro.name(), actuals);
     }
 
-    virtual void stopExpandingMacro(int /*offset*/, const Macro &/*macro*/) {}
+    void stopExpandingMacro(int /*offset*/, const Macro &/*macro*/) override {}
 
-    virtual void startSkippingBlocks(int utf16charsOffset)
+    void startSkippingBlocks(int utf16charsOffset) override
     { m_skippedBlocks.append(Block(utf16charsOffset)); }
 
-    virtual void stopSkippingBlocks(int utf16charsOffset)
+    void stopSkippingBlocks(int utf16charsOffset) override
     { m_skippedBlocks.last().end = utf16charsOffset; }
 
-    virtual void sourceNeeded(int line, const Utils::FilePath &includedFileName, IncludeType mode,
-                              const Utils::FilePaths &initialIncludes = {})
+    void sourceNeeded(int line, const Utils::FilePath &includedFileName, IncludeType mode,
+                      const Utils::FilePaths &initialIncludes = {}) override
     {
         Q_UNUSED(initialIncludes)
 #if 1
@@ -194,11 +196,7 @@ public:
         else
             dir = QFileInfo(currentFileName).dir();
         const QFileInfo inc(dir, includedFileName);
-        if (inc.exists()) {
-            return inc.filePath();
-        } else {
-            return QString();
-        }
+        return inc.exists() ? inc.filePath() : QString();
     }
 
     QString resolveGlobally(const QString &currentFileName) const
@@ -208,8 +206,7 @@ public:
             if (f.exists())
                 return f.filePath();
         }
-
-        return QString();
+        return {};
     }
 
     void setIncludePaths(const QStringList &includePaths)
@@ -228,7 +225,7 @@ public:
         *m_output = m_pp.run(fileName, src, nolines, true);
     }
 
-    virtual void markAsIncludeGuard(const QByteArray &macroName)
+    void markAsIncludeGuard(const QByteArray &macroName) override
     { m_includeGuardMacro = macroName; }
 
     QByteArray includeGuard() const

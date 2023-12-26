@@ -38,14 +38,18 @@ public:
     void setParameters(const BuildDirParameters &p);
 
     void resetData();
-    void parse(bool forceCMakeRun, bool forceInitialConfiguration, bool forceExtraConfiguration);
+    void parse(bool forceCMakeRun,
+               bool forceInitialConfiguration,
+               bool forceExtraConfiguration,
+               bool debugging,
+               bool profiling);
     void stop();
     void stopCMakeRun();
 
     bool isParsing() const;
 
-    QSet<Utils::FilePath> projectFilesToWatch() const;
     QList<CMakeBuildTarget> takeBuildTargets(QString &errorMessage);
+    QSet<CMakeFileInfo> takeCMakeFileInfos(QString &errorMessage);
     CMakeConfig takeParsedConfiguration(QString &errorMessage);
     QString ctestPath() const;
     ProjectExplorer::RawProjectParts createRawProjectParts(QString &errorMessage);
@@ -64,6 +68,7 @@ signals:
     void dataAvailable(bool restoredFromBackup) const;
     void dirty() const;
     void errorOccurred(const QString &message) const;
+    void debuggingStarted() const;
 
 private:
     void startState();

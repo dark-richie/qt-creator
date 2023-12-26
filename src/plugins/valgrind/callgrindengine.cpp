@@ -3,21 +3,16 @@
 
 #include "callgrindengine.h"
 
-#include "valgrindsettings.h"
-
-#include <valgrind/callgrind/callgrindparser.h>
-#include <valgrind/valgrindrunner.h>
-#include <valgrind/valgrindtr.h>
+#include "callgrind/callgrindparser.h"
+#include "valgrindtr.h"
 
 #include <debugger/analyzer/analyzermanager.h>
 
 #include <utils/filepath.h>
 #include <utils/filestreamermanager.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/temporaryfile.h>
-
-#include <QDebug>
 
 #define CALLGRIND_CONTROL_DEBUG 0
 
@@ -25,8 +20,7 @@ using namespace ProjectExplorer;
 using namespace Valgrind::Callgrind;
 using namespace Utils;
 
-namespace Valgrind {
-namespace Internal {
+namespace Valgrind::Internal {
 
 const char CALLGRIND_CONTROL_BINARY[] = "callgrind_control";
 
@@ -37,10 +31,10 @@ CallgrindToolRunner::CallgrindToolRunner(RunControl *runControl)
 {
     setId("CallgrindToolRunner");
 
-    connect(&m_runner, &ValgrindRunner::valgrindStarted, this, [this](qint64 pid) {
+    connect(&m_runner, &ValgrindProcess::valgrindStarted, this, [this](qint64 pid) {
         m_pid = pid;
     });
-    connect(&m_runner, &ValgrindRunner::finished, this, [this] {
+    connect(&m_runner, &ValgrindProcess::done, this, [this] {
         triggerParse();
         emit parserDataReady(this);
     });
@@ -61,34 +55,32 @@ CallgrindToolRunner::~CallgrindToolRunner()
     cleanupTempFile();
 }
 
-QStringList CallgrindToolRunner::toolArguments() const
+void CallgrindToolRunner::addToolArguments(CommandLine &cmd) const
 {
-    QStringList arguments = {"--tool=callgrind"};
+    cmd << "--tool=callgrind";
 
-    if (m_settings.enableCacheSim.value())
-        arguments << "--cache-sim=yes";
+    if (m_settings.enableCacheSim())
+        cmd << "--cache-sim=yes";
 
-    if (m_settings.enableBranchSim.value())
-        arguments << "--branch-sim=yes";
+    if (m_settings.enableBranchSim())
+        cmd << "--branch-sim=yes";
 
-    if (m_settings.collectBusEvents.value())
-        arguments << "--collect-bus=yes";
+    if (m_settings.collectBusEvents())
+        cmd << "--collect-bus=yes";
 
-    if (m_settings.collectSystime.value())
-        arguments << "--collect-systime=yes";
+    if (m_settings.collectSystime())
+        cmd << "--collect-systime=yes";
 
     if (m_markAsPaused)
-        arguments << "--instr-atstart=no";
+        cmd << "--instr-atstart=no";
 
     // add extra arguments
     if (!m_argumentForToggleCollect.isEmpty())
-        arguments << m_argumentForToggleCollect;
+        cmd << m_argumentForToggleCollect;
 
-    arguments << "--callgrind-out-file=" + m_valgrindOutputFile.path();
+    cmd << "--callgrind-out-file=" + m_valgrindOutputFile.path();
 
-    arguments << ProcessArgs::splitArgs(m_settings.callgrindArguments.value(), HostOsInfo::hostOs());
-
-    return arguments;
+    cmd.addArgs(m_settings.callgrindArguments(), CommandLine::Raw);
 }
 
 QString CallgrindToolRunner::progressTitle() const
@@ -175,7 +167,7 @@ void CallgrindToolRunner::run(Option option)
     // save back current running operation
     m_lastOption = option;
 
-    m_controllerProcess.reset(new QtcProcess);
+    m_controllerProcess.reset(new Process);
 
     switch (option) {
         case CallgrindToolRunner::Dump:
@@ -197,7 +189,7 @@ void CallgrindToolRunner::run(Option option)
 #if CALLGRIND_CONTROL_DEBUG
     m_controllerProcess->setProcessChannelMode(QProcess::ForwardedChannels);
 #endif
-    connect(m_controllerProcess.get(), &QtcProcess::done,
+    connect(m_controllerProcess.get(), &Process::done,
             this, &CallgrindToolRunner::controllerProcessDone);
 
     const FilePath control =
@@ -258,7 +250,8 @@ void CallgrindToolRunner::triggerParse()
     }
 
     const auto afterCopy = [this](expected_str<void> res) {
-        QTC_ASSERT_EXPECTED(res, return);
+        if (!res) // failed to run callgrind
+            return;
         showStatusMessage(Tr::tr("Parsing Profile Data..."));
         m_parser.parse(m_hostOutputFile);
     };
@@ -275,5 +268,4 @@ void CallgrindToolRunner::cleanupTempFile()
     m_hostOutputFile.clear();
 }
 
-} // Internal
-} // Valgrind
+} // namespace Valgrind::Internal

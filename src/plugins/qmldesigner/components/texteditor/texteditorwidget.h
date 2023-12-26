@@ -3,6 +3,10 @@
 #pragma once
 
 #include <texteditor/texteditor.h>
+#include <utils/uniqueobjectptr.h>
+
+#include <itemlibraryentry.h>
+#include <modelnode.h>
 
 #include <QTimer>
 #include <QVBoxLayout>
@@ -25,7 +29,7 @@ class TextEditorWidget : public QWidget {
 public:
     TextEditorWidget(TextEditorView *textEditorView);
 
-    void setTextEditor(TextEditor::BaseTextEditor *textEditor);
+    void setTextEditor(Utils::UniqueObjectLatePtr<TextEditor::BaseTextEditor> textEditor);
 
     TextEditor::BaseTextEditor *textEditor() const
     {
@@ -42,16 +46,19 @@ public:
     int currentLine() const;
 
     void setBlockCursorSelectionSynchronisation(bool b);
+    void jumpToModelNode(const ModelNode &modelNode);
+    void highlightToModelNode(const ModelNode &modelNode);
 
 protected:
     bool eventFilter(QObject *object, QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *dragEnterEvent) override;
+    void dragMoveEvent(QDragMoveEvent *dragMoveEvent) override;
     void dropEvent(QDropEvent *dropEvent) override;
 
 private:
     void updateSelectionByCursorPosition();
 
-    std::unique_ptr<TextEditor::BaseTextEditor> m_textEditor;
+    Utils::UniqueObjectLatePtr<TextEditor::BaseTextEditor> m_textEditor;
     QPointer<TextEditorView> m_textEditorView;
     QTimer m_updateSelectionTimer;
     TextEditorStatusBar *m_statusBar = nullptr;
@@ -59,6 +66,7 @@ private:
     QVBoxLayout *m_layout = nullptr;
     bool m_blockCursorSelectionSynchronisation = false;
     bool m_blockRoundTrip = false;
+    ItemLibraryEntry m_draggedEntry;
 };
 
 } // namespace QmlDesigner

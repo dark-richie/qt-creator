@@ -13,16 +13,19 @@
 #include "texteditortr.h"
 #include "textindenter.h"
 #include "typingsettings.h"
+#include "syntaxhighlighterrunner.h"
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/diffservice.h>
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
 #include <extensionsystem/pluginmanager.h>
 
+#include <utils/environment.h>
 #include <utils/guard.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
@@ -73,18 +76,26 @@ public:
     FontSettings m_fontSettings;
     bool m_fontSettingsNeedsApply = false; // for applying font settings delayed till an editor becomes visible
     QTextDocument m_document;
-    SyntaxHighlighter *m_highlighter = nullptr;
     CompletionAssistProvider *m_completionAssistProvider = nullptr;
     CompletionAssistProvider *m_functionHintAssistProvider = nullptr;
     IAssistProvider *m_quickFixProvider = nullptr;
     QScopedPointer<Indenter> m_indenter;
     QScopedPointer<Formatter> m_formatter;
+    struct PlainTextCache
+    {
+        int revision = -1;
+        QString plainText;
+    };
+
+    PlainTextCache m_plainTextCache;
 
     int m_autoSaveRevision = -1;
     bool m_silentReload = false;
 
     TextMarks m_marksCache; // Marks not owned
     Utils::Guard m_modificationChangedGuard;
+
+    BaseSyntaxHighlighterRunner *m_highlighterRunner = nullptr;
 };
 
 MultiTextCursor TextDocumentPrivate::indentOrUnindent(const MultiTextCursor &cursors,
@@ -151,12 +162,16 @@ MultiTextCursor TextDocumentPrivate::indentOrUnindent(const MultiTextCursor &cur
                 }
             }
         } else {
-            QString text = startBlock.text();
+            const QString text = startBlock.text();
             int indentPosition = tabSettings.positionAtColumn(text, column, nullptr, true);
-            int spaces = tabSettings.spacesLeftFromPosition(text, indentPosition);
-            int startColumn = tabSettings.columnAt(text, indentPosition - spaces);
-            int targetColumn = tabSettings.indentedColumn(tabSettings.columnAt(text, indentPosition),
-                                                          doIndent);
+            int spaces = TabSettings::spacesLeftFromPosition(text, indentPosition);
+            if (!doIndent && spaces == 0) {
+                indentPosition = tabSettings.firstNonSpace(text);
+                spaces = TabSettings::spacesLeftFromPosition(text, indentPosition);
+            }
+            const int startColumn = tabSettings.columnAt(text, indentPosition - spaces);
+            const int targetColumn
+                = tabSettings.indentedColumn(tabSettings.columnAt(text, indentPosition), doIndent);
             cursor.setPosition(startBlock.position() + indentPosition);
             cursor.setPosition(startBlock.position() + indentPosition - spaces,
                                QTextCursor::KeepAnchor);
@@ -301,7 +316,11 @@ QString TextDocument::convertToPlainText(const QString &rawText)
 
 QString TextDocument::plainText() const
 {
-    return convertToPlainText(d->m_document.toRawText());
+    if (d->m_plainTextCache.revision != d->m_document.revision()) {
+        d->m_plainTextCache.plainText = convertToPlainText(d->m_document.toRawText());
+        d->m_plainTextCache.revision = d->m_document.revision();
+    }
+    return d->m_plainTextCache.plainText;
 }
 
 QString TextDocument::textAt(int pos, int length) const
@@ -435,10 +454,8 @@ void TextDocument::applyFontSettings()
         block = block.next();
     }
     updateLayout();
-    if (d->m_highlighter) {
-        d->m_highlighter->setFontSettings(d->m_fontSettings);
-        d->m_highlighter->rehighlight();
-    }
+    if (d->m_highlighterRunner)
+        d->m_highlighterRunner->setFontSettings(d->m_fontSettings);
 }
 
 const FontSettings &TextDocument::fontSettings() const
@@ -499,7 +516,7 @@ bool TextDocument::applyChangeSet(const ChangeSet &changeSet)
 {
     if (changeSet.isEmpty())
         return true;
-    RefactoringChanges changes;
+    PlainRefactoringFileFactory changes;
     const RefactoringFilePtr file = changes.file(filePath());
     file->setChangeSet(changeSet);
     return file->apply();
@@ -610,9 +627,9 @@ QTextDocument *TextDocument::document() const
     return &d->m_document;
 }
 
-SyntaxHighlighter *TextDocument::syntaxHighlighter() const
+BaseSyntaxHighlighterRunner *TextDocument::syntaxHighlighterRunner() const
 {
-    return d->m_highlighter;
+    return d->m_highlighterRunner;
 }
 
 /*!
@@ -622,7 +639,7 @@ SyntaxHighlighter *TextDocument::syntaxHighlighter() const
  * If \a autoSave is true, the cursor will be restored and some signals suppressed
  * and we do not clean up the text file (cleanWhitespace(), ensureFinalNewLine()).
  */
-bool TextDocument::save(QString *errorString, const FilePath &filePath, bool autoSave)
+bool TextDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
 {
     QTextCursor cursor(&d->m_document);
 
@@ -662,8 +679,6 @@ bool TextDocument::save(QString *errorString, const FilePath &filePath, bool aut
         cursor.endEditBlock();
     }
 
-    const Utils::FilePath &savePath = filePath.isEmpty() ? this->filePath() : filePath;
-
     // check if UTF8-BOM has to be added or removed
     Utils::TextFileFormat saveFormat = format();
     if (saveFormat.codec->name() == "UTF-8" && supportsUtf8Bom()) {
@@ -679,7 +694,7 @@ bool TextDocument::save(QString *errorString, const FilePath &filePath, bool aut
         }
     }
 
-    const bool ok = write(savePath, saveFormat, plainText(), errorString);
+    const bool ok = write(filePath, saveFormat, plainText(), errorString);
 
     // restore text cursor and scroll bar positions
     if (autoSave && undos < d->m_document.availableUndoSteps()) {
@@ -702,7 +717,7 @@ bool TextDocument::save(QString *errorString, const FilePath &filePath, bool aut
 
     // inform about the new filename
     d->m_document.setModified(false); // also triggers update of the block revisions
-    setFilePath(savePath.absoluteFilePath());
+    setFilePath(filePath.absoluteFilePath());
     emit changed();
     return true;
 }
@@ -715,6 +730,12 @@ QByteArray TextDocument::contents() const
 bool TextDocument::setContents(const QByteArray &contents)
 {
     return setPlainText(QString::fromUtf8(contents));
+}
+
+void TextDocument::formatContents()
+{
+    d->m_indenter->format({{document()->firstBlock().blockNumber() + 1,
+                            document()->lastBlock().blockNumber() + 1}});
 }
 
 bool TextDocument::shouldAutoSave() const
@@ -837,7 +858,7 @@ bool TextDocument::reload(QString *errorString, const FilePath &realFilePath)
     auto documentLayout =
         qobject_cast<TextDocumentLayout*>(d->m_document.documentLayout());
     if (documentLayout)
-        documentLayout->documentAboutToReload(); // removes text marks non-permanently
+        documentLayout->documentAboutToReload(this); // removes text marks non-permanently
 
     bool success = openImpl(errorString, filePath(), realFilePath, /*reload =*/true)
                    == OpenResult::Success;
@@ -882,13 +903,20 @@ bool TextDocument::reload(QString *errorString, ReloadFlag flag, ChangeType type
     return reload(errorString);
 }
 
-void TextDocument::setSyntaxHighlighter(SyntaxHighlighter *highlighter)
+void TextDocument::resetSyntaxHighlighter(const std::function<SyntaxHighlighter *()> &creator,
+                                          bool threaded)
 {
-    if (d->m_highlighter)
-        delete d->m_highlighter;
-    d->m_highlighter = highlighter;
-    d->m_highlighter->setParent(this);
-    d->m_highlighter->setDocument(&d->m_document);
+    if (d->m_highlighterRunner)
+        delete d->m_highlighterRunner;
+
+    static const QString value
+        = qtcEnvironmentVariable("QTC_USE_THREADED_HIGHLIGHTER", "TRUE").toUpper();
+    if (threaded && value == QLatin1String("TRUE")) {
+        d->m_highlighterRunner = new ThreadedSyntaxHighlighterRunner(creator, document());
+        return;
+    }
+
+    d->m_highlighterRunner = new BaseSyntaxHighlighterRunner(creator, document());
 }
 
 void TextDocument::cleanWhitespace(const QTextCursor &cursor)

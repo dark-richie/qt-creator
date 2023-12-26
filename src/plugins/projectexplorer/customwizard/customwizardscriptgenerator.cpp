@@ -8,7 +8,7 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 #include <utils/temporarydirectory.h>
 
 #include <QFileInfo>
@@ -27,7 +27,7 @@ namespace Internal {
 QStringList fixGeneratorScript(const QString &configFile, QString binary)
 {
     if (binary.isEmpty())
-        return QStringList();
+        return {};
     // Expand to full path if it is relative and in the wizard
     // directory, else assume it can be found in path.
     QFileInfo binaryInfo(binary);
@@ -64,7 +64,7 @@ static bool
                               const QMap<QString, QString> &fieldMap,
                               QString *stdOut /* = 0 */, QString *errorMessage)
 {
-    Utils::QtcProcess process;
+    Utils::Process process;
     const QString binary = script.front();
     QStringList arguments;
     const int binarySize = script.size();

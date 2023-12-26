@@ -13,38 +13,27 @@
     container operates like a virtual machine but uses less system resources at
     the cost of being less flexible.
 
-    Docker support is experimental. While Linux, \macos, and Windows hosts are
-    supported in principle, Linux is the recommended platform.
-
-    Currently, only CMake is supported for building applications in the Docker
-    container.
+    While Linux, \macos, and Windows hosts are supported in principle, Linux is
+    the recommended platform.
 
     To build, run, and debug applications on Docker devices, you must install and
     configure \c docker-cli on the development host. \QC automatically detects
-    \l{Adding Kits}{build and run kit} items, such \l{Adding Debuggers}
-    {debuggers} and \l{Adding Qt Versions}{Qt versions}, in the Docker container
+    \l{Kits}{build and run kit} items, such \l{Add debuggers}
+    {debuggers} and \l{Add Qt versions}{Qt versions}, in the Docker container
     and creates kits for the devices.
+
+    You can use CMake or qmake to build applications in the Docker container.
 
     To pull images from Docker hub or other registries, use the
     \l{https://docs.docker.com/engine/reference/commandline/pull/}{docker pull}
     command.
-
-    \section1 Enabling Docker Plugin
-
-    To enable the experimental Docker plugin:
-
-    \list 1
-        \li In \QC, select \uicontrol Help > \uicontrol {About Plugins} >
-            \uicontrol Utilities > \uicontrol {Docker (experimental)}.
-        \li Select \uicontrol {Restart Now} to restart \QC and load the plugin.
-    \endlist
 
     \section1 Adding Docker Images as Devices
 
     To add a Docker image as a device:
 
     \list 1
-        \li Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Devices
+        \li Select \preferences > \uicontrol Devices
             > \uicontrol Docker and enter the path to the Docker CLI in
             the \uicontrol Command field.
             \image qtcreator-preferences-devices-docker.webp "Docker tab in Devices preferences"
@@ -156,7 +145,7 @@
 
     \section1 Editing Docker Device Kits
 
-    Select \uicontrol Edit > \uicontrol Preferences > \uicontrol Kits to check
+    Select \preferences > \uicontrol Kits to check
     that the automatically generated kits point to the appropriate kit items.
 
     To specify build settings:

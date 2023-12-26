@@ -68,8 +68,17 @@ const char OPTIONS_KEY[] = "options";
 const char PLATFORM_INDEPENDENT_KEY[] = "platformIndependent";
 const char DEFAULT_VALUES[] = "defaultValues";
 
-static QList<JsonWizardPageFactory *> s_pageFactories;
-static QList<JsonWizardGeneratorFactory *> s_generatorFactories;
+static QList<JsonWizardPageFactory *> &pageFactories()
+{
+    static QList<JsonWizardPageFactory *> thePageFactories;
+    return thePageFactories;
+}
+
+static QList<JsonWizardGeneratorFactory *> &generatorFactories()
+{
+    static QList<JsonWizardGeneratorFactory *> theGeneratorFactories;
+    return theGeneratorFactories;
+}
 
 int JsonWizardFactory::m_verbose = 0;
 
@@ -102,7 +111,7 @@ static JsonWizardFactory::Generator parseGenerator(const QVariant &value, QStrin
 {
     JsonWizardFactory::Generator gen;
 
-    if (value.type() != QVariant::Map) {
+    if (value.typeId() != QVariant::Map) {
         *errorMessage = Tr::tr("Generator is not a object.");
         return gen;
     }
@@ -115,11 +124,11 @@ static JsonWizardFactory::Generator parseGenerator(const QVariant &value, QStrin
     }
     Id typeId = Id::fromString(QLatin1String(Constants::GENERATOR_ID_PREFIX) + strVal);
     JsonWizardGeneratorFactory *factory
-            = findOr(s_generatorFactories, nullptr, [typeId](JsonWizardGeneratorFactory *f) { return f->canCreate(typeId); });
+            = findOr(generatorFactories(), nullptr, [typeId](JsonWizardGeneratorFactory *f) { return f->canCreate(typeId); });
     if (!factory) {
         *errorMessage = Tr::tr("TypeId \"%1\" of generator is unknown. Supported typeIds are: \"%2\".")
                 .arg(strVal)
-                .arg(supportedTypeIds(s_generatorFactories).replace(QLatin1String(Constants::GENERATOR_ID_PREFIX), QLatin1String("")));
+                .arg(supportedTypeIds(generatorFactories()).replace(QLatin1String(Constants::GENERATOR_ID_PREFIX), QLatin1String("")));
         return gen;
     }
 
@@ -131,6 +140,26 @@ static JsonWizardFactory::Generator parseGenerator(const QVariant &value, QStrin
     gen.data = varVal;
 
     return gen;
+}
+
+JsonWizardPageFactory::JsonWizardPageFactory()
+{
+    pageFactories().append(this);
+}
+
+JsonWizardPageFactory::~JsonWizardPageFactory()
+{
+    pageFactories().removeOne(this);
+}
+
+JsonWizardGeneratorFactory::JsonWizardGeneratorFactory()
+{
+    generatorFactories().append(this);
+}
+
+JsonWizardGeneratorFactory::~JsonWizardGeneratorFactory()
+{
+    generatorFactories().removeOne(this);
 }
 
 //FIXME: createWizardFactories() has an almost identical loop. Make the loop return the results instead of
@@ -236,8 +265,8 @@ QVariant JsonWizardFactory::getDataValue(const QLatin1String &key, const QVarian
 {
     QVariant retVal = {};
 
-    if ((valueSet.contains(key) && valueSet.value(key).type() == QVariant::Map) ||
-        (defaultValueSet.contains(key) && defaultValueSet.value(key).type() == QVariant::Map)) {
+    if ((valueSet.contains(key) && valueSet.value(key).typeId() == QVariant::Map) ||
+        (defaultValueSet.contains(key) && defaultValueSet.value(key).typeId() == QVariant::Map)) {
         retVal = mergeDataValueMaps(valueSet.value(key), defaultValueSet.value(key));
     } else {
         QVariant defaultValue = defaultValueSet.value(key, notExistValue);
@@ -263,7 +292,7 @@ std::pair<int, QStringList> JsonWizardFactory::screenSizeInfoFromPage(const QStr
         return {};
 
     const QVariant data = it->data;
-    if (data.type() != QVariant::List)
+    if (data.typeId() != QVariant::List)
         return {};
 
     const QVariant screenFactorField = Utils::findOrDefault(data.toList(),
@@ -272,11 +301,11 @@ std::pair<int, QStringList> JsonWizardFactory::screenSizeInfoFromPage(const QStr
                                                                 return "ScreenFactor" == m["name"];
                                                             });
 
-    if (screenFactorField.type() != QVariant::Map)
+    if (screenFactorField.typeId() != QVariant::Map)
         return {};
 
     const QVariant screenFactorData = screenFactorField.toMap()["data"];
-    if (screenFactorData.type() != QVariant::Map)
+    if (screenFactorData.typeId() != QVariant::Map)
         return {};
 
     const QVariantMap screenFactorDataMap = screenFactorData.toMap();
@@ -304,7 +333,7 @@ JsonWizardFactory::Page JsonWizardFactory::parsePage(const QVariant &value, QStr
 {
     JsonWizardFactory::Page p;
 
-    if (value.type() != QVariant::Map) {
+    if (value.typeId() != QVariant::Map) {
         *errorMessage = Tr::tr("Page is not an object.");
         return p;
     }
@@ -323,11 +352,11 @@ JsonWizardFactory::Page JsonWizardFactory::parsePage(const QVariant &value, QStr
     Id typeId = Id::fromString(QLatin1String(Constants::PAGE_ID_PREFIX) + strVal);
 
     JsonWizardPageFactory *factory
-            = Utils::findOr(s_pageFactories, nullptr, [typeId](JsonWizardPageFactory *f) { return f->canCreate(typeId); });
+            = Utils::findOr(pageFactories(), nullptr, [typeId](JsonWizardPageFactory *f) { return f->canCreate(typeId); });
     if (!factory) {
         *errorMessage = Tr::tr("TypeId \"%1\" of page is unknown. Supported typeIds are: \"%2\".")
                 .arg(strVal)
-                .arg(supportedTypeIds(s_pageFactories).replace(QLatin1String(Constants::PAGE_ID_PREFIX), QLatin1String("")));
+                .arg(supportedTypeIds(pageFactories()).replace(QLatin1String(Constants::PAGE_ID_PREFIX), QLatin1String("")));
         return p;
     }
 
@@ -351,9 +380,9 @@ JsonWizardFactory::Page JsonWizardFactory::parsePage(const QVariant &value, QStr
 
     if (specifiedSubData.isNull())
         subData = defaultSubData;
-    else if (specifiedSubData.type() == QVariant::Map)
+    else if (specifiedSubData.typeId() == QVariant::Map)
         subData = mergeDataValueMaps(specifiedSubData.toMap(), defaultSubData.toMap());
-    else if (specifiedSubData.type() == QVariant::List)
+    else if (specifiedSubData.typeId() == QVariant::List)
         subData = specifiedSubData;
 
     if (!factory->validateData(typeId, subData, errorMessage))
@@ -373,8 +402,9 @@ JsonWizardFactory::Page JsonWizardFactory::parsePage(const QVariant &value, QStr
 //FIXME: loadDefaultValues() has an almost identical loop. Make the loop return the results instead of
 //internal processing and create a separate function for it. Then process the results in
 //loadDefaultValues() and loadDefaultValues()
-void JsonWizardFactory::createWizardFactories()
+QList<Core::IWizardFactory *> JsonWizardFactory::createWizardFactories()
 {
+    QList<Core::IWizardFactory *> result;
     QString verboseLog;
     const QString wizardFileName = QLatin1String("wizard.json");
 
@@ -436,10 +466,16 @@ void JsonWizardFactory::createWizardFactories()
                 continue;
             }
 
-            IWizardFactory::registerFactoryCreator([data, currentFile] {
-                QString errorMessage;
-                return createWizardFactory(data, currentFile.parentDir(), &errorMessage);
-            });
+            QString errorMessage;
+            JsonWizardFactory *factory = createWizardFactory(data,
+                                                             currentFile.parentDir(),
+                                                             &errorMessage);
+            if (!factory) {
+                verboseLog.append(tr("* Failed to create: %1\n").arg(errorMessage));
+                continue;
+            }
+
+            result << factory;
         }
     }
 
@@ -447,6 +483,7 @@ void JsonWizardFactory::createWizardFactories()
         qWarning("%s", qPrintable(verboseLog));
         Core::MessageManager::writeDisrupting(verboseLog);
     }
+    return result;
 }
 
 JsonWizardFactory *JsonWizardFactory::createWizardFactory(const QVariantMap &data,
@@ -519,18 +556,6 @@ int JsonWizardFactory::verbose()
     return m_verbose;
 }
 
-void JsonWizardFactory::registerPageFactory(JsonWizardPageFactory *factory)
-{
-    QTC_ASSERT(!s_pageFactories.contains(factory), return);
-    s_pageFactories.append(factory);
-}
-
-void JsonWizardFactory::registerGeneratorFactory(JsonWizardGeneratorFactory *factory)
-{
-    QTC_ASSERT(!s_generatorFactories.contains(factory), return);
-    s_generatorFactories.append(factory);
-}
-
 static QString qmlProjectName(const FilePath &folder)
 {
     FilePath currentFolder = folder;
@@ -598,7 +623,7 @@ Wizard *JsonWizardFactory::runWizardImpl(const FilePath &path, QWidget *parent,
             continue;
 
         havePage = true;
-        JsonWizardPageFactory *factory = findOr(s_pageFactories, nullptr,
+        JsonWizardPageFactory *factory = findOr(pageFactories(), nullptr,
                                                        [&data](JsonWizardPageFactory *f) {
                                                             return f->canCreate(data.typeId);
                                                        });
@@ -621,7 +646,7 @@ Wizard *JsonWizardFactory::runWizardImpl(const FilePath &path, QWidget *parent,
 
     for (const Generator &data : std::as_const(m_generators)) {
         QTC_ASSERT(data.isValid(), continue);
-        JsonWizardGeneratorFactory *factory = Utils::findOr(s_generatorFactories, nullptr,
+        JsonWizardGeneratorFactory *factory = Utils::findOr(generatorFactories(), nullptr,
                                                             [&data](JsonWizardGeneratorFactory *f) {
                                                                  return f->canCreate(data.typeId);
                                                             });
@@ -648,9 +673,9 @@ QList<QVariant> JsonWizardFactory::objectOrList(const QVariant &data, QString *e
     QList<QVariant> result;
     if (data.isNull())
         *errorMessage = Tr::tr("key not found.");
-    else if (data.type() == QVariant::Map)
+    else if (data.typeId() == QVariant::Map)
         result.append(data);
-    else if (data.type() == QVariant::List)
+    else if (data.typeId() == QVariant::List)
         result = data.toList();
     else
         *errorMessage = Tr::tr("Expected an object or a list.");
@@ -660,8 +685,8 @@ QList<QVariant> JsonWizardFactory::objectOrList(const QVariant &data, QString *e
 QString JsonWizardFactory::localizedString(const QVariant &value)
 {
     if (value.isNull())
-        return QString();
-    if (value.type() == QVariant::Map) {
+        return {};
+    if (value.typeId() == QVariant::Map) {
         QVariantMap tmp = value.toMap();
         const QString locale = languageSetting().toLower();
         QStringList locales;
@@ -671,7 +696,7 @@ QString JsonWizardFactory::localizedString(const QVariant &value)
             if (!result.isEmpty())
                 return result;
         }
-        return QString();
+        return {};
     }
     return Tr::tr(value.toByteArray());
 }
@@ -699,14 +724,6 @@ bool JsonWizardFactory::isAvailable(Id platformId) const
     jsExpander.engine().evaluate("var value = Wizard.value");
     jsExpander.registerForExpander(e);
     return JsonWizard::boolFromVariant(m_enabledExpression, &expander);
-}
-
-void JsonWizardFactory::destroyAllFactories()
-{
-    qDeleteAll(s_pageFactories);
-    s_pageFactories.clear();
-    qDeleteAll(s_generatorFactories);
-    s_generatorFactories.clear();
 }
 
 bool JsonWizardFactory::initialize(const QVariantMap &data, const FilePath &baseDir, QString *errorMessage)
@@ -871,7 +888,7 @@ QVariant JsonWizardFactoryJsExtension::value(const QString &name) const
         return Id::toStringList(m_availableFeatures);
     if (name == "Plugins")
         return Id::toStringList(m_pluginFeatures);
-    return QVariant();
+    return {};
 }
 
 } // namespace Internal

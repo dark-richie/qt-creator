@@ -6,13 +6,18 @@
 #include "selectionboxgeometry.h"
 
 #include <QtQuick3DRuntimeRender/private/qssgrendermodel_p.h>
-#include <QtQuick3DRuntimeRender/private/qssgrendercontextcore_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderbuffermanager_p.h>
 #include <QtQuick3D/private/qquick3dmodel_p.h>
 #include <QtQuick3D/private/qquick3dscenemanager_p.h>
 #include <QtQuick3D/qquick3dobject.h>
 #include <QtQuick/qquickwindow.h>
 #include <QtCore/qvector.h>
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 7, 0)
+#include <QtQuick3DRuntimeRender/private/qssgrendercontextcore_p.h>
+#else
+#include <QtQuick3DRuntimeRender/ssg/qssgrendercontextcore.h>
+#endif
 
 #include <limits>
 
@@ -195,11 +200,7 @@ void SelectionBoxGeometry::doUpdateGeometry()
                 m = targetRN->parent->globalTransform;
             }
             rootRN->localTransform = m;
-#if QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
-            rootRN->markDirty(QSSGRenderNode::TransformDirtyFlag::TransformNotDirty);
-#else
             rootRN->markDirty(QSSGRenderNode::DirtyFlag::TransformDirty);
-#endif
             rootRN->calculateGlobalVariables();
         } else if (!m_spatialNodeUpdatePending) {
             // Necessary spatial nodes do not yet exist. Defer selection box creation one frame.
@@ -243,15 +244,10 @@ void SelectionBoxGeometry::getBounds(
 
     if (node != m_targetNode) {
         if (renderNode) {
-#if QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
-            if (renderNode->flags.testFlag(QSSGRenderNode::Flag::TransformDirty))
-                renderNode->calculateLocalTransform();
-#else
             if (renderNode->isDirty(QSSGRenderNode::DirtyFlag::TransformDirty)) {
                 renderNode->localTransform = QSSGRenderNode::calculateTransformMatrix(
                             node->position(), node->scale(), node->pivot(), node->rotation());
             }
-#endif
             localTransform = renderNode->localTransform;
         }
         trackNodeChanges(node);
@@ -312,19 +308,17 @@ void SelectionBoxGeometry::getBounds(
         if (auto renderModel = static_cast<QSSGRenderModel *>(renderNode)) {
             QWindow *window = static_cast<QWindow *>(m_view3D->window());
             if (window) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 1)
                 QSSGRef<QSSGRenderContextInterface> context;
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-                context = QSSGRenderContextInterface::getRenderContextInterface(quintptr(window));
-#else
                 context = QQuick3DObjectPrivate::get(this)->sceneManager->rci;
-#endif
                 if (!context.isNull()) {
-                    auto bufferManager = context->bufferManager();
-#if QT_VERSION < QT_VERSION_CHECK(6, 3, 0)
-                    QSSGBounds3 bounds = renderModel->getModelBounds(bufferManager);
 #else
-                    QSSGBounds3 bounds = bufferManager->getModelBounds(renderModel);
+                const auto &sm = QQuick3DObjectPrivate::get(this)->sceneManager;
+                auto context = sm->wattached ? sm->wattached->rci().get() : nullptr;
+                if (context) {
 #endif
+                    const auto &bufferManager(context->bufferManager());
+                    QSSGBounds3 bounds = bufferManager->getModelBounds(renderModel);
                     QVector3D center = bounds.center();
                     QVector3D extents = bounds.extents();
                     QVector3D localMin = center - extents;

@@ -1,10 +1,12 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
+#include "formeditorplugin.h"
+
+#include "designerconstants.h"
 #include "designertr.h"
 #include "formeditorfactory.h"
-#include "formeditorplugin.h"
-#include "formeditorw.h"
+#include "formeditor.h"
 #include "formtemplatewizardpage.h"
 
 #ifdef CPP_ENABLED
@@ -23,8 +25,12 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
+
 #include <cppeditor/cppeditorconstants.h>
+
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
+
+#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
 
 #include <QAction>
@@ -50,15 +56,36 @@ public:
     FormEditorFactory formEditorFactory;
     SettingsPageProvider settingsPageProvider;
     QtDesignerFormClassCodeGenerator formClassCodeGenerator;
+    FormPageFactory formPageFactory;
 };
 
 FormEditorPlugin::~FormEditorPlugin()
 {
-    FormEditorW::deleteInstance();
+    deleteInstance();
     delete d;
 }
 
-void FormEditorPlugin::initialize()
+static void parseArguments(const QStringList &arguments)
+{
+    const auto doWithNext = [arguments](auto it, const std::function<void(QString)> &fun) {
+        ++it;
+        if (it != arguments.cend())
+            fun(*it);
+    };
+    for (auto it = arguments.cbegin(); it != arguments.cend(); ++it) {
+        if (*it == "-designer-qt-pluginpath")
+            doWithNext(it, [](const QString &path) { setQtPluginPath(path); });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+        // -designer-pluginpath is only supported when building with Qt >= 6.7.0, which added the
+        // required API
+        else if (*it == "-designer-pluginpath")
+            doWithNext(it, [](const QString &path) { addPluginPath(path); });
+#endif
+    }
+}
+
+bool FormEditorPlugin::initialize([[maybe_unused]] const QStringList &arguments,
+                                  [[maybe_unused]] QString *errorString)
 {
     d = new FormEditorPluginPrivate;
 
@@ -77,18 +104,19 @@ void FormEditorPlugin::initialize()
     });
 #endif
 
-    ProjectExplorer::JsonWizardFactory::registerPageFactory(new Internal::FormPageFactory);
-
     // Ensure that loading designer translations is done before FormEditorW is instantiated
     const QString locale = ICore::userInterfaceLanguage();
     if (!locale.isEmpty()) {
         auto qtr = new QTranslator(this);
         const QString creatorTrPath = ICore::resourcePath("translations").toString();
-        const QString qtTrPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+        const QString qtTrPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
         const QString trFile = "designer_" + locale;
         if (qtr->load(trFile, qtTrPath) || qtr->load(trFile, creatorTrPath))
             QCoreApplication::installTranslator(qtr);
     }
+
+    parseArguments(arguments);
+    return true;
 }
 
 void FormEditorPlugin::extensionsInitialized()
@@ -137,11 +165,12 @@ static FilePath otherFile()
     const Utils::MimeType currentMimeType = Utils::mimeTypeForFile(current);
     // Determine potential suffixes of candidate files
     // 'ui' -> 'cpp', 'cpp/h' -> 'ui'.
+    using namespace Utils::Constants;
     QStringList candidateSuffixes;
     if (currentMimeType.matchesName(FORM_MIMETYPE)) {
-        candidateSuffixes += Utils::mimeTypeForName(CppEditor::Constants::CPP_SOURCE_MIMETYPE).suffixes();
-    } else if (currentMimeType.matchesName(CppEditor::Constants::CPP_SOURCE_MIMETYPE)
-               || currentMimeType.matchesName(CppEditor::Constants::CPP_HEADER_MIMETYPE)) {
+        candidateSuffixes += Utils::mimeTypeForName(CPP_SOURCE_MIMETYPE).suffixes();
+    } else if (currentMimeType.matchesName(CPP_SOURCE_MIMETYPE)
+               || currentMimeType.matchesName(CPP_HEADER_MIMETYPE)) {
         candidateSuffixes += Utils::mimeTypeForName(FORM_MIMETYPE).suffixes();
     } else {
         return {};

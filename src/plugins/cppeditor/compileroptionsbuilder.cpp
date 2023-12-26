@@ -64,6 +64,13 @@ static QString defineDirectiveToDefineOption(const Macro &macro)
     return QString::fromUtf8(option);
 }
 
+static QStringList cpuBlacklist()
+{
+    QStringList blacklist = qtcEnvironmentVariable("QTC_CLANGD_CPU_BLACKLIST")
+                                .split(':', Qt::SkipEmptyParts);
+    return blacklist << "cortex-a72.cortex-a53"; // See QTCREATORBUG-29304
+}
+
 QStringList XclangArgs(const QStringList &args)
 {
     QStringList options;
@@ -270,6 +277,7 @@ void CompilerOptionsBuilder::addPicIfCompilerFlagsContainsIt()
 void CompilerOptionsBuilder::addCompilerFlags()
 {
     add(m_compilerFlags.flags);
+    removeUnsupportedCpuFlags();
 }
 
 void CompilerOptionsBuilder::addMsvcExceptions()
@@ -368,10 +376,21 @@ void CompilerOptionsBuilder::addHeaderPathOptions()
 
 void CompilerOptionsBuilder::addIncludeFile(const QString &file)
 {
-    if (QFile::exists(file)) {
+    if (QFileInfo::exists(file)) {
         add({isClStyle() ? QLatin1String(includeFileOptionCl)
                          : QLatin1String(includeFileOptionGcc),
              QDir::toNativeSeparators(file)});
+    }
+}
+
+void CompilerOptionsBuilder::removeUnsupportedCpuFlags()
+{
+    const QStringList blacklist = cpuBlacklist();
+    for (auto it = m_options.begin(); it != m_options.end();) {
+        if (it->startsWith("-mcpu=") && blacklist.contains(it->mid(6)))
+            it = m_options.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -875,10 +894,15 @@ void CompilerOptionsBuilder::evaluateCompilerFlags()
             || option.startsWith("/M", Qt::CaseSensitive)
             || option.startsWith(includeUserPathOption)
             || option.startsWith(includeSystemPathOption)
-            || option.startsWith(includeUserPathOptionWindows)) {
+            || option.startsWith(includeUserPathOptionWindows)
+            || option.startsWith("-flto")) {
             // Optimization and run-time flags.
             continue;
         }
+
+        // GCC option that clang doesn't know.
+        if (option.contains("direct-extern-access"))
+            continue;
 
         // These were already parsed into ProjectPart::includedFiles.
         if (option == includeFileOptionCl || option == includeFileOptionGcc) {

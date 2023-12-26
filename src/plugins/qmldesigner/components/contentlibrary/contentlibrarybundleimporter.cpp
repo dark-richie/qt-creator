@@ -151,7 +151,7 @@ QString ContentLibraryBundleImporter::importComponent(const QString &qmlFile,
 
 void ContentLibraryBundleImporter::handleImportTimer()
 {
-    auto handleFailure = [this]() {
+    auto handleFailure = [this] {
         m_importTimer.stop();
         m_fullReset = false;
         m_importAddPending = false;
@@ -205,11 +205,15 @@ void ContentLibraryBundleImporter::handleImportTimer()
     for (const QString &pendingType : pendingTypes) {
         NodeMetaInfo metaInfo = model->metaInfo(pendingType.toUtf8());
         const bool isImport = m_pendingTypes[pendingType];
-        const bool typeComplete = metaInfo.isValid() && !metaInfo.superClasses().empty();
+        const bool typeComplete = metaInfo.isValid() && !metaInfo.prototypes().empty();
         if (isImport == typeComplete) {
             m_pendingTypes.remove(pendingType);
             if (isImport)
+#ifdef QDS_USE_PROJECTSTORAGE
+                emit importFinished(pendingType.toUtf8());
+#else
                 emit importFinished(metaInfo);
+#endif
             else
                 emit unimportFinished(metaInfo);
         }

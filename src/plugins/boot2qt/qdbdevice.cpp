@@ -15,8 +15,8 @@
 #include <remotelinux/linuxprocessinterface.h>
 
 #include <utils/portlist.h>
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 #include <utils/theme/theme.h>
 
 #include <QFormLayout>
@@ -50,7 +50,7 @@ class DeviceApplicationObserver : public QObject
 public:
     DeviceApplicationObserver(const IDevice::ConstPtr &device, const CommandLine &command)
     {
-        connect(&m_appRunner, &QtcProcess::done, this, &DeviceApplicationObserver::handleDone);
+        connect(&m_appRunner, &Process::done, this, &DeviceApplicationObserver::handleDone);
 
         QTC_ASSERT(device, return);
         m_deviceName = device->displayName();
@@ -94,7 +94,7 @@ private:
         deleteLater();
     }
 
-    QtcProcess m_appRunner;
+    Process m_appRunner;
     QString m_deviceName;
 };
 
@@ -137,22 +137,22 @@ QString QdbDevice::serialNumber() const
     return m_serialNumber;
 }
 
-void QdbDevice::fromMap(const QVariantMap &map)
+void QdbDevice::fromMap(const Store &map)
 {
     ProjectExplorer::IDevice::fromMap(map);
     setSerialNumber(map.value("Qdb.SerialNumber").toString());
 }
 
-QVariantMap QdbDevice::toMap() const
+Store QdbDevice::toMap() const
 {
-    QVariantMap map = ProjectExplorer::IDevice::toMap();
+    Store map = ProjectExplorer::IDevice::toMap();
     map.insert("Qdb.SerialNumber", serialNumber());
     return map;
 }
 
 void QdbDevice::setupDefaultNetworkSettings(const QString &host)
 {
-    setFreePorts(Utils::PortList::fromString("10000-10100"));
+    setFreePorts(PortList::fromString("10000-10100"));
 
     SshParameters parameters = sshParameters();
     parameters.setHost(host);
@@ -226,7 +226,7 @@ public:
     {
         QdbDevice::Ptr device = QdbDevice::create();
 
-        device->setDisplayName(settingsPage.deviceName());
+        device->settings()->displayName.setValue(settingsPage.deviceName());
         device->setupId(ProjectExplorer::IDevice::ManuallyAdded, Utils::Id());
         device->setType(Constants::QdbLinuxOsType);
         device->setMachineType(ProjectExplorer::IDevice::Hardware);

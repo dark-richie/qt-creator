@@ -29,14 +29,13 @@
 #include <coreplugin/icore.h>
 
 #include <utils/environment.h>
+#include <utils/process.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QApplication>
 #include <QDateTime>
 #include <QDebug>
-#include <QDir>
 #include <QFileInfo>
 #include <QTimer>
 #include <QToolTip>
@@ -69,7 +68,7 @@ LldbEngine::LldbEngine()
     setObjectName("LldbEngine");
     setDebuggerName("LLDB");
 
-    DebuggerSettings &ds = *debuggerSettings();
+    DebuggerSettings &ds = settings();
     connect(&ds.autoDerefPointers, &BaseAspect::changed, this, &LldbEngine::updateLocals);
     connect(ds.createFullBacktrace.action(), &QAction::triggered,
             this, &LldbEngine::fetchFullBacktrace);
@@ -77,11 +76,11 @@ LldbEngine::LldbEngine()
     connect(&ds.useDynamicType, &BaseAspect::changed, this, &LldbEngine::updateLocals);
     connect(&ds.intelFlavor, &BaseAspect::changed, this, &LldbEngine::updateAll);
 
-    connect(&m_lldbProc, &QtcProcess::started, this, &LldbEngine::handleLldbStarted);
-    connect(&m_lldbProc, &QtcProcess::done, this, &LldbEngine::handleLldbDone);
-    connect(&m_lldbProc, &QtcProcess::readyReadStandardOutput,
+    connect(&m_lldbProc, &Process::started, this, &LldbEngine::handleLldbStarted);
+    connect(&m_lldbProc, &Process::done, this, &LldbEngine::handleLldbDone);
+    connect(&m_lldbProc, &Process::readyReadStandardOutput,
             this, &LldbEngine::readLldbStandardOutput);
-    connect(&m_lldbProc, &QtcProcess::readyReadStandardError,
+    connect(&m_lldbProc, &Process::readyReadStandardError,
             this, &LldbEngine::readLldbStandardError);
 
     connect(this, &LldbEngine::outputReady,
@@ -180,6 +179,7 @@ void LldbEngine::setupEngine()
 
     showMessage("STARTING LLDB: " + lldbCmd.toUserOutput());
     Environment environment = runParameters().debugger.environment;
+    environment.appendOrSet("QT_CREATOR_LLDB_PROCESS", "1");
     environment.appendOrSet("PYTHONUNBUFFERED", "1");  // avoid flushing problem on macOS
     DebuggerItem::addAndroidLldbPythonEnv(lldbCmd, environment);
 
@@ -187,7 +187,7 @@ void LldbEngine::setupEngine()
         // LLDB 14 installation on Ubuntu 22.04 is broken:
         // https://bugs.launchpad.net/ubuntu/+source/llvm-defaults/+bug/1972855
         // Brush over it:
-        QtcProcess lldbPythonPathFinder;
+        Process lldbPythonPathFinder;
         lldbPythonPathFinder.setCommand({lldbCmd, {"-P"}});
         lldbPythonPathFinder.start();
         lldbPythonPathFinder.waitForFinished();
@@ -228,14 +228,14 @@ void LldbEngine::handleLldbStarted()
     if (!commands.isEmpty())
         executeCommand(commands);
 
-    const QString path = debuggerSettings()->extraDumperFile.value();
-    if (!path.isEmpty() && QFileInfo(path).isReadable()) {
+    const FilePath path = settings().extraDumperFile();
+    if (!path.isEmpty() && path.isReadableFile()) {
         DebuggerCommand cmd("addDumperModule");
-        cmd.arg("path", path);
+        cmd.arg("path", path.path());
         runCommand(cmd);
     }
 
-    commands = debuggerSettings()->extraDumperCommands.value();
+    commands = settings().extraDumperCommands();
     if (!commands.isEmpty()) {
         DebuggerCommand cmd("executeDebuggerCommand");
         cmd.arg("command", commands);
@@ -248,8 +248,7 @@ void LldbEngine::handleLldbStarted()
     };
     runCommand(cmd1);
 
-    const SourcePathMap sourcePathMap =
-            mergePlatformQtPath(rp, debuggerSettings()->sourcePathMap.value());
+    const SourcePathMap sourcePathMap = mergePlatformQtPath(rp, settings().sourcePathMap());
     for (auto it = sourcePathMap.constBegin(), cend = sourcePathMap.constEnd();
          it != cend;
          ++it) {
@@ -267,7 +266,13 @@ void LldbEngine::handleLldbStarted()
     cmd2.arg("startmode", rp.startMode);
     cmd2.arg("nativemixed", isNativeMixedActive());
     cmd2.arg("workingdirectory", rp.inferior.workingDirectory.path());
-    cmd2.arg("environment", rp.inferior.environment.toStringList());
+    QStringList environment = rp.inferior.environment.toStringList();
+    // Prevent lldb from automatically setting OS_ACTIVITY_DT_MODE to mirror
+    // NSLog to stderr, as that will also mirror os_log, which we pick up in
+    // AppleUnifiedLogger::preventsStderrLogging(), and end up disabling Qt's
+    // default stderr logger. We prefer Qt's own stderr logging if we can.
+    environment << "IDE_DISABLED_OS_ACTIVITY_DT_MODE=1";
+    cmd2.arg("environment", environment);
     cmd2.arg("processargs", toHex(ProcessArgs::splitArgs(rp.inferior.command.arguments(),
                                                          HostOsInfo::hostOs()).join(QChar(0))));
     cmd2.arg("platform", rp.platform);
@@ -284,22 +289,23 @@ void LldbEngine::handleLldbStarted()
         cmd2.arg("attachpid", attachedPID);
     } else {
         cmd2.arg("startmode", rp.startMode);
-        // it is better not to check the start mode on the python sid (as we would have to duplicate the
-        // enum values), and thus we assume that if the rp.attachPID is valid we really have to attach
-        QTC_CHECK(rp.attachPID.isValid() && (rp.startMode == AttachToRemoteProcess
-                                             || rp.startMode == AttachToLocalProcess
-                                             || rp.startMode == AttachToRemoteServer));
-        cmd2.arg("attachpid", rp.attachPID.pid());
-        cmd2.arg("sysroot", rp.deviceSymbolsRoot.isEmpty() ? rp.sysRoot.toString()
-                                                           : rp.deviceSymbolsRoot);
-        cmd2.arg("remotechannel", ((rp.startMode == AttachToRemoteProcess
-                                   || rp.startMode == AttachToRemoteServer)
-                                  ? rp.remoteChannel : QString()));
-        cmd2.arg("platform", rp.platform);
-        QTC_CHECK(!rp.continueAfterAttach || (rp.startMode == AttachToRemoteProcess
-                                              || rp.startMode == AttachToLocalProcess
-                                              || rp.startMode == AttachToRemoteServer));
-        m_continueAtNextSpontaneousStop = false;
+        if (rp.startMode != StartInternal) {
+            // it is better not to check the start mode on the python sid (as we would have to duplicate the
+            // enum values), and thus we assume that if the rp.attachPID is valid we really have to attach
+            QTC_CHECK(rp.attachPID.isValid() && (rp.startMode == AttachToRemoteProcess
+                                                 || rp.startMode == AttachToLocalProcess
+                                                 || rp.startMode == AttachToRemoteServer));
+            cmd2.arg("attachpid", rp.attachPID.pid());
+            cmd2.arg("sysroot", rp.deviceSymbolsRoot.isEmpty() ? rp.sysRoot.toString()
+                                                               : rp.deviceSymbolsRoot);
+            cmd2.arg("remotechannel", ((rp.startMode == AttachToRemoteProcess
+                                       || rp.startMode == AttachToRemoteServer)
+                                      ? rp.remoteChannel : QString()));
+            QTC_CHECK(!rp.continueAfterAttach || (rp.startMode == AttachToRemoteProcess
+                                                  || rp.startMode == AttachToLocalProcess
+                                                  || rp.startMode == AttachToRemoteServer));
+            m_continueAtNextSpontaneousStop = false;
+        }
     }
 
     cmd2.callback = [this](const DebuggerResponse &response) {
@@ -416,7 +422,7 @@ void LldbEngine::executeRunToLine(const ContextData &data)
     notifyInferiorRunRequested();
     DebuggerCommand cmd("executeRunToLocation");
     cmd.arg("file", data.fileName.path());
-    cmd.arg("line", data.lineNumber);
+    cmd.arg("line", data.textPosition.line);
     cmd.arg("address", data.address);
     runCommand(cmd);
 }
@@ -433,7 +439,7 @@ void LldbEngine::executeJumpToLine(const ContextData &data)
 {
     DebuggerCommand cmd("executeJumpToLocation");
     cmd.arg("file", data.fileName.path());
-    cmd.arg("line", data.lineNumber);
+    cmd.arg("line", data.textPosition.line);
     cmd.arg("address", data.address);
     runCommand(cmd);
 }
@@ -469,7 +475,7 @@ void LldbEngine::selectThread(const Thread &thread)
     DebuggerCommand cmd("selectThread");
     cmd.arg("id", thread->id());
     cmd.callback = [this](const DebuggerResponse &) {
-        fetchStack(debuggerSettings()->maximalStackDepth.value());
+        fetchStack(settings().maximalStackDepth());
     };
     runCommand(cmd);
 }
@@ -561,7 +567,7 @@ void LldbEngine::updateBreakpointData(const Breakpoint &bp, const GdbMi &bkpt, b
     bp->setCondition(fromHex(bkpt["condition"].data()));
     bp->setHitCount(bkpt["hitcount"].toInt());
     bp->setFileName(FilePath::fromUserInput(bkpt["file"].data()));
-    bp->setLineNumber(bkpt["line"].toInt());
+    bp->setTextPosition({bkpt["line"].toInt(), -1});
 
     GdbMi locations = bkpt["locations"];
     const int numChild = locations.childCount();
@@ -574,7 +580,7 @@ void LldbEngine::updateBreakpointData(const Breakpoint &bp, const GdbMi &bkpt, b
             loc->params.address = location["addr"].toAddress();
             loc->params.functionName = location["function"].data();
             loc->params.fileName = FilePath::fromUserInput(location["file"].data());
-            loc->params.lineNumber = location["line"].toInt();
+            loc->params.textPosition.line = location["line"].toInt();
             loc->displayName = QString("%1.%2").arg(bp->responseId()).arg(locid);
         }
         bp->setPending(false);
@@ -701,7 +707,7 @@ void LldbEngine::updateAll()
     DebuggerCommand cmd("fetchThreads");
     cmd.callback = [this](const DebuggerResponse &response) {
         threadsHandler()->setThreads(response.data);
-        fetchStack(debuggerSettings()->maximalStackDepth.value());
+        fetchStack(settings().maximalStackDepth());
         reloadRegisters();
     };
     runCommand(cmd);
@@ -734,21 +740,21 @@ void LldbEngine::doUpdateLocals(const UpdateParameters &params)
     watchHandler()->appendWatchersAndTooltipRequests(&cmd);
 
     const bool alwaysVerbose = qtcEnvironmentVariableIsSet("QTC_DEBUGGER_PYTHON_VERBOSE");
-    const DebuggerSettings &s = *debuggerSettings();
+    const DebuggerSettings &s = settings();
     cmd.arg("passexceptions", alwaysVerbose);
-    cmd.arg("fancy", s.useDebuggingHelpers.value());
-    cmd.arg("autoderef", s.autoDerefPointers.value());
-    cmd.arg("dyntype", s.useDynamicType.value());
+    cmd.arg("fancy", s.useDebuggingHelpers());
+    cmd.arg("autoderef", s.autoDerefPointers());
+    cmd.arg("dyntype", s.useDynamicType());
     cmd.arg("partialvar", params.partialVariable);
-    cmd.arg("qobjectnames", s.showQObjectNames.value());
-    cmd.arg("timestamps", s.logTimeStamps.value());
+    cmd.arg("qobjectnames", s.showQObjectNames());
+    cmd.arg("timestamps", s.logTimeStamps());
 
     StackFrame frame = stackHandler()->currentFrame();
     cmd.arg("context", frame.context);
     cmd.arg("nativemixed", isNativeMixedActive());
 
-    cmd.arg("stringcutoff", s.maximalStringLength.value());
-    cmd.arg("displaystringlimit", s.displayStringLimit.value());
+    cmd.arg("stringcutoff", s.maximalStringLength());
+    cmd.arg("displaystringlimit", s.displayStringLimit());
 
     //cmd.arg("resultvarname", m_resultVarName);
     cmd.arg("partialvar", params.partialVariable);
@@ -998,7 +1004,7 @@ void LldbEngine::fetchDisassembler(DisassemblerAgent *agent)
     DebuggerCommand cmd("fetchDisassembler");
     cmd.arg("address", loc.address());
     cmd.arg("function", loc.functionName());
-    cmd.arg("flavor", debuggerSettings()->intelFlavor.value() ? "intel" : "att");
+    cmd.arg("flavor", settings().intelFlavor() ? "intel" : "att");
     cmd.callback = [this, id](const DebuggerResponse &response) {
         DisassemblerLines result;
         QPointer<DisassemblerAgent> agent = m_disassemblerAgents.key(id);
@@ -1032,8 +1038,8 @@ void LldbEngine::fetchDisassembler(DisassemblerAgent *agent)
 void LldbEngine::fetchFullBacktrace()
 {
     DebuggerCommand cmd("fetchFullBacktrace");
-    cmd.callback = [](const DebuggerResponse &response)  {
-        Internal::openTextEditor("Backtrace $", fromHex(response.data.data()));
+    cmd.callback = [](const DebuggerResponse &response) {
+        Internal::openTextEditor("Backtrace $", fromHex(response.data["fulltrace"].data()));
     };
     runCommand(cmd);
 }

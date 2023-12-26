@@ -10,14 +10,14 @@
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/ioutputparser.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/toolchain.h>
 
+#include <utils/process.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -60,7 +60,7 @@ QWidget *NimCompilerBuildStep::createConfigWidget()
     auto additionalArgumentsLineEdit = new QLineEdit(widget);
 
     auto commandTextEdit = new QTextEdit(widget);
-    commandTextEdit->setEnabled(false);
+    commandTextEdit->setReadOnly(true);
     commandTextEdit->setMinimumSize(QSize(0, 0));
 
     auto defaultArgumentsComboBox = new QComboBox(widget);
@@ -121,22 +121,20 @@ QWidget *NimCompilerBuildStep::createConfigWidget()
     return widget;
 }
 
-bool NimCompilerBuildStep::fromMap(const QVariantMap &map)
+void NimCompilerBuildStep::fromMap(const Store &map)
 {
     AbstractProcessStep::fromMap(map);
     m_userCompilerOptions = map[Constants::C_NIMCOMPILERBUILDSTEP_USERCOMPILEROPTIONS].toString().split('|');
     m_defaultOptions = static_cast<DefaultBuildOptions>(map[Constants::C_NIMCOMPILERBUILDSTEP_DEFAULTBUILDOPTIONS].toInt());
     m_targetNimFile = FilePath::fromString(map[Constants::C_NIMCOMPILERBUILDSTEP_TARGETNIMFILE].toString());
-    return true;
 }
 
-QVariantMap NimCompilerBuildStep::toMap() const
+void NimCompilerBuildStep::toMap(Store &map) const
 {
-    QVariantMap result = AbstractProcessStep::toMap();
-    result[Constants::C_NIMCOMPILERBUILDSTEP_USERCOMPILEROPTIONS] = m_userCompilerOptions.join('|');
-    result[Constants::C_NIMCOMPILERBUILDSTEP_DEFAULTBUILDOPTIONS] = m_defaultOptions;
-    result[Constants::C_NIMCOMPILERBUILDSTEP_TARGETNIMFILE] = m_targetNimFile.toString();
-    return result;
+    AbstractProcessStep::toMap(map);
+    map[Constants::C_NIMCOMPILERBUILDSTEP_USERCOMPILEROPTIONS] = m_userCompilerOptions.join('|');
+    map[Constants::C_NIMCOMPILERBUILDSTEP_DEFAULTBUILDOPTIONS] = m_defaultOptions;
+    map[Constants::C_NIMCOMPILERBUILDSTEP_TARGETNIMFILE] = m_targetNimFile.toString();
 }
 
 void NimCompilerBuildStep::setBuildType(BuildConfiguration::BuildType buildType)
@@ -161,7 +159,7 @@ CommandLine NimCompilerBuildStep::commandLine()
     auto bc = qobject_cast<NimBuildConfiguration *>(buildConfiguration());
     QTC_ASSERT(bc, return {});
 
-    auto tc = ToolChainKitAspect::toolChain(kit(), Constants::C_NIMLANGUAGE_ID);
+    auto tc = ToolchainKitAspect::toolchain(kit(), Constants::C_NIMLANGUAGE_ID);
     QTC_ASSERT(tc, return {});
 
     CommandLine cmd{tc->compilerCommand()};

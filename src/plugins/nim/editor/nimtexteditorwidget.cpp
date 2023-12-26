@@ -39,7 +39,7 @@ void NimTextEditorWidget::findLinkAt(const QTextCursor &c, const Utils::LinkHand
 {
     const Utils::FilePath &path = textDocument()->filePath();
 
-    NimSuggest *suggest = NimSuggestCache::instance().get(path);
+    NimSuggest *suggest = Nim::Suggest::getFromCache(path);
     if (!suggest)
         return processLinkCallback(Utils::Link());
 
@@ -50,7 +50,7 @@ void NimTextEditorWidget::findLinkAt(const QTextCursor &c, const Utils::LinkHand
 
     std::shared_ptr<NimSuggestClientRequest> request = suggest->def(path.toString(),
                                                                              line,
-                                                                             column - 1,
+                                                                             column,
                                                                              dirtyFile->fileName());
 
     if (!request)

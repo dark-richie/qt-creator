@@ -18,13 +18,13 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <extensionsystem/pluginmanager.h>
 #include <utils/algorithm.h>
-#include <utils/executeondestruction.h>
 #include <utils/qtcassert.h>
 
 #include <QKeyEvent>
 #include <QList>
 #include <QObject>
 #include <QScopedPointer>
+#include <QScopeGuard>
 #include <QTimer>
 
 using namespace TextEditor::Internal;
@@ -81,6 +81,7 @@ private:
     IAssistProcessor *m_processor = nullptr;
     AssistKind m_assistKind = TextEditor::Completion;
     IAssistProposalWidget *m_proposalWidget = nullptr;
+    TextEditorWidget::SuggestionBlocker m_suggestionBlocker;
     bool m_receivedContentWhileWaiting = false;
     QTimer m_automaticProposalTimer;
     CompletionSettings m_settings;
@@ -157,7 +158,7 @@ void CodeAssistantPrivate::requestProposal(AssistReason reason,
                                            bool isUpdate)
 {
     // make sure to cleanup old proposals if we cannot find a new assistant
-    Utils::ExecuteOnDestruction earlyReturnContextClear([this] { destroyContext(); });
+    QScopeGuard cleanup([this] { destroyContext(); });
     if (isWaitingForProposal())
         cancelCurrentRequest();
 
@@ -175,36 +176,35 @@ void CodeAssistantPrivate::requestProposal(AssistReason reason,
 
     std::unique_ptr<AssistInterface> assistInterface =
             m_editorWidget->createAssistInterface(kind, reason);
-    if (!assistInterface)
-        return;
+    QTC_ASSERT(assistInterface, return);
 
     // We got an assist provider and interface so no need to reset the current context anymore
-    earlyReturnContextClear.reset({});
+    cleanup.dismiss();
 
     m_assistKind = kind;
     m_requestProvider = provider;
     IAssistProcessor *processor = provider->createProcessor(assistInterface.get());
     processor->setAsyncCompletionAvailableHandler([this, reason, processor](
                                                   IAssistProposal *newProposal) {
+        if (processor == m_processor) {
+            invalidateCurrentRequestData();
+            if (processor->needsRestart() && m_receivedContentWhileWaiting) {
+                delete newProposal;
+                m_receivedContentWhileWaiting = false;
+                requestProposal(reason, m_assistKind, m_requestProvider);
+            } else {
+                displayProposal(newProposal, reason);
+                if (processor->running())
+                    m_processor = processor;
+                else
+                    emit q->finished();
+            }
+        }
         if (!processor->running()) {
             // do not delete this processor directly since this function is called from within the processor
             QMetaObject::invokeMethod(QCoreApplication::instance(), [processor] {
                 delete processor;
             }, Qt::QueuedConnection);
-        }
-        if (processor != m_processor)
-            return;
-        invalidateCurrentRequestData();
-        if (processor->needsRestart() && m_receivedContentWhileWaiting) {
-            delete newProposal;
-            m_receivedContentWhileWaiting = false;
-            requestProposal(reason, m_assistKind, m_requestProvider);
-        } else {
-            displayProposal(newProposal, reason);
-            if (processor->running())
-                m_processor = processor;
-            else
-                emit q->finished();
         }
     });
 
@@ -296,6 +296,7 @@ void CodeAssistantPrivate::displayProposal(IAssistProposal *newProposal, AssistR
     m_proposalWidget->setDisplayRect(m_editorWidget->cursorRect(basePosition));
     m_proposalWidget->setIsSynchronized(!m_receivedContentWhileWaiting);
     m_proposalWidget->showProposal(prefix);
+    m_suggestionBlocker = m_editorWidget->blockSuggestions();
 }
 
 void CodeAssistantPrivate::processProposalItem(AssistProposalItemInterface *proposalItem)
@@ -338,6 +339,7 @@ void CodeAssistantPrivate::handlePrefixExpansion(const QString &newPrefix)
 void CodeAssistantPrivate::finalizeProposal()
 {
     stopAutomaticProposalTimer();
+    m_suggestionBlocker.reset();
     m_proposalWidget = nullptr;
     if (m_receivedContentWhileWaiting)
         m_receivedContentWhileWaiting = false;
@@ -403,8 +405,10 @@ void CodeAssistantPrivate::notifyChange()
         if (m_editorWidget->position() < m_proposalWidget->basePosition()) {
             destroyContext();
         } else {
-            m_proposalWidget->updateProposal(
-                m_editorWidget->createAssistInterface(m_assistKind, m_proposalWidget->reason()));
+            std::unique_ptr<AssistInterface> assistInterface
+                = m_editorWidget->createAssistInterface(m_assistKind, m_proposalWidget->reason());
+            QTC_ASSERT(assistInterface, destroyContext(); return);
+            m_proposalWidget->updateProposal(std::move(assistInterface));
             if (!isDisplayingProposal())
                 requestActivationCharProposal();
         }

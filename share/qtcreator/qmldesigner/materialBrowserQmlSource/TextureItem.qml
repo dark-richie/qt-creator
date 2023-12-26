@@ -9,19 +9,16 @@ import HelperWidgets
 import StudioTheme as StudioTheme
 import MaterialBrowserBackend
 
-Rectangle {
+Item {
     id: root
 
     visible: textureVisible
 
-    color: "transparent"
-    border.width: MaterialBrowserBackend.materialBrowserTexturesModel.selectedIndex === index
-                        ? !MaterialBrowserBackend.rootView.materialSectionFocused ? 3 : 1 : 0
-    border.color: MaterialBrowserBackend.materialBrowserTexturesModel.selectedIndex === index
-                        ? StudioTheme.Values.themeControlOutlineInteraction
-                        : "transparent"
-
     signal showContextMenu()
+
+    function forceFinishEditing() {
+        txtId.commitRename()
+    }
 
     MouseArea {
         id: mouseArea
@@ -59,13 +56,54 @@ Rectangle {
         }
     }
 
-    Image {
-        source: "image://materialBrowserTex/" + textureSource
-        asynchronous: true
-        width: root.width - 10
-        height: root.height - 10
-        anchors.centerIn: parent
-        smooth: true
-        fillMode: Image.PreserveAspectFit
+    Column {
+        anchors.fill: parent
+        spacing: 1
+
+        Image {
+            id: img
+            source: "image://materialBrowserTex/" + textureSource
+            asynchronous: true
+            width: root.width
+            height: img.width
+            anchors.horizontalCenter: parent.horizontalCenter
+            smooth: true
+            fillMode: Image.PreserveAspectFit
+        }
+
+        // Eat keys so they are not passed to parent while editing name
+        Keys.onPressed: (event) => {
+            event.accepted = true
+        }
+
+        MaterialBrowserItemName {
+            id: txtId
+
+            text: textureId
+            width: img.width
+            anchors.horizontalCenter: parent.horizontalCenter
+
+            onRenamed: (newId) => {
+                MaterialBrowserBackend.materialBrowserTexturesModel.setTextureId(index, newId);
+                mouseArea.forceActiveFocus()
+            }
+
+            onClicked: {
+                MaterialBrowserBackend.materialBrowserTexturesModel.selectTexture(index)
+                MaterialBrowserBackend.rootView.focusMaterialSection(false)
+            }
+        }
+    }
+
+    Rectangle {
+        id: marker
+        anchors.fill: parent
+
+        color: "transparent"
+        border.width: MaterialBrowserBackend.materialBrowserTexturesModel.selectedIndex === index
+                            ? !MaterialBrowserBackend.rootView.materialSectionFocused ? 3 : 1 : 0
+        border.color: MaterialBrowserBackend.materialBrowserTexturesModel.selectedIndex === index
+                            ? StudioTheme.Values.themeControlOutlineInteraction
+                            : "transparent"
     }
 }

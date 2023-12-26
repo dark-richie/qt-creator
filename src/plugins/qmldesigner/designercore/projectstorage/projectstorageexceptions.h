@@ -9,109 +9,134 @@
 
 namespace QmlDesigner {
 
-class QMLDESIGNERCORE_EXPORT NoSourcePathForInvalidSourceId : std::exception
+using namespace std::literals::string_view_literals;
+
+class QMLDESIGNERCORE_EXPORT ProjectStorageError : public std::exception
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT NoSourceContextPathForInvalidSourceContextId : std::exception
+class ProjectStorageErrorWithMessage : public ProjectStorageError
+{
+public:
+    ProjectStorageErrorWithMessage(std::string_view error, std::string_view errorMessage);
+
+    const char *what() const noexcept override;
+
+public:
+    std::string errorMessage;
+};
+
+class QMLDESIGNERCORE_EXPORT NoSourcePathForInvalidSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT SourceContextIdDoesNotExists : std::exception
+class QMLDESIGNERCORE_EXPORT NoSourceContextPathForInvalidSourceContextId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT SourceIdDoesNotExists : std::exception
+class QMLDESIGNERCORE_EXPORT SourceContextIdDoesNotExists : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT TypeHasInvalidSourceId : std::exception
+class QMLDESIGNERCORE_EXPORT SourceIdDoesNotExists : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ModuleDoesNotExists : std::exception
+class QMLDESIGNERCORE_EXPORT TypeHasInvalidSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ModuleAlreadyExists : std::exception
+class QMLDESIGNERCORE_EXPORT ModuleDoesNotExists : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ExportedTypeCannotBeInserted : std::exception
+class QMLDESIGNERCORE_EXPORT ModuleAlreadyExists : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT TypeNameDoesNotExists : std::exception
+class QMLDESIGNERCORE_EXPORT ExportedTypeCannotBeInserted : public ProjectStorageErrorWithMessage
+{
+public:
+    ExportedTypeCannotBeInserted(std::string_view errorMessage);
+};
+
+class QMLDESIGNERCORE_EXPORT TypeNameDoesNotExists : public ProjectStorageErrorWithMessage
+{
+public:
+    TypeNameDoesNotExists(std::string_view errorMessage);
+};
+
+class QMLDESIGNERCORE_EXPORT PropertyNameDoesNotExists : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT PropertyNameDoesNotExists : std::exception
+class QMLDESIGNERCORE_EXPORT PrototypeChainCycle : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT PrototypeChainCycle : std::exception
+class QMLDESIGNERCORE_EXPORT AliasChainCycle : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT AliasChainCycle : std::exception
+class QMLDESIGNERCORE_EXPORT CannotParseQmlTypesFile : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT CannotParseQmlTypesFile : std::exception
+class QMLDESIGNERCORE_EXPORT CannotParseQmlDocumentFile : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT CannotParseQmlDocumentFile : std::exception
+class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidProjectSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidProjectSourceId : std::exception
+class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidSourceId : std::exception
+class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidModuleId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT ProjectDataHasInvalidModuleId : std::exception
+class QMLDESIGNERCORE_EXPORT FileStatusHasInvalidSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;
 };
 
-class QMLDESIGNERCORE_EXPORT FileStatusHasInvalidSourceId : std::exception
+class QMLDESIGNERCORE_EXPORT TypeAnnotationHasInvalidSourceId : public ProjectStorageError
 {
 public:
     const char *what() const noexcept override;

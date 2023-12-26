@@ -44,8 +44,8 @@ public:
     int messageCap() const;
     void setMessageCap(int messageCap);
 
-    QVariantMap toMap() const;
-    void fromMap(const QVariantMap &map);
+    Utils::Store toMap() const;
+    void fromMap(const Utils::Store &map);
 
 private:
     QRegularExpression m_regExp;
@@ -62,8 +62,8 @@ public:
     bool operator ==(const CustomParserSettings &other) const;
     bool operator !=(const CustomParserSettings &other) const { return !operator==(other); }
 
-    QVariantMap toMap() const;
-    void fromMap(const QVariantMap &map);
+    Utils::Store toMap() const;
+    void fromMap(const Utils::Store &map);
 
     Utils::Id id;
     QString displayName;
@@ -80,17 +80,20 @@ public:
     void setParsers(const QList<Utils::Id> &parsers) { m_parsers = parsers; }
     QList<Utils::Id> parsers() const { return m_parsers; }
 
+
     struct Data : BaseAspect::Data
     {
         QList<Utils::Id> parsers;
     };
 
 private:
-    void fromMap(const QVariantMap &map) override;
-    void toMap(QVariantMap &map) const override;
+    void fromMap(const Utils::Store &map) override;
+    void toMap(Utils::Store &map) const override;
 
     QList<Utils::Id> m_parsers;
 };
+
+PROJECTEXPLORER_EXPORT ProjectExplorer::OutputTaskParser *createCustomParserFromId(Utils::Id id);
 
 namespace Internal {
 
@@ -100,8 +103,6 @@ public:
     CustomParser(const CustomParserSettings &settings = CustomParserSettings());
 
     void setSettings(const CustomParserSettings &settings);
-
-    static CustomParser *createFromId(Utils::Id id);
 
 private:
     Result handleLine(const QString &line, Utils::OutputFormat type) override;

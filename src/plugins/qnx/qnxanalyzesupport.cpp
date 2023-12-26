@@ -9,8 +9,7 @@
 
 #include <projectexplorer/devicesupport/deviceusedportsgatherer.h>
 
-#include <utils/qtcassert.h>
-#include <utils/qtcprocess.h>
+#include <utils/process.h>
 
 #include <qmldebug/qmldebugcommandlinearguments.h>
 
@@ -49,11 +48,20 @@ public:
     }
 };
 
-QnxQmlProfilerWorkerFactory::QnxQmlProfilerWorkerFactory()
+class QnxQmlProfilerWorkerFactory final : public RunWorkerFactory
 {
-    setProduct<QnxQmlProfilerSupport>();
-    // FIXME: Shouldn't this use the run mode id somehow?
-    addSupportedRunConfig(Constants::QNX_RUNCONFIG_ID);
+public:
+    QnxQmlProfilerWorkerFactory()
+    {
+        setProduct<QnxQmlProfilerSupport>();
+        // FIXME: Shouldn't this use the run mode id somehow?
+        addSupportedRunConfig(Constants::QNX_RUNCONFIG_ID);
+    }
+};
+
+void setupQnxQmlProfiler()
+{
+    static QnxQmlProfilerWorkerFactory theQnxQmlProfilerWorkerFactory;
 }
 
 } // Qnx::Internal

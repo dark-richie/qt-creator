@@ -3,31 +3,24 @@
 
 #pragma once
 
-#include <coreplugin/dialogs/ioptionspage.h>
 #include <vcsbase/vcsbaseclientsettings.h>
 
-namespace Subversion {
-namespace Internal {
+namespace Subversion::Internal {
 
-class SubversionSettings : public VcsBase::VcsBaseSettings
+class SubversionSettings final : public VcsBase::VcsBaseSettings
 {
 public:
     SubversionSettings();
 
     bool hasAuthentication() const;
 
-    Utils::BoolAspect useAuthentication;
-    Utils::StringAspect password;
-    Utils::BoolAspect spaceIgnorantAnnotation;
-    Utils::BoolAspect diffIgnoreWhiteSpace;
-    Utils::BoolAspect logVerbose;
+    Utils::BoolAspect useAuthentication{this};
+    Utils::StringAspect password{this};
+    Utils::BoolAspect spaceIgnorantAnnotation{this};
+    Utils::BoolAspect diffIgnoreWhiteSpace{this};
+    Utils::BoolAspect logVerbose{this};
 };
 
-class SubversionSettingsPage final : public Core::IOptionsPage
-{
-public:
-    explicit SubversionSettingsPage(SubversionSettings *settings);
-};
+SubversionSettings &settings();
 
-} // namespace Internal
-} // namespace Subversion
+} // Subversion::Internal

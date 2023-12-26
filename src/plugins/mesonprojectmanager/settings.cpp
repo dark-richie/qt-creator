@@ -6,15 +6,22 @@
 #include "mesonpluginconstants.h"
 #include "mesonprojectmanagertr.h"
 
+#include <coreplugin/dialogs/ioptionspage.h>
+
 #include <utils/layoutbuilder.h>
 
-namespace MesonProjectManager {
-namespace Internal {
+namespace MesonProjectManager::Internal {
 
-Settings::Settings()
+MesonSettings &settings()
 {
-    setSettingsGroup("MesonProjectManager");
+    static MesonSettings theSettings;
+    return theSettings;
+}
+
+MesonSettings::MesonSettings()
+{
     setAutoApply(false);
+    setSettingsGroup("MesonProjectManager");
 
     autorunMeson.setSettingsKey("meson.autorun");
     autorunMeson.setLabelText(Tr::tr("Autorun Meson"));
@@ -24,36 +31,32 @@ Settings::Settings()
     verboseNinja.setLabelText(Tr::tr("Ninja verbose mode"));
     verboseNinja.setToolTip(Tr::tr("Enables verbose mode by default when invoking Ninja."));
 
-    registerAspect(&autorunMeson);
-    registerAspect(&verboseNinja);
-}
-
-Settings *Settings::instance()
-{
-    static Settings m_settings;
-    return &m_settings;
-}
-
-GeneralSettingsPage::GeneralSettingsPage()
-{
-    setId(Constants::SettingsPage::GENERAL_ID);
-    setDisplayName(Tr::tr("General"));
-    setDisplayCategory("Meson");
-    setCategory(Constants::SettingsPage::CATEGORY);
-    setCategoryIconPath(Constants::Icons::MESON_BW);
-    setSettings(Settings::instance());
-
-    setLayouter([](QWidget *widget) {
-        Settings &s = *Settings::instance();
-        using namespace Utils::Layouting;
-
-        Column {
-            s.autorunMeson,
-            s.verboseNinja,
+    setLayouter([this] {
+        using namespace Layouting;
+        return Column {
+            autorunMeson,
+            verboseNinja,
             st,
-        }.attachTo(widget);
+        };
     });
+
+    readSettings();
 }
 
-} // namespace Internal
-} // namespace MesonProjectManager
+class MesonSettingsPage final : public Core::IOptionsPage
+{
+public:
+    MesonSettingsPage()
+    {
+        setId("A.MesonProjectManager.SettingsPage.General");
+        setDisplayName(Tr::tr("General"));
+        setDisplayCategory("Meson");
+        setCategory(Constants::SettingsPage::CATEGORY);
+        setCategoryIconPath(Constants::Icons::MESON_BW);
+        setSettingsProvider([] { return &settings(); });
+    }
+};
+
+const MesonSettingsPage settingsPage;
+
+} // MesonProjectManager::Internal

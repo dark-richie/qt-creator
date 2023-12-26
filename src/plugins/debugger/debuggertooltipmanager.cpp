@@ -13,15 +13,14 @@
 #include "stackhandler.h"
 #include "watchhandler.h"
 
-#include <coreplugin/icore.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/icore.h>
 #include <coreplugin/modemanager.h>
+#include <coreplugin/session.h>
 
 #include <cppeditor/cppprojectfile.h>
-
-#include <projectexplorer/session.h>
 
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
@@ -174,7 +173,7 @@ public:
 void DraggableLabel::mousePressEvent(QMouseEvent * event)
 {
     if (active && event->button() == Qt::LeftButton) {
-        m_moveStartPos = event->globalPos();
+        m_moveStartPos = event->globalPosition().toPoint();
         event->accept();
     }
     QLabel::mousePressEvent(event);
@@ -191,7 +190,7 @@ void DraggableLabel::mouseMoveEvent(QMouseEvent * event)
 {
     if (active && (event->buttons() & Qt::LeftButton)) {
         if (m_moveStartPos != QPoint(-1, -1)) {
-            const QPoint newPos = event->globalPos();
+            const QPoint newPos = event->globalPosition().toPoint();
             const QPoint offset = newPos - m_moveStartPos;
 
             m_target->move(m_target->pos() + offset);
@@ -266,30 +265,25 @@ public:
 
     void expandNode(const QModelIndex &idx)
     {
+        if (!m_engine)
+            return;
+
         m_expandedINames.insert(idx.data(LocalsINameRole).toString());
-        if (canFetchMore(idx))
-            fetchMore(idx);
+        if (canFetchMore(idx)) {
+            if (!idx.isValid())
+                return;
+
+            if (auto item = dynamic_cast<ToolTipWatchItem *>(itemForIndex(idx))) {
+                WatchItem *it = m_engine->watchHandler()->findItem(item->iname);
+                if (QTC_GUARD(it))
+                    it->model()->fetchMore(it->index());
+            }
+        }
     }
 
     void collapseNode(const QModelIndex &idx)
     {
         m_expandedINames.remove(idx.data(LocalsINameRole).toString());
-    }
-
-    void fetchMore(const QModelIndex &idx) override
-    {
-        if (!idx.isValid())
-            return;
-        auto item = dynamic_cast<ToolTipWatchItem *>(itemForIndex(idx));
-        if (!item)
-            return;
-        QString iname = item->iname;
-        if (!m_engine)
-            return;
-
-        WatchItem *it = m_engine->watchHandler()->findItem(iname);
-        QTC_ASSERT(it, return);
-        it->model()->fetchMore(it->index());
     }
 
     void restoreTreeModel(QXmlStreamReader &r);
@@ -1157,7 +1151,7 @@ void DebuggerToolTipManagerPrivate::slotTooltipOverrideRequested
     QTC_ASSERT(handled, return);
     QTC_ASSERT(editorWidget, return);
 
-    if (!debuggerSettings()->useToolTipsInMainEditor.value())
+    if (!settings().useToolTipsInMainEditor())
         return;
 
     const TextDocument *document = editorWidget->textDocument();
@@ -1169,6 +1163,7 @@ void DebuggerToolTipManagerPrivate::slotTooltipOverrideRequested
     context.fileName = document->filePath();
     context.position = pos;
     editorWidget->convertPosition(pos, &context.line, &context.column);
+    ++context.column;
     QString raw = cppExpressionAt(editorWidget, context.position, &context.line, &context.column,
                                   &context.function, &context.scopeFromLine, &context.scopeToLine);
     context.expression = fixCppExpression(raw);
@@ -1213,7 +1208,7 @@ void DebuggerToolTipManagerPrivate::slotTooltipOverrideRequested
     } else {
 
         context.iname = "tooltip." + toHex(context.expression);
-        auto reusable = [context](DebuggerToolTipHolder *tooltip) {
+        auto reusable = [&context](DebuggerToolTipHolder *tooltip) {
             return tooltip->context.isSame(context);
         };
         DebuggerToolTipHolder *tooltip = Utils::findOrDefault(m_tooltips, reusable);

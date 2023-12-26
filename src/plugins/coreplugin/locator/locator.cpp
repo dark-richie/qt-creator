@@ -26,8 +26,10 @@
 #include "../settingsdatabase.h"
 #include "../statusbarmanager.h"
 
+#include <extensionsystem/pluginmanager.h>
+
 #include <utils/algorithm.h>
-#include <utils/asynctask.h>
+#include <utils/async.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
@@ -145,37 +147,34 @@ bool Locator::delayedInitialize()
     return true;
 }
 
-ExtensionSystem::IPlugin::ShutdownFlag Locator::aboutToShutdown(
-    const std::function<void()> &emitAsynchronousShutdownFinished)
+void Locator::aboutToShutdown()
 {
-    m_shuttingDown = true;
     m_refreshTimer.stop();
     m_taskTree.reset();
-    return LocatorWidget::aboutToShutdown(emitAsynchronousShutdownFinished);
 }
 
 void Locator::loadSettings()
 {
-    SettingsDatabase *settings = ICore::settingsDatabase();
+    namespace DB = SettingsDatabase;
     // check if we have to read old settings
     // TOOD remove a few versions after 4.15
-    const QString settingsGroup = settings->contains("Locator") ? QString("Locator")
+    const QString settingsGroup = DB::contains("Locator") ? QString("Locator")
                                                                 : QString("QuickOpen");
     const Settings def;
-    settings->beginGroup(settingsGroup);
-    m_refreshTimer.setInterval(settings->value("RefreshInterval", 60).toInt() * 60000);
-    m_settings.useCenteredPopup = settings->value(kUseCenteredPopup, def.useCenteredPopup).toBool();
+    DB::beginGroup(settingsGroup);
+    m_refreshTimer.setInterval(DB::value("RefreshInterval", 60).toInt() * 60000);
+    m_settings.useCenteredPopup = DB::value(kUseCenteredPopup, def.useCenteredPopup).toBool();
 
     for (ILocatorFilter *filter : std::as_const(m_filters)) {
-        if (settings->contains(filter->id().toString())) {
-            const QByteArray state = settings->value(filter->id().toString()).toByteArray();
+        if (DB::contains(filter->id().toString())) {
+            const QByteArray state = DB::value(filter->id().toString()).toByteArray();
             if (!state.isEmpty())
                 filter->restoreState(state);
         }
     }
-    settings->beginGroup("CustomFilters");
+    DB::beginGroup("CustomFilters");
     QList<ILocatorFilter *> customFilters;
-    const QStringList keys = settings->childKeys();
+    const QStringList keys = DB::childKeys();
     int count = 0;
     const Id directoryBaseId(Constants::CUSTOM_DIRECTORY_FILTER_BASEID);
     const Id urlBaseId(Constants::CUSTOM_URL_FILTER_BASEID);
@@ -189,12 +188,12 @@ void Locator::loadSettings()
             urlFilter->setIsCustomFilter(true);
             filter = urlFilter;
         }
-        filter->restoreState(settings->value(key).toByteArray());
+        filter->restoreState(DB::value(key).toByteArray());
         customFilters.append(filter);
     }
     setCustomFilters(customFilters);
-    settings->endGroup();
-    settings->endGroup();
+    DB::endGroup();
+    DB::endGroup();
 
     if (m_refreshTimer.interval() > 0)
         m_refreshTimer.start();
@@ -289,19 +288,19 @@ void Locator::saveSettings() const
         return;
 
     const Settings def;
-    SettingsDatabase *s = ICore::settingsDatabase();
-    s->beginTransaction();
-    s->beginGroup("Locator");
-    s->remove(QString());
-    s->setValue("RefreshInterval", refreshInterval());
-    s->setValueWithDefault(kUseCenteredPopup, m_settings.useCenteredPopup, def.useCenteredPopup);
+    namespace DB = SettingsDatabase;
+    DB::beginTransaction();
+    DB::beginGroup("Locator");
+    DB::remove(QString());
+    DB::setValue("RefreshInterval", refreshInterval());
+    DB::setValueWithDefault(kUseCenteredPopup, m_settings.useCenteredPopup, def.useCenteredPopup);
     for (ILocatorFilter *filter : m_filters) {
         if (!m_customFilters.contains(filter) && filter->id().isValid()) {
             const QByteArray state = filter->saveState();
-            s->setValueWithDefault(filter->id().toString(), state);
+            DB::setValueWithDefault(filter->id().toString(), state);
         }
     }
-    s->beginGroup("CustomFilters");
+    DB::beginGroup("CustomFilters");
     int i = 0;
     for (ILocatorFilter *filter : m_customFilters) {
         const char *prefix = filter->id().name().startsWith(
@@ -309,12 +308,12 @@ void Locator::saveSettings() const
                                  ? kDirectoryFilterPrefix
                                  : kUrlFilterPrefix;
         const QByteArray state = filter->saveState();
-        s->setValueWithDefault(prefix + QString::number(i), state);
+        DB::setValueWithDefault(prefix + QString::number(i), state);
         ++i;
     }
-    s->endGroup();
-    s->endGroup();
-    s->endTransaction();
+    DB::endGroup();
+    DB::endGroup();
+    DB::endTransaction();
 }
 
 /*!
@@ -375,33 +374,31 @@ void Locator::setUseCenteredPopupForShortcut(bool center)
 
 void Locator::refresh(const QList<ILocatorFilter *> &filters)
 {
-    if (m_shuttingDown)
+    if (ExtensionSystem::PluginManager::isShuttingDown())
         return;
 
     m_taskTree.reset(); // Superfluous, just for clarity. The next reset() below is enough.
     m_refreshingFilters = Utils::filteredUnique(m_refreshingFilters + filters);
 
     using namespace Tasking;
-    QList<TaskItem> tasks{parallel};
+    QList<GroupItem> tasks{parallel};
     for (ILocatorFilter *filter : std::as_const(m_refreshingFilters)) {
         const auto task = filter->refreshRecipe();
         if (!task.has_value())
             continue;
 
         const Group group {
-            optional,
+            finishAllAndSuccess,
             *task,
-            OnGroupDone([this, filter] { m_refreshingFilters.removeOne(filter); })
+            onGroupDone([this, filter] { m_refreshingFilters.removeOne(filter); }, CallDoneIf::Success)
         };
         tasks.append(group);
     }
 
     m_taskTree.reset(new TaskTree{tasks});
-    connect(m_taskTree.get(), &TaskTree::done, this, [this] {
-        saveSettings();
-        m_taskTree.release()->deleteLater();
-    });
-    connect(m_taskTree.get(), &TaskTree::errorOccurred, this, [this] {
+    connect(m_taskTree.get(), &TaskTree::done, this, [this](DoneWith result) {
+        if (result == DoneWith::Success)
+            saveSettings();
         m_taskTree.release()->deleteLater();
     });
     auto progress = new TaskProgress(m_taskTree.get());

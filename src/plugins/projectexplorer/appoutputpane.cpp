@@ -8,7 +8,6 @@
 #include "projectexplorericons.h"
 #include "projectexplorertr.h"
 #include "runcontrol.h"
-#include "session.h"
 #include "showoutputtaskhandler.h"
 #include "windebuginterface.h"
 
@@ -17,6 +16,7 @@
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/outputwindow.h>
+#include <coreplugin/session.h>
 #include <texteditor/behaviorsettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/texteditorsettings.h>
@@ -46,6 +46,7 @@
 
 static Q_LOGGING_CATEGORY(appOutputLog, "qtc.projectexplorer.appoutput", QtWarningMsg);
 
+using namespace Core;
 using namespace Utils;
 
 namespace ProjectExplorer {
@@ -151,6 +152,10 @@ AppOutputPane::AppOutputPane() :
         Tr::tr("Show the output that generated this issue in Application Output."),
         Tr::tr("A")))
 {
+    setId("ApplicationOutput");
+    setDisplayName(Tr::tr("Application Output"));
+    setPriorityInStatusBar(60);
+
     ExtensionSystem::PluginManager::addObject(m_handler);
 
     setObjectName("AppOutputPane"); // Used in valgrind engine
@@ -298,20 +303,10 @@ QWidget *AppOutputPane::outputWidget(QWidget *)
     return m_tabWidget;
 }
 
-QList<QWidget*> AppOutputPane::toolBarWidgets() const
+QList<QWidget *> AppOutputPane::toolBarWidgets() const
 {
     return QList<QWidget *>{m_reRunButton, m_stopButton, m_attachButton, m_settingsButton,
                 m_formatterWidget} + IOutputPane::toolBarWidgets();
-}
-
-QString AppOutputPane::displayName() const
-{
-    return Tr::tr("Application Output");
-}
-
-int AppOutputPane::priorityInStatusBar() const
-{
-    return 60;
 }
 
 void AppOutputPane::clearContents()
@@ -379,7 +374,8 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
         QTimer::singleShot(0, this, [this, rc] { runControlFinished(rc); });
         for (const RunControlTab &t : std::as_const(m_runControlTabs)) {
             if (t.runControl == rc) {
-                t.window->flush();
+                if (t.window)
+                    t.window->flush();
                 break;
             }
         }
@@ -397,7 +393,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
     const Environment thisEnvironment = rc->environment();
     const auto tab = std::find_if(m_runControlTabs.begin(), m_runControlTabs.end(),
                                   [&](const RunControlTab &tab) {
-        if (!tab.runControl || tab.runControl->isRunning())
+        if (!tab.runControl || tab.runControl->isRunning() || tab.runControl->isStarting())
             return false;
         return thisCommand == tab.runControl->commandLine()
                 && thisWorkingDirectory == tab.runControl->workingDirectory()
@@ -406,7 +402,8 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
     if (tab != m_runControlTabs.end()) {
         // Reuse this tab
         if (tab->runControl)
-            tab->runControl->initiateFinish();
+            delete tab->runControl;
+
         tab->runControl = rc;
         tab->window->reset();
         rc->setupFormatter(tab->window->outputFormatter());
@@ -534,13 +531,13 @@ void AppOutputPane::storeSettings() const
     s->setValueWithDefault(WRAP_OUTPUT_KEY, m_settings.wrapOutput, kWrapOutputDefault);
     s->setValueWithDefault(MAX_LINES_KEY,
                            m_settings.maxCharCount / 100,
-                           Core::Constants::DEFAULT_MAX_CHAR_COUNT);
+                           Core::Constants::DEFAULT_MAX_CHAR_COUNT / 100);
 }
 
 void AppOutputPane::loadSettings()
 {
-    QSettings * const s = Core::ICore::settings();
-    const auto modeFromSettings = [s](const QString key, AppOutputPaneMode defaultValue) {
+    QtcSettings * const s = Core::ICore::settings();
+    const auto modeFromSettings = [s](const Key key, AppOutputPaneMode defaultValue) {
         return static_cast<AppOutputPaneMode>(s->value(key, int(defaultValue)).toInt());
     };
     m_settings.runOutputMode = modeFromSettings(POP_UP_FOR_RUN_OUTPUT_KEY, kRunOutputModeDefault);
@@ -550,7 +547,7 @@ void AppOutputPane::loadSettings()
     m_settings.mergeChannels = s->value(MERGE_CHANNELS_KEY, kMergeChannelsDefault).toBool();
     m_settings.wrapOutput = s->value(WRAP_OUTPUT_KEY, kWrapOutputDefault).toBool();
     m_settings.maxCharCount = s->value(MAX_LINES_KEY,
-                                       Core::Constants::DEFAULT_MAX_CHAR_COUNT).toInt() * 100;
+                                       Core::Constants::DEFAULT_MAX_CHAR_COUNT / 100).toInt() * 100;
 }
 
 void AppOutputPane::showTabFor(RunControl *rc)
@@ -641,10 +638,18 @@ void AppOutputPane::closeTab(int tabIndex, CloseTabMode closeTabMode)
     m_tabWidget->removeTab(tabIndex);
     delete window;
 
-    if (runControl)
-        runControl->initiateFinish(); // Will self-destruct.
-    Utils::erase(m_runControlTabs, [tab](const RunControlTab &t) {
-        return t.runControl == tab->runControl; });
+    Utils::erase(m_runControlTabs, [runControl](const RunControlTab &t) {
+        return t.runControl == runControl; });
+    if (runControl) {
+        if (runControl->isRunning()) {
+            QMetaObject::invokeMethod(runControl, [runControl] {
+                runControl->setAutoDeleteOnStop(true);
+                runControl->initiateStop();
+            }, Qt::QueuedConnection);
+        } else {
+            delete runControl;
+        }
+    }
     updateCloseActions();
     setFilteringEnabled(m_tabWidget->count() > 0);
 

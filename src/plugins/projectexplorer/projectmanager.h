@@ -47,7 +47,6 @@ public:
         });
     }
 
-    static bool save();
     static void closeAllProjects();
 
     static void addProject(Project *project);
@@ -82,10 +81,6 @@ public:
 
     static Utils::FilePaths projectsForSessionName(const QString &session);
 
-    static void reportProjectLoadingProgress();
-
-    static bool loadSession(const QString &session, bool initial = false);
-
 signals:
     void targetAdded(ProjectExplorer::Target *target);
     void targetRemoved(ProjectExplorer::Target *target);
@@ -102,7 +97,7 @@ signals:
     void projectFinishedParsing(ProjectExplorer::Project *project);
 
 private:
-    static void configureEditor(Core::IEditor *editor, const QString &fileName);
+    static void configureEditor(Core::IEditor *editor, const Utils::FilePath &filePath);
     static void configureEditors(Project *project);
 
     static void registerProjectCreator(const QString &mimeType,

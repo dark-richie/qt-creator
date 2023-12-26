@@ -8,6 +8,7 @@
 #include "findtoolwindow.h"
 #include "ifindfilter.h"
 #include "searchresultwindow.h"
+#include "textfindconstants.h"
 #include "../actionmanager/actioncontainer.h"
 #include "../actionmanager/actionmanager.h"
 #include "../actionmanager/command.h"
@@ -26,7 +27,6 @@
 #include <QStringListModel>
 #include <QVector>
 #include <QAction>
-#include <QSettings>
 
 /*!
     \namespace Core::Internal::ItemDataRoles
@@ -75,8 +75,8 @@ public:
 
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
-    void writeSettings(QSettings *settings) const;
-    void readSettings(QSettings *settings);
+    void writeSettings(QtcSettings *settings) const;
+    void readSettings(QtcSettings *settings);
 
     void updateCompletion(const QString &text, FindFlags f);
 
@@ -101,17 +101,17 @@ QVariant CompletionModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-static inline QString completionSettingsArrayPrefix() { return QStringLiteral("FindCompletions"); }
-static inline QString completionSettingsTextKey() { return QStringLiteral("Text"); }
-static inline QString completionSettingsFlagsKey() { return QStringLiteral("Flags"); }
+static Utils::Key completionSettingsArrayPrefix() { return "FindCompletions"; }
+static Utils::Key completionSettingsTextKey() { return "Text"; }
+static Utils::Key completionSettingsFlagsKey() { return "Flags"; }
 
-void CompletionModel::writeSettings(QSettings *settings) const
+void CompletionModel::writeSettings(QtcSettings *settings) const
 {
     if (m_entries.isEmpty()) {
         settings->remove(completionSettingsArrayPrefix());
     } else {
         const int size = m_entries.size();
-        settings->beginWriteArray(completionSettingsArrayPrefix(), size);
+        settings->beginWriteArray(stringFromKey(completionSettingsArrayPrefix()), size);
         for (int i = 0; i < size; ++i) {
             settings->setArrayIndex(i);
             settings->setValue(completionSettingsTextKey(), m_entries.at(i).text);
@@ -121,10 +121,10 @@ void CompletionModel::writeSettings(QSettings *settings) const
     }
 }
 
-void CompletionModel::readSettings(QSettings *settings)
+void CompletionModel::readSettings(QtcSettings *settings)
 {
     beginResetModel();
-    const int size = settings->beginReadArray(completionSettingsArrayPrefix());
+    const int size = settings->beginReadArray(stringFromKey(completionSettingsArrayPrefix()));
     m_entries.clear();
     m_entries.reserve(size);
     for (int i = 0; i < size; ++i) {
@@ -156,7 +156,7 @@ class FindPrivate : public QObject
 public:
     bool isAnyFilterEnabled() const;
     void writeSettings();
-    void setFindFlag(Core::FindFlag flag, bool enabled);
+    void setFindFlag(FindFlag flag, bool enabled);
     static void updateCompletion(const QString &text, QStringList &completions,
                                  QStringListModel *model);
     void setupMenu();
@@ -267,20 +267,20 @@ void FindPrivate::setupMenu()
     mfind->appendGroup(Constants::G_FIND_FILTERS);
     mfind->appendGroup(Constants::G_FIND_FLAGS);
     mfind->appendGroup(Constants::G_FIND_ACTIONS);
-    Command *cmd;
     mfind->addSeparator(Constants::G_FIND_FLAGS);
     mfind->addSeparator(Constants::G_FIND_ACTIONS);
 
     ActionContainer *mfindadvanced = ActionManager::createMenu(Constants::M_FIND_ADVANCED);
     mfindadvanced->menu()->setTitle(Tr::tr("Advanced Find"));
     mfind->addMenu(mfindadvanced, Constants::G_FIND_FILTERS);
-    m_openFindDialog = new QAction(Tr::tr("Open Advanced Find..."), this);
-    m_openFindDialog->setIconText(Tr::tr("Advanced..."));
-    cmd = ActionManager::registerAction(m_openFindDialog, Constants::ADVANCED_FIND);
-    cmd->setDefaultKeySequence(QKeySequence(Tr::tr("Ctrl+Shift+F")));
-    mfindadvanced->addAction(cmd);
-    connect(m_openFindDialog, &QAction::triggered,
-            this, [] { Find::openFindDialog(nullptr); });
+
+    ActionBuilder openFindDialog(this, Constants::ADVANCED_FIND);
+    openFindDialog.setText(Tr::tr("Open Advanced Find..."));
+    openFindDialog.setIconText(Tr::tr("Advanced..."));
+    openFindDialog.bindContextAction(&m_openFindDialog);
+    openFindDialog.setDefaultKeySequence(Tr::tr("Ctrl+Shift+F"));
+    openFindDialog.addToContainer(Constants::M_FIND_ADVANCED);
+    openFindDialog.addOnTriggered(this, [] { Find::openFindDialog(nullptr); });
 }
 
 static QString filterActionName(const IFindFilter *filter)
@@ -290,30 +290,30 @@ static QString filterActionName(const IFindFilter *filter)
 
 void FindPrivate::setupFilterMenuItems()
 {
-    Command *cmd;
-
-    ActionContainer *mfindadvanced = ActionManager::actionContainer(Constants::M_FIND_ADVANCED);
     bool haveEnabledFilters = false;
     const Id base("FindFilter.");
     const QList<IFindFilter *> sortedFilters = Utils::sorted(IFindFilter::allFindFilters(),
                                                              &IFindFilter::displayName);
     for (IFindFilter *filter : sortedFilters) {
-        QAction *action = new QAction(filterActionName(filter), this);
+        ActionBuilder findScope(this, base.withSuffix(filter->id()));
+        findScope.setText(filterActionName(filter));
         bool isEnabled = filter->isEnabled();
         if (isEnabled)
             haveEnabledFilters = true;
-        action->setEnabled(isEnabled);
-        cmd = ActionManager::registerAction(action, base.withSuffix(filter->id()));
-        cmd->setDefaultKeySequence(filter->defaultShortcut());
-        cmd->setAttribute(Command::CA_UpdateText);
-        mfindadvanced->addAction(cmd);
-        connect(action, &QAction::triggered, this, [filter] { Find::openFindDialog(filter); });
-        connect(filter, &IFindFilter::enabledChanged, this, [filter, action] {
-            action->setEnabled(filter->isEnabled());
+        findScope.setEnabled(isEnabled);
+        findScope.setDefaultKeySequence(filter->defaultShortcut());
+        findScope.setCommandAttribute(Command::CA_UpdateText);
+        findScope.addToContainer(Constants::M_FIND_ADVANCED);
+        findScope.addOnTriggered(this, [filter] { Find::openFindDialog(filter); });
+
+        QAction *findScopeAction = findScope.contextAction();
+        connect(filter, &IFindFilter::enabledChanged, this, [filter, findScopeAction] {
+            findScopeAction->setEnabled(filter->isEnabled());
             d->m_openFindDialog->setEnabled(d->isAnyFilterEnabled());
         });
-        connect(filter, &IFindFilter::displayNameChanged,
-                this, [filter, action] { action->setText(filterActionName(filter)); });
+        connect(filter, &IFindFilter::displayNameChanged, this, [filter, findScopeAction] {
+            findScopeAction->setText(filterActionName(filter));
+        });
     }
     d->m_findDialog->setFindFilters(sortedFilters);
     d->m_openFindDialog->setEnabled(haveEnabledFilters);
@@ -370,7 +370,7 @@ bool Find::hasFindFlag(FindFlag flag)
 void FindPrivate::writeSettings()
 {
     QtcSettings *settings = ICore::settings();
-    settings->beginGroup(QLatin1String("Find"));
+    settings->beginGroup("Find");
     settings->setValueWithDefault("Backward", bool(m_findFlags & FindBackward), false);
     settings->setValueWithDefault("CaseSensitively", bool(m_findFlags & FindCaseSensitively), false);
     settings->setValueWithDefault("WholeWords", bool(m_findFlags & FindWholeWords), false);
@@ -388,18 +388,18 @@ void FindPrivate::writeSettings()
 
 void FindPrivate::readSettings()
 {
-    QSettings *settings = ICore::settings();
-    settings->beginGroup(QLatin1String("Find"));
+    QtcSettings *settings = ICore::settings();
+    settings->beginGroup("Find");
     {
         QSignalBlocker blocker(m_instance);
-        Find::setBackward(settings->value(QLatin1String("Backward"), false).toBool());
-        Find::setCaseSensitive(settings->value(QLatin1String("CaseSensitively"), false).toBool());
-        Find::setWholeWord(settings->value(QLatin1String("WholeWords"), false).toBool());
-        Find::setRegularExpression(settings->value(QLatin1String("RegularExpression"), false).toBool());
-        Find::setPreserveCase(settings->value(QLatin1String("PreserveCase"), false).toBool());
+        Find::setBackward(settings->value("Backward", false).toBool());
+        Find::setCaseSensitive(settings->value("CaseSensitively", false).toBool());
+        Find::setWholeWord(settings->value("WholeWords", false).toBool());
+        Find::setRegularExpression(settings->value("RegularExpression", false).toBool());
+        Find::setPreserveCase(settings->value("PreserveCase", false).toBool());
     }
     m_findCompletionModel.readSettings(settings);
-    m_replaceCompletions = settings->value(QLatin1String("ReplaceStrings")).toStringList();
+    m_replaceCompletions = settings->value("ReplaceStrings").toStringList();
     m_replaceCompletionModel.setStringList(m_replaceCompletions);
     settings->endGroup();
     m_findToolBar->readSettings();
@@ -450,19 +450,6 @@ QAbstractListModel *Find::findCompletionModel()
 QStringListModel *Find::replaceCompletionModel()
 {
     return &(d->m_replaceCompletionModel);
-}
-
-// declared in textfindconstants.h
-QTextDocument::FindFlags textDocumentFlagsForFindFlags(FindFlags flags)
-{
-    QTextDocument::FindFlags textDocFlags;
-    if (flags & FindBackward)
-        textDocFlags |= QTextDocument::FindBackward;
-    if (flags & FindCaseSensitively)
-        textDocFlags |= QTextDocument::FindCaseSensitively;
-    if (flags & FindWholeWords)
-        textDocFlags |= QTextDocument::FindWholeWords;
-    return textDocFlags;
 }
 
 } // namespace Core

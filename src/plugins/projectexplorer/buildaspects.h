@@ -7,29 +7,29 @@
 
 #include <utils/aspects.h>
 
-namespace Utils { class FilePath; }
-
 namespace ProjectExplorer {
+
 class BuildConfiguration;
 
-class PROJECTEXPLORER_EXPORT BuildDirectoryAspect : public Utils::StringAspect
+class PROJECTEXPLORER_EXPORT BuildDirectoryAspect : public Utils::FilePathAspect
 {
     Q_OBJECT
+
 public:
-    explicit BuildDirectoryAspect(const BuildConfiguration *bc);
+    explicit BuildDirectoryAspect(Utils::AspectContainer *container, const BuildConfiguration *bc);
     ~BuildDirectoryAspect() override;
 
     void allowInSourceBuilds(const Utils::FilePath &sourceDir);
     bool isShadowBuild() const;
     void setProblem(const QString &description);
 
-    void addToLayout(Utils::Layouting::LayoutBuilder &builder) override;
+    void addToLayout(Layouting::LayoutItem &parent) override;
 
     static Utils::FilePath fixupDir(const Utils::FilePath &dir);
 
 private:
-    void toMap(QVariantMap &map) const override;
-    void fromMap(const QVariantMap &map) override;
+    void toMap(Utils::Store &map) const override;
+    void fromMap(const Utils::Store &map) override;
 
     void updateProblemLabel();
 
@@ -41,7 +41,7 @@ class PROJECTEXPLORER_EXPORT SeparateDebugInfoAspect : public Utils::TriStateAsp
 {
     Q_OBJECT
 public:
-    SeparateDebugInfoAspect();
+    SeparateDebugInfoAspect(Utils::AspectContainer *container = nullptr);
 };
 
 } // namespace ProjectExplorer

@@ -14,7 +14,6 @@
 #include <texteditor/textdocument.h>
 #include <coreplugin/editormanager/editormanager.h>
 
-#include <utils/linecolumn.h>
 #include <utils/treeviewcombobox.h>
 
 #include <QAction>
@@ -80,7 +79,7 @@ CppEditorOutline::CppEditorOutline(CppEditorWidget *editorWidget)
     m_proxyModel->setSourceModel(m_model);
 
     // Set up proxy model
-    if (CppToolsSettings::instance()->sortedEditorDocumentOutline())
+    if (CppToolsSettings::sortedEditorDocumentOutline())
         m_proxyModel->sort(0, Qt::AscendingOrder);
     else
         m_proxyModel->sort(-1, Qt::AscendingOrder); // don't sort yet, but set column for sortedOutline()
@@ -126,7 +125,7 @@ QWidget *CppEditorOutline::widget() const
 
 QSharedPointer<CPlusPlus::Document> getDocument(const Utils::FilePath &filePath)
 {
-    const CPlusPlus::Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const CPlusPlus::Snapshot snapshot = CppModelManager::snapshot();
     return snapshot.document(filePath);
 }
 

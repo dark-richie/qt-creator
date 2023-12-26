@@ -6,7 +6,7 @@
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/customexecutablerunconfiguration.h>
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectmanager.h>
@@ -177,7 +177,7 @@ void QmlProfilerDetailsRewriterTest::seedRewriter()
 
     QmlJS::PathsAndLanguages lPaths;
     lPaths.maybeInsert(
-                Utils::FilePath::fromString(QLibraryInfo::location(QLibraryInfo::Qml2ImportsPath)),
+                Utils::FilePath::fromString(QLibraryInfo::path(QLibraryInfo::Qml2ImportsPath)),
                 QmlJS::Dialect::Qml);
     QmlJS::ModelManagerInterface::importScan(QmlJS::ModelManagerInterface::workingCopy(),
                                              lPaths, m_modelManager, false);

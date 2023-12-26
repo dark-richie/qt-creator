@@ -25,10 +25,12 @@ class AuthWidget : public QWidget
 
 public:
     explicit AuthWidget(QWidget *parent = nullptr);
+    ~AuthWidget() override;
+
     void updateClient(const Utils::FilePath &nodeJs, const Utils::FilePath &agent);
 
 private:
-    void setState(const QString &buttonText, bool working);
+    void setState(const QString &buttonText, const QString &errorText, bool working);
     void checkStatus();
 
 

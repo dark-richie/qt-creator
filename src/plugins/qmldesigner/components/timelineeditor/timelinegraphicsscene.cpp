@@ -76,7 +76,7 @@ TimelineGraphicsScene::TimelineGraphicsScene(TimelineWidget *parent,
 
     setSceneRect(m_layout->geometry());
 
-    connect(m_layout, &QGraphicsWidget::geometryChanged, this, [this]() {
+    connect(m_layout, &QGraphicsWidget::geometryChanged, this, [this] {
         auto rect = m_layout->geometry();
 
         setSceneRect(rect);
@@ -386,7 +386,7 @@ bool AbstractScrollGraphicsScene::isKeyframeSelected(TimelineKeyframeItem *keyfr
 
 bool AbstractScrollGraphicsScene::multipleKeyframesSelected() const
 {
-    return m_selectedKeyframes.count() > 1;
+    return m_selectedKeyframes.size() > 1;
 }
 
 void TimelineGraphicsScene::invalidateSectionForTarget(const ModelNode &target)

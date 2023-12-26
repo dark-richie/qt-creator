@@ -5,19 +5,22 @@
 
 #include "cmakebuildconfiguration.h"
 #include "cmakebuildsystem.h"
-#include "cmakekitinformation.h"
+#include "cmakekitaspect.h"
 #include "cmaketoolmanager.h"
 
-#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/customparser.h>
+#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
 #include <utils/algorithm.h>
+#include <utils/aspects.h>
 #include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace CMakeProjectManager::Internal {
 
@@ -31,7 +34,7 @@ BuildDirParameters::BuildDirParameters(CMakeBuildSystem *buildSystem)
 
     expander = bc->macroExpander();
 
-    const QStringList expandedArguments = Utils::transform(buildSystem->initialCMakeArguments(),
+    const QStringList expandedArguments = Utils::transform(bc->initialCMakeArguments.allValues(),
                                                            [this](const QString &s) {
                                                                return expander->expand(s);
                                                            });
@@ -41,7 +44,7 @@ BuildDirParameters::BuildDirParameters(CMakeBuildSystem *buildSystem)
                                                      [this](const QString &s) {
                                                          return expander->expand(s);
                                                      });
-    additionalCMakeArguments = Utils::transform(buildSystem->additionalCMakeArguments(),
+    additionalCMakeArguments = Utils::transform(bc->additionalCMakeArguments(),
                                                 [this](const QString &s) {
                                                     return expander->expand(s);
                                                 });
@@ -66,8 +69,19 @@ BuildDirParameters::BuildDirParameters(CMakeBuildSystem *buildSystem)
         environment.set("ICECC", "no");
 
     environment.set("QTC_RUN", "1");
+    environment.setFallback("CMAKE_COLOR_DIAGNOSTICS", "1");
+    environment.setFallback("CLICOLOR_FORCE", "1");
 
     cmakeToolId = CMakeKitAspect::cmakeToolId(k);
+
+    outputParserGenerator = [k, bc]() {
+        QList<OutputLineParser *> outputParsers = k->createOutputParsers();
+        for (const Id id : bc->customParsers()) {
+            if (auto parser = createCustomParserFromId(id))
+                outputParsers << parser;
+        }
+        return outputParsers;
+    };
 }
 
 bool BuildDirParameters::isValid() const
@@ -78,6 +92,12 @@ bool BuildDirParameters::isValid() const
 CMakeTool *BuildDirParameters::cmakeTool() const
 {
     return CMakeToolManager::findById(cmakeToolId);
+}
+
+QList<OutputLineParser *> BuildDirParameters::outputParsers() const
+{
+    QTC_ASSERT(outputParserGenerator, return {});
+    return outputParserGenerator();
 }
 
 } // CMakeProjectManager::Internal

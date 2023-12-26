@@ -55,9 +55,7 @@ add_qtc_plugin(ProjectExplorer
     devicesupport/devicemanager.cpp devicesupport/devicemanager.h
     devicesupport/devicemanagermodel.cpp devicesupport/devicemanagermodel.h
     devicesupport/deviceprocessesdialog.cpp devicesupport/deviceprocessesdialog.h
-    devicesupport/deviceprocesslist.cpp devicesupport/deviceprocesslist.h
     devicesupport/devicesettingspage.cpp devicesupport/devicesettingspage.h
-    devicesupport/devicesettingswidget.cpp devicesupport/devicesettingswidget.h
     devicesupport/devicetestdialog.cpp devicesupport/devicetestdialog.h
     devicesupport/deviceusedportsgatherer.cpp devicesupport/deviceusedportsgatherer.h
     devicesupport/filetransfer.cpp devicesupport/filetransfer.h
@@ -105,17 +103,15 @@ add_qtc_plugin(ProjectExplorer
     jsonwizard/wizarddebug.h
     jsonwizard/jsonwizardscannergenerator.cpp jsonwizard/jsonwizardscannergenerator.h
     kit.cpp kit.h
+    kitaspects.cpp kitaspects.h
     kitchooser.cpp kitchooser.h
     kitfeatureprovider.h
-    kitinformation.cpp kitinformation.h
     kitmanager.cpp kitmanager.h
     kitmanagerconfigwidget.cpp kitmanagerconfigwidget.h
-    kitmodel.cpp kitmodel.h
     kitoptionspage.cpp kitoptionspage.h
     ldparser.cpp ldparser.h
     lldparser.cpp lldparser.h
     linuxiccparser.cpp linuxiccparser.h
-    localenvironmentaspect.cpp localenvironmentaspect.h
     makestep.cpp makestep.h
     miniprojecttargetselector.cpp miniprojecttargetselector.h
     msvcparser.cpp msvcparser.h
@@ -127,6 +123,7 @@ add_qtc_plugin(ProjectExplorer
     processparameters.cpp processparameters.h
     processstep.cpp processstep.h
     project.cpp project.h
+    projectcommentssettings.cpp projectcommentssettings.h
     projectconfiguration.cpp projectconfiguration.h
     projectconfigurationmodel.cpp projectconfigurationmodel.h
     projectexplorer.cpp projectexplorer.h
@@ -135,8 +132,7 @@ add_qtc_plugin(ProjectExplorer
     projectexplorerconstants.cpp
     projectexplorerconstants.h
     projectexplorericons.cpp projectexplorericons.h
-    projectexplorersettings.h
-    projectexplorersettingspage.cpp projectexplorersettingspage.h
+    projectexplorersettings.cpp projectexplorersettings.h
     projectexplorertr.h
     projectfilewizardextension.cpp projectfilewizardextension.h
     projectimporter.cpp projectimporter.h
@@ -148,6 +144,7 @@ add_qtc_plugin(ProjectExplorer
     projectsettingswidget.cpp projectsettingswidget.h
     projecttree.cpp projecttree.h
     projecttreewidget.cpp projecttreewidget.h
+    projectupdater.cpp projectupdater.h
     projectwelcomepage.cpp projectwelcomepage.h
     projectwindow.cpp projectwindow.h
     projectwizardpage.cpp projectwizardpage.h
@@ -159,10 +156,6 @@ add_qtc_plugin(ProjectExplorer
     runsettingspropertiespage.cpp runsettingspropertiespage.h
     sanitizerparser.cpp sanitizerparser.h
     selectablefilesmodel.cpp selectablefilesmodel.h
-    session.cpp session.h session_p.h
-    sessiondialog.cpp sessiondialog.h
-    sessionmodel.cpp sessionmodel.h
-    sessionview.cpp sessionview.h
     showineditortaskhandler.cpp showineditortaskhandler.h
     showoutputtaskhandler.cpp showoutputtaskhandler.h
     simpleprojectwizard.cpp simpleprojectwizard.h
@@ -189,11 +182,6 @@ add_qtc_plugin(ProjectExplorer
     xcodebuildparser.cpp xcodebuildparser.h
 )
 
-extend_qtc_plugin(ProjectExplorer
-  CONDITION PROJECT_USER_FILE_EXTENSION
-  DEFINES "PROJECT_USER_FILE_EXTENSION=${PROJECT_USER_FILE_EXTENSION}"
-)
-
 if (TARGET clangd)
   set(CLANG_BINDIR "$<TARGET_FILE_DIR:clangd>")
 endif()
@@ -216,8 +204,13 @@ extend_qtc_plugin(ProjectExplorer
 extend_qtc_plugin(ProjectExplorer
   CONDITION WITH_TESTS
   SOURCES
-    jsonwizard/jsonwizard_test.cpp
     outputparser_test.cpp outputparser_test.h
+)
+extend_qtc_plugin(ProjectExplorer
+  CONDITION WITH_TESTS
+  SOURCES
+    jsonwizard/jsonwizard_test.cpp
+  SOURCES_PROPERTIES HEADER_FILE_ONLY ON
 )
 
 file(GLOB_RECURSE test_resources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} testdata/*)
@@ -227,11 +220,3 @@ qtc_add_resources(ProjectExplorer "testdata"
   BASE "."
   FILES ${test_resources}
 )
-
-qtc_plugin_enabled(_projectexplorer_enabled ProjectExplorer)
-if (WITH_TESTS AND _projectexplorer_enabled)
-  set_source_files_properties(jsonwizard/jsonwizard_test.cpp
-    PROPERTIES HEADER_FILE_ONLY ON
-  )
-endif()
-
